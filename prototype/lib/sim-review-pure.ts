@@ -164,6 +164,9 @@ export interface SimObservation {
   feedbackId?: string
   deduped?: boolean             // true when matched an existing feedback row
   recurrence?: any | null       // RecurrenceMemory (KLA-2) when deduped = true
+  // Rule 2 (ADDITIVE + OPTIONAL): how reliably the affected UI was identified. "high" = verified against captured page metadata;
+  // "medium"/"low" = uncertain — target/region are then hints only, never a confirmed exact element.
+  identification?: { confidence: "high" | "medium" | "low"; basis: "page-metadata" | "screenshot-only"; uncertain: boolean; section?: string } | null
 }
 
 export interface SimReview {

@@ -61,7 +61,10 @@ import { notifyStatusChange } from "./lib/status-notification"
 import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie, uidCookie, clearUidCookie, clearProjectCookie } from "./lib/auth"
-import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, type UploadedScreenshot } from "./lib/s3"
+import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, objectExists, type UploadedScreenshot } from "./lib/s3"
+import { storeVerifiedScreenshot, type StoredScreenshot } from "./lib/sim-evidence"
+import { enrichQaPersona, normalizePersonaKind, isQaPersona, qaRunPrompt, type PersonaKind } from "./lib/sim-validations"
+import { elementListForPrompt, sanitizePageMeta, type PageMeta } from "./lib/sim-ui-identity"
 import { phaseTimer } from "./lib/phase-timer"
 import { readReplayEvents, replayEvidencePresent } from "./lib/replay-intake"
 import { createLimiter, mapBounded, uploadConcurrency } from "./lib/bounded-concurrency"
@@ -99,6 +102,7 @@ import { assembleWalk } from "./lib/sim-walk"
 import { publishRegressionEvent, listRegressionEvents, acknowledgeRegressionEvent } from "./lib/regression-events"
 import { buildAssertUserPrompt } from "./lib/assertion-spec"
 import { judgeWalk } from "./lib/trails-judge"
+import { normalizeGeneratedCore } from "./lib/persona-core"
 import { WEEK_MS as TRUST_REPORT_WEEK_MS, sendTrustReport, type TrustReportDeps } from "./lib/trust-report"
 import type { TrailStatus } from "./lib/trails-types"
 import type { RecurrenceMemory } from "./lib/recurrence-memory"
@@ -624,7 +628,7 @@ function personaSiteSys(countPhrase: string): string {
     "Classify each on two axes: simClass (\"user\" = actually OPERATES the product hands-on, feedback skews UI/interaction; " +
     "\"client\" = evaluates OVERALL outcomes and business results, feedback skews feature/workflow/strategy — only assign \"client\" when the persona clearly describes an executive, buyer, or outcome-judging stakeholder) " +
     "and side (\"external\" = customer/partner outside the team; \"internal\" = on the product/company team). " +
-    "Respond with ONLY a JSON object, no prose: {\"personas\":[{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"desc\":string(<=90 chars, ONE plain sentence: who this persona is and what they care about),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}]} with " + countPhrase + " personas, each with exactly 3 insights; each quote is a short first-person line that persona might say."
+    "Respond with ONLY a JSON object, no prose: {\"personas\":[{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"desc\":string(<=90 chars, ONE plain sentence: who this persona is and what they care about),\"summary\":string,\"personaKind\":\"qa\"|\"customer\" (\"qa\" ONLY if this persona IS a QA / visual-testing reviewer inspecting a UI for defects; every customer, buyer, end-user or stakeholder is \"customer\"),\"core\":{\"goals\":string[1-4 jobs-to-be-done],\"expertise\":string,\"temperament\":string,\"voice\":string(short first-person sample),\"watchFor\":string[2-5 concrete things this persona checks or validates on ANY page, e.g. form validation, labels, spelling]},\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}]} with " + countPhrase + " personas, each with exactly 3 insights; each quote is a short first-person line that persona might say."
 }
 
 const REACT_SYS =
@@ -648,7 +652,9 @@ const REACT_SYS =
   "  2. \"target\": a locator object — set \"text\" to the EXACT visible text on or immediately labelling the element, " +
   "copied VERBATIM character-for-character from the screenshot (this is the most reliable anchor, always provide it for " +
   "element-level reactions); set \"selector\" to a short CSS selector only if you can confidently infer one (else omit); " +
-  "set \"role\" and \"name\" to the element's ARIA role and accessible name when evident (else omit).\n" +
+  "set \"role\" and \"name\" to the element's ARIA role and accessible name when evident (else omit). " +
+  "When a PAGE ELEMENTS list is provided, set \"elementId\" to the id of the element that ITSELF is the subject of the reaction, copied exactly — never a neighbouring or " +
+  "containing element; use null if none of them is. Your region and text must describe that same element.\n" +
   "Set region AND target to null ONLY for genuinely page-level/outcome-level observations where no single element is the " +
   "focus (clients usually null). Do not invent coordinates or text you cannot actually see. " +
   "suggestedBug is filled only when it's a real problem worth filing to an issue tracker, else null; set its \"priority\" " +
@@ -665,7 +671,7 @@ const REACT_SYS =
   "Respond with ONLY a JSON object, no prose, in exactly this shape:\n" +
   '{"reactions":[{"observation":string(<=240 chars, first person),"sentiment":"frustrated"|"confused"|"satisfied"|"delighted"|"neutral",' +
   '"emoji":string,"targetDescription":string,' +
-  '"target":{"text":string,"selector":string,"role":string,"name":string}|null,' +
+  '"target":{"elementId":string|null,"text":string,"selector":string,"role":string,"name":string}|null,' +
   '"region":{"x":number,"y":number,"w":number,"h":number}|null,' +
   '"citedTraitIds":string[],' +
   '"suggestedBug":{"title":string,"body":string,"priority":"urgent"|"high"|"medium"|"low"}|null}]}'
@@ -1089,18 +1095,36 @@ async function extractPersonas(transcript: string, ctx?: { email?: string | null
   normalizeExtractedPersonas(data)
   return { data, usage }
 }
-async function reactToPage(persona: any, imageB64: string, mediaType: string, pageUrl: string, ctx?: { email?: string | null; projectId?: string | null }) {
+/**
+ * Store a Sim review screenshot for use as finding evidence: upload → verify the object exists → write the ledger row. Returns a
+ * screenshot id only when ALL of that succeeded; otherwise null + an explicit failure record (Phase-1 QA evidence integrity).
+ */
+function storeSimScreenshot(bytes: Uint8Array, contentType: string, projectId: string, ownerEmail: string | null, expiresAt: number): Promise<StoredScreenshot> {
+  return storeVerifiedScreenshot({
+    upload: (b, ct) => uploadScreenshotMeta(b, ct, "private"),
+    exists: (key) => objectExists(key),
+    insert: (row) => insertScreenshot({ projectId, s3Key: row.s3Key, bucket: row.bucket, contentType: row.contentType, acl: "private", bytes: row.bytes, ownerEmail, expiresAt }),
+  }, bytes, contentType)
+}
+
+async function reactToPage(persona: any, imageB64: string, mediaType: string, pageUrl: string, ctx?: { email?: string | null; projectId?: string | null }, pageMeta?: PageMeta | null) {
   // H4/LLM01: the persona is our own trusted data, but the page URL and the screenshot itself are
   // attacker-influenceable — delimit the URL and instruct the model to ignore instructions in page data.
   // Current-date awareness: without this the model assumes its training-era "current year" (e.g. 2024)
   // and wrongly flags valid future-looking dates on the page as errors (a 2026 "Founded Year" reported as
   // "impossible, it's 2024"). Stamp today's real date at call time so date reasoning is grounded in now.
   const today = new Date().toISOString().slice(0, 10)
+  // Rule 2: when the caller captured a read-only element map with the screenshot, show it to EVERY Sim so it picks a real element
+  // instead of guessing from pixels. runSimReviews verifies the answer against the same map before recording it.
+  const elementList = elementListForPrompt(pageMeta)
+  // QA Sims only: the PERSISTED QA rules (persona.validations, loaded with the Sim) are appended to the prompt. Non-QA Sims get the
+  // original prompt (plus the element list when one exists).
+  const qaAddendum = isQaPersona(persona) ? qaRunPrompt(persona, { hasElements: !!elementList }) : ""
   const { content, usage } = await chat([
-    { role: "system", content: REACT_SYS + UNTRUSTED_GUARD },
+    { role: "system", content: REACT_SYS + qaAddendum + UNTRUSTED_GUARD },
     {
       role: "user", content: [
-        { type: "text", text: `Today's date is ${today}. Treat this as the current date and year when judging whether any dates shown on the page are valid, impossible, or out of range — do NOT assume an earlier year.\n\n` + "You are this persona:\n" + JSON.stringify(persona, null, 2) + `\n\nReact to this screenshot. The page URL (untrusted) is:\n` + wrapUntrusted(pageUrl || "(unknown URL)") },
+        { type: "text", text: `Today's date is ${today}. Treat this as the current date and year when judging whether any dates shown on the page are valid, impossible, or out of range — do NOT assume an earlier year.\n\n` + "You are this persona:\n" + JSON.stringify(persona, null, 2) + `\n\nReact to this screenshot. The page URL (untrusted) is:\n` + wrapUntrusted(pageUrl || "(unknown URL)") + (elementList ? "\n\n" + wrapUntrusted(elementList) : "") },
         { type: "image_url", image_url: { url: `data:${mediaType};base64,${imageB64}` } },
       ]
     },
@@ -2130,7 +2154,7 @@ const SIDE_ENUM = new Set(["external", "internal"])
 // { type (legacy shim), simClass, side, core|null }. simClass/side are validated against their
 // enums; core is assembled only when the body carries one. The legacy `type` (client|internal) is
 // derived from simClass/side when present so pre-v3 consumers keep working, else falls back to body.type.
-function v3PersonaFields(body: any): { type: string; simClass: string | null; side: string | null; core: import("./lib/db").PersonaCore | null } {
+function v3PersonaFields(body: any): { type: string; simClass: string | null; side: string | null; core: import("./lib/db").PersonaCore | null; personaKind: PersonaKind } {
   const simClass = SIM_CLASS_ENUM.has(String(body?.simClass)) ? String(body.simClass) : null
   const side = SIDE_ENUM.has(String(body?.side)) ? String(body.side) : null
   // Legacy type shim: client-class OR external-side → "client"; a user/internal persona → "internal".
@@ -2148,7 +2172,7 @@ function v3PersonaFields(body: any): { type: string; simClass: string | null; si
       watchFor: Array.isArray(c.watchFor) ? c.watchFor.map((x: any) => String(x)) : [],
     }
     : null
-  return { type, simClass, side, core }
+  return { type, simClass, side, core, personaKind: normalizePersonaKind(body?.personaKind) }
 }
 
 // ── #643: Preset Sim library ──────────────────────────────────────────────────────────────────────
@@ -7176,7 +7200,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // resolveProject (a brand-new account may have no project yet, but should still see presets).
     // The one-click "Add" then POSTs the chosen preset back through the normal create path below.
     if (req.method === "GET" && path === "/api/personas/presets") {
-      return wjson({ presets: PRESET_SIMS })
+      return wjson({ presets: PRESET_SIMS.map(pr => enrichQaPersona(pr, "qa")) })
     }
     const proj2 = await resolveProject(me2, url.searchParams.get("project"))
     if (!proj2) return wjson({ error: "No project." }, 400)
@@ -7242,6 +7266,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           insights: Array.isArray(body.insights) ? body.insights : [],
           avatar: body.avatar ? String(body.avatar) : null,
           simClass: v3.simClass, side: v3.side, core: v3.core,
+          personaKind: v3.personaKind,
           simSource,
         })
         const [saved] = (await listPersonas(wid)).filter(p => p.id === id)
@@ -7277,6 +7302,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             insights: Array.isArray(body.insights) ? body.insights : [],
             avatar: body.avatar ? String(body.avatar) : null,
             simClass, side, core,
+            personaKind: normalizePersonaKind(body?.personaKind ?? before.personaKind),
           })
           // Global Sims v1: if the body carries `isGlobal`, toggle the flag on the home-project row.
           // Only home-project owners can set this (already guarded above by listPersonas(wid) check).
@@ -7796,18 +7822,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // Non-fatal: if S3 is not configured (e.g. test/dev env), review proceeds with a
       // placeholder screenshotId so the observation pipeline still runs end-to-end.
       const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000 // private Sim screenshots: 30-day (§6)
-      let screenshotId: string
-      try {
-        const upload = await uploadScreenshotMeta(decoded.bytes, decoded.contentType, "private")
-        screenshotId = await insertScreenshot({
-          projectId, s3Key: upload.key, bucket: upload.bucket, contentType: upload.contentType,
-          acl: "private", bytes: decoded.bytes.byteLength, ownerEmail: meR, expiresAt,
-        })
-      } catch (e: any) {
-        // S3 not configured — use a placeholder so the review pipeline still executes.
-        console.warn("[review] screenshot storage skipped (no S3):", e?.message || e)
-        screenshotId = "no-s3-" + Date.now().toString(36)
-      }
+      // Evidence integrity: the id is set ONLY when the upload was verified and the ledger row written; on failure it is null and the
+      // failure is recorded on every finding (no placeholder id). The review itself still runs.
+      const storedShot = await storeSimScreenshot(decoded.bytes, decoded.contentType, projectId, meR, expiresAt)
+      if (storedShot.evidence.screenshot === "failed") console.warn("[review] screenshot evidence NOT stored:", storedShot.evidence.error)
+      const screenshotId = storedShot.screenshotId
       const benchScreenshotAt = Date.now()
 
       // Run all Sim reviews via the extracted lib function. Each Sim reacts to the page,
@@ -7818,11 +7837,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const reviews = await runSimReviews({
         projectId, urlPath, urlHost, pageUrl, imageB64: decoded.base64, mediaType: decoded.contentType,
         targetSims: activeIndexes.map((i) => targetSims[i]),
-        actorEmail: meR, screenshotId,
+        actorEmail: meR, screenshotId, evidence: storedShot.evidence,
         seenKeys: activeIndexes.map((i) => seenKeys[i]),
         seenHashes, sessionId: sessionId ?? undefined, mode,
         adhoc,  // bypass seenHashes + near-dup dedup for manual/boot deploys
-        reactFn: (sim, b64, mt, pu) => reactToPage(sim, b64, mt, pu, { email: meR, projectId }),
+        reactFn: (sim, b64, mt, pu, pm) => reactToPage(sim, b64, mt, pu, { email: meR, projectId }, pm),
         resolveCitationsFn: resolveCitations,
         // autoCopy intentionally omitted: Sim findings are triage-gated. Auto-copy fires on
         // PATCH /api/feedback/:id when a member accepts (status → open), not on Sim insert.
@@ -8216,7 +8235,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             name: p.name, role: p.role, type: p.type ?? (p.simClass === "client" ? "client" : "internal"),
             initials: String(p.initials || "").slice(0, 2).toUpperCase(), accent: p.accent || "#6366f1",
             summary: p.summary || "", insights: [], avatar: null,
-            simClass: p.simClass ?? null, side: p.side ?? null, core: p.core ?? null, simSource: "transcript",
+            simClass: p.simClass ?? null, side: p.side ?? null, core: p.core ?? null, personaKind: normalizePersonaKind(p.personaKind), simSource: "transcript",
           })
           const addOps = (p.insights || [])
             .map((ins: any, oi: number) => ({ ins, oi }))
@@ -8988,10 +9007,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const { content } = await chat(
           [{ role: "system", content: personaSiteSys(String(walkSims)) },
           { role: "user", content: "Page URL: " + walkUrl + "\n\nPage text:\n" + walkText }],
-          1600, true, { type: "persona", feature: "simwalk", ...walkAttr },
+          2600, true, { type: "persona", feature: "simwalk", ...walkAttr },
         )
         walkSpent += DEFAULT_AI_CALL_EST_USD
         castPersonas = (parseJSON(content).personas || []).slice(0, walkSims)
+        for (const cp of castPersonas) cp.core = normalizeGeneratedCore(cp?.core, { role: cp?.role, summary: cp?.summary })
       } catch (e: any) {
         console.error("[simwalk] cast generation failed:", e?.message || e)
         return json({ error: "Couldn't work out who your customers are from that page — the scan below still ran." }, 503)
@@ -15892,15 +15912,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           "Classify on two axes: simClass (\"user\" = actually OPERATES the product hands-on, feedback skews UI/interaction; " +
           "\"client\" = evaluates OVERALL outcomes and business results, feedback skews feature/workflow/strategy — only assign \"client\" when the brief clearly describes an executive, buyer, or outcome-judging stakeholder) " +
           "and side (\"external\" = customer/partner outside the team; \"internal\" = on the product/company team). " +
-          "Respond with ONLY a JSON object, no prose: {\"persona\":{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}} with exactly 3 insights; each quote is a short first-person line this persona might actually say."
+          "Respond with ONLY a JSON object, no prose: {\"persona\":{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"personaKind\":\"qa\"|\"customer\" (\"qa\" ONLY if this persona IS a QA / visual-testing reviewer inspecting a UI for defects; every customer, buyer, end-user or stakeholder is \"customer\"),\"core\":{\"goals\":string[1-4 jobs-to-be-done],\"expertise\":string,\"temperament\":string,\"voice\":string(short first-person sample),\"watchFor\":string[2-5 concrete things this persona checks or validates on ANY page, e.g. form validation, labels, spelling]},\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}} with exactly 3 insights; each quote is a short first-person line this persona might actually say."
         const meB = (await sessionEmail(req)) || (await bearerEmail(req))
         if (aiDemoLimited(meB, req, server)) return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "3600" })
-        const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Brief: " + brief + (chosenName ? "\nName the Sim exactly: " + chosenName : "") }], 1200, true, { type: "persona", email: meB, projectId: meB ? null : MARKETING_PRESIGNUP_PROJECT_ID })
+        const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Brief: " + brief + (chosenName ? "\nName the Sim exactly: " + chosenName : "") }], 2000, true, { type: "persona", email: meB, projectId: meB ? null : MARKETING_PRESIGNUP_PROJECT_ID })
         const data = parseJSON(content)
         // Ensure simClass is always set: default to "user" for described Sims when the model omits it.
         if (data.persona) {
           if (!SIM_CLASS_ENUM.has(String(data.persona.simClass))) data.persona.simClass = "user"
           if (!SIDE_ENUM.has(String(data.persona.side))) data.persona.side = "external"
+          data.persona.core = normalizeGeneratedCore(data.persona.core, { role: data.persona.role, summary: data.persona.summary })
+          data.persona = enrichQaPersona(data.persona)
           if (chosenName) {
             data.persona.name = chosenName
             const w = chosenName.split(" ").filter(Boolean)
@@ -15960,7 +15982,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // if the retry also fails, return a friendly 422 instead of paging P1 with a 500.
         let data: any
         let usage: { input_tokens?: number; output_tokens?: number }
-        const first = await chat([{ role: "system", content: sys }, { role: "user", content: userMsg }], 1600, true, { type: "persona", ...personaAttr })
+        const first = await chat([{ role: "system", content: sys }, { role: "user", content: userMsg }], 2600, true, { type: "persona", ...personaAttr })
         usage = first.usage
         try {
           data = parseJSON(first.content)
@@ -15982,7 +16004,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!SIDE_ENUM.has(String(p?.side))) p.side = "external"
           // desc: a short one-line bio surfaced on the onboarding persona cards. Bounded + ASCII-safe.
           p.desc = String(p?.desc || "").replace(/\s+/g, " ").trim().slice(0, 90)
-          return p
+          p.core = normalizeGeneratedCore(p?.core, { role: p?.role, summary: p?.summary })
+          return enrichQaPersona(p)
         })
         return json({ personas, usage })
       } catch (e: any) { return json(oops(e, "create"), 500) }
@@ -16076,21 +16099,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const { urlHost, urlPath } = splitUrl(pvUrl)
 
           // Store the screenshot (non-fatal if S3 not configured).
-          let screenshotId: string
-          try {
-            const shotBytes = Buffer.from(shot.imageB64, "base64")
-            const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000
-            const upload = await uploadScreenshotMeta(shotBytes, shot.mediaType, "private")
-            screenshotId = await insertScreenshot({
-              projectId: authenticatedProjectId, s3Key: upload.key, bucket: upload.bucket,
-              contentType: upload.contentType, acl: "private",
-              bytes: shotBytes.byteLength,
-              ownerEmail: mePv, expiresAt,
-            })
-          } catch (e: any) {
-            console.warn("[sim-preview] screenshot storage skipped (no S3):", e?.message || e)
-            screenshotId = "no-s3-" + Date.now().toString(36)
-          }
+          // Evidence integrity: verified id or null + a recorded failure (never a placeholder id).
+          const storedShot = await storeSimScreenshot(Buffer.from(shot.imageB64, "base64"), shot.mediaType, authenticatedProjectId, mePv, Date.now() + 30 * 24 * 60 * 60 * 1000)
+          if (storedShot.evidence.screenshot === "failed") console.warn("[sim-preview] screenshot evidence NOT stored:", storedShot.evidence.error)
+          const screenshotId = storedShot.screenshotId
 
           // Run the chosen Sims (all of them unless the picker selected a subset) through the SAME pipeline as /api/sim/review.
           // adhoc=true: bypass seenHashes + near-dup dedup so all current Sim reactions surface.
@@ -16099,10 +16111,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             projectId: authenticatedProjectId, urlPath, urlHost, pageUrl: pvUrl,
             imageB64: shot.imageB64, mediaType: shot.mediaType,
             targetSims: pvSelectedSims,
-            actorEmail: mePv, screenshotId,
+            actorEmail: mePv, screenshotId, evidence: storedShot.evidence,
             seenKeys, seenHashes: new Set(), sessionId: undefined,
             mode: "all", adhoc: true,
-            reactFn: (sim, b64, mt, pu) => reactToPage(sim, b64, mt, pu, { email: mePv, projectId: authenticatedProjectId }),
+            reactFn: (sim, b64, mt, pu, pm) => reactToPage(sim, b64, mt, pu, { email: mePv, projectId: authenticatedProjectId }, pm),
+            pageMeta: sanitizePageMeta((shot as any).pageMeta),
             resolveCitationsFn: resolveCitations,
             // autoCopy intentionally omitted: triage-gated (fires on PATCH status→open, not on insert).
             markSeen: () => { },  // no seen-key bookkeeping for one-shot URL previews
@@ -16246,17 +16259,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!tickProjects.length) return json({ error: "No projects found for this account." }, 403)
 
         const storeScreenshot = async (bytes: Buffer, mediaType: string, projectId: string) => {
-          const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000
-          const upload = await uploadScreenshotMeta(bytes, mediaType, "private")
-          return insertScreenshot({
-            projectId, s3Key: upload.key, bucket: upload.bucket,
-            contentType: upload.contentType, acl: "private",
-            bytes: bytes.byteLength, ownerEmail: meTick, expiresAt,
-          })
+          const st = await storeSimScreenshot(bytes, mediaType, projectId, meTick, Date.now() + 30 * 24 * 60 * 60 * 1000)
+          if (!st.screenshotId) throw new Error(st.evidence.error || "screenshot not stored")  // the scheduler records this as the evidence failure
+          return st.screenshotId
         }
 
         const deps = buildProductionDeps(
-          (sim, b64, mt, pu) => reactToPage(sim, b64, mt, pu, { email: meTick }),
+          (sim, b64, mt, pu, pm) => reactToPage(sim, b64, mt, pu, { email: meTick }, pm),
           resolveCitations,
           db ?? null,
           storeScreenshot,

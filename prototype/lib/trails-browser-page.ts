@@ -264,6 +264,50 @@ function stableSelectorBody(el: Element): string | null {
   if (tag === "input") { const ty = el.getAttribute("type"); if (ty) { const s = `input[type="${esc(ty)}"]`; if (uniq(s)) return s } }
   return null
 }
+
+// READ-ONLY element map for Sim screenshot review (Rule 2: accurate UI identification). Runs in the page context right after the
+// screenshot is taken: it only READS layout and text — no clicks, typing, scrolling, navigation or form access. Input VALUES are never
+// read (only labels / placeholders / aria-labels). Boxes are normalised 0..1 against the same viewport (or full document) the screenshot shows.
+function pageElementsBody(fullPage: boolean): any {
+  const W = fullPage ? Math.max(document.documentElement.scrollWidth, 1) : Math.max(window.innerWidth, 1)
+  const H = fullPage ? Math.max(document.documentElement.scrollHeight, 1) : Math.max(window.innerHeight, 1)
+  const offX = fullPage ? window.scrollX : 0, offY = fullPage ? window.scrollY : 0
+  const INTERACTIVE = /^(A|BUTTON|INPUT|SELECT|TEXTAREA|SUMMARY|LABEL)$/
+  const out: any[] = []
+  let heading = ""
+  const all = document.querySelectorAll("body *")
+  const limit = Math.min(all.length, 4000)
+  const clean = (t: string | null | undefined, c: number) => (t || "").replace(/\s+/g, " ").trim().slice(0, c)
+  for (let i = 0; i < limit && out.length < 160; i++) {
+    const el = all[i] as HTMLElement
+    const tag = el.tagName
+    if (/^(SCRIPT|STYLE|NOSCRIPT|META|LINK|PATH|BR|HEAD)$/.test(tag)) continue
+    const isHeading = /^H[1-6]$/.test(tag) || el.getAttribute("role") === "heading"
+    const role = el.getAttribute("role") || ""
+    const interactive = INTERACTIVE.test(tag) || !!role
+    let own = ""
+    for (const n of Array.from(el.childNodes)) if (n.nodeType === 3) own += " " + (n.textContent || "")
+    own = clean(own, 90)
+    let text = interactive || isHeading ? clean(el.innerText, 90) : own
+    const name = clean(el.getAttribute("aria-label") || (tag === "IMG" ? el.getAttribute("alt") : "") || el.getAttribute("title") || (tag === "INPUT" || tag === "TEXTAREA" ? el.getAttribute("placeholder") : ""), 90)
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") text = ""
+    if (isHeading && text) heading = text
+    if (!text && !name && tag !== "IMG" && !/^(INPUT|SELECT|TEXTAREA)$/.test(tag)) continue
+    const cs = getComputedStyle(el)
+    if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity || "1") === 0) continue
+    const r = el.getBoundingClientRect()
+    if (r.width < 2 || r.height < 2) continue
+    const x0 = (r.left + offX) / W, y0 = (r.top + offY) / H, x1 = (r.right + offX) / W, y1 = (r.bottom + offY) / H
+    if (!fullPage && (x1 <= 0 || y1 <= 0 || x0 >= 1 || y0 >= 1)) continue
+    const cx = Math.max(0, x0), cy = Math.max(0, y0), cw = Math.min(1, x1) - cx, ch = Math.min(1, y1) - cy
+    if (cw <= 0 || ch <= 0) continue
+    const id = el.getAttribute("id") || ""
+    const tid = el.getAttribute("data-testid") || ""
+    const selector = id && /^[A-Za-z][\w-]*$/.test(id) ? "#" + id : tid && /^[\w .:-]{1,60}$/.test(tid) ? '[data-testid="' + tid + '"]' : ""
+    out.push({ tag: tag.toLowerCase(), role, text, name, selector, heading: isHeading ? "" : heading, box: { x: cx, y: cy, w: cw, h: ch } })
+  }
+  return { title: clean(document.title, 120), elements: out }
+}
 /* eslint-enable */
 
 const cap = (s: string, c: number) => (s.length > c ? s.slice(0, c - 20) + "\n…[snapshot truncated]" : s)
@@ -281,6 +325,8 @@ export interface BrowserPage {
    */
   screenshotJpeg(quality: number, timeoutMs: number, opts?: { fullPage?: boolean }): Promise<string>
   krefSnapshot(capChars?: number): Promise<string>
+  /** READ-ONLY element map for Sim screenshot review (no interaction). Optional: only the real drivers implement it. */
+  pageElements?(opts?: { fullPage?: boolean }): Promise<unknown>
   count(selector: string): Promise<number>
   fingerprint(selector: string): Promise<Fingerprint>
   stableSelector(selector: string): Promise<string | null>
@@ -376,6 +422,7 @@ class PlaywrightPage implements BrowserPage {
   async goto(url: string, timeoutMs: number) { await this.page.goto(url, { timeout: timeoutMs, waitUntil: "domcontentloaded" }) }
   async screenshotJpeg(quality: number, timeoutMs: number, opts?: { fullPage?: boolean }) { return (await this.page.screenshot({ type: "jpeg", quality, timeout: timeoutMs, fullPage: !!opts?.fullPage })).toString("base64") }
   async krefSnapshot(capChars = KREF_SNAPSHOT_CAP) { return cap(await this.page.evaluate(krefSnapshotBody), capChars) }
+  async pageElements(opts?: { fullPage?: boolean }) { return await this.page.evaluate(pageElementsBody, !!opts?.fullPage) }
   async count(selector: string) { return await this.page.locator(selector).count() }
   async fingerprint(selector: string) { return await this.page.locator(selector).first().evaluate(fingerprintBody) }
   async stableSelector(selector: string) { try { return await this.page.locator(selector).first().evaluate(stableSelectorBody) } catch { return null } }
@@ -535,6 +582,7 @@ class PuppeteerPage implements BrowserPage {
   async goto(url: string, timeoutMs: number) { await this.page.goto(url, { timeout: timeoutMs, waitUntil: "domcontentloaded" }) }
   async screenshotJpeg(quality: number, _timeoutMs: number, opts?: { fullPage?: boolean }) { return (await this.page.screenshot({ type: "jpeg", quality, encoding: "base64", fullPage: !!opts?.fullPage })) as string }
   async krefSnapshot(capChars = KREF_SNAPSHOT_CAP) { return cap(await this.page.evaluate(krefSnapshotBody), capChars) }
+  async pageElements(opts?: { fullPage?: boolean }) { return await this.page.evaluate(pageElementsBody, !!opts?.fullPage) }
   async count(selector: string) { return await this.page.evaluate((s: string) => document.querySelectorAll(s).length, selector) }
   async fingerprint(selector: string) { return await this.page.$eval(selector, fingerprintBody) }
   async stableSelector(selector: string) { try { return await this.page.$eval(selector, stableSelectorBody) } catch { return null } }

@@ -35456,6 +35456,12 @@
               const first = esc(String(s.name || "Sim").split(" ")[0]);
               const cls = simClassOf(s), side = sideOf(s);
               const core = s.core || {};
+              // QA Sims only: the mandatory screenshot-inspection rules, read-only, shown in the preview before the user confirms.
+              const valRules = (s.personaKind === "qa" && s.validations && Array.isArray(s.validations.rules)) ? s.validations.rules : [];
+              const validationsHtml = valRules.length
+                ? `<div class="sm-core sm-validations" data-testid="sim-validations"><div class="sm-core-row"><span class="sm-core-lb" style="min-width:auto"><b>SIM Validations</b> &middot; always checked &middot; screenshot only</span></div>`
+                  + valRules.map(r => `<div class="sm-core-row"><span class="sm-core-lb">${esc(r.title)}</span><span class="sm-core-v">${esc((r.checks || []).slice(0, 3).join("; "))}&hellip;</span></div>`).join("") + `</div>`
+                : "";
               const goals = Array.isArray(core.goals) ? core.goals.filter(Boolean).slice(0, 3).join(" · ") : "";
               const watch = (Array.isArray(core.watchFor) ? core.watchFor : []).filter(Boolean).slice(0, 4);
               const row = (icon, label, val) => val ? `<div class="sm-core-row"><span class="sm-core-ic">${kicon(icon, { label: label, size: 13 })}</span><span class="sm-core-lb">${esc(label)}</span><span class="sm-core-vl">${esc(val)}</span></div>` : "";
@@ -35486,7 +35492,7 @@
           </div>
         </div>
       </div>
-      ${coreHtml}
+      ${coreHtml}${validationsHtml}
       <div class="sm-ins">${ins}</div>
       <div class="sm-class-pick"><span class="sm-class-pick-lbl">Type:</span><button class="sm-class-btn user${cls === "user" ? " on" : ""}" data-class-pick="${idx}" data-class="user" title="User — operates the product hands-on; reacts to UI &amp; interaction">User</button><button class="sm-class-btn client${cls === "client" ? " on" : ""}" data-class-pick="${idx}" data-class="client" title="Client — judges outcomes &amp; strategy, not individual buttons">Client</button></div>
       <div class="sm-foot"><button class="btn btn-indigo btn-sm" data-add="${idx}">＋ Add ${first}</button>
@@ -35825,7 +35831,8 @@
                   simClass: chosenClass, side: sideOf(s), core: s.core || null,
                   initials: s.initials || inits(s.name), accent: safeAccent(s.accent, col(s.name || "x")), summary: s.summary || "",
                   insights: (Array.isArray(s.insights) ? s.insights : []).map(i => ({ ...i, scope: i.scope || null, portability: i.portability || null })),
-                  simSource: lastSimSource || null
+                  simSource: lastSimSource || null,
+                  personaKind: s.personaKind === "qa" ? "qa" : "customer"
                 });
                 simAdded = true;
                 // JTBD 3.10: POST /api/personas returns {existing:true} when this Sim (normalized name+role)
