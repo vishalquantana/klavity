@@ -363,13 +363,9 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
             catch (e: any) { console.warn("[sim-review] recurrence-memory skipped:", e?.message || e) }
           }
         } else {
-          // ACCEPTED EXCEPTION (founder decision, KLA #544 round-4, 2026-08-22): Sim-generated
-          // findings auto-surface to the board — a model-classified `bug.priority` of high/urgent
-          // seeds status='open' via initialFeedbackStatus, without per-finding human triage. This is
-          // DELIBERATE (surfacing findings is the Sim/AutoSim product value; a member triggered the
-          // review intentionally) and is one of three approved exceptions to the untrusted-intake
-          // triage invariant — the others are connector-autofile and /api/errors. Do NOT add
-          // forceNewStatus here to "fix" it; see [[klavity_anon_intake_invariant]].
+          // Sim findings stay in the Sim reports ONLY — including high/urgent. They are saved with status 'new' (forceNewStatus: no
+          // priority-based auto-open onto the Tickets board) and are never auto-copied to a tracker connector; a person promotes a
+          // finding to a ticket explicitly. (Supersedes the earlier #544 round-4 'Sim findings auto-surface' exception.)
           feedbackId = await insertFeedback({
             projectId, simId: sim.id, actorEmail, urlHost, urlPath,
             observation: obsText || null, sentiment: r?.sentiment ?? null,
@@ -378,9 +374,8 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
             sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
             issueKey: issueKeyForFeedback(projectId, urlPath, citation.issueType, citation.citedTraitIds),
             reportEnv: reportEnv ?? null,
-            clientContext: simContext,
+            clientContext: simContext, forceNewStatus: true,
           })
-          if (feedbackId) autoCopy?.(feedbackId, projectId, actorEmail)
           // Feed into expectations spine.
           if (feedbackId && db) {
             await ingestSnapOrSim(db, {

@@ -5377,7 +5377,7 @@ export async function dashboardCounts(projectId: string): Promise<{ feedback: nu
     q("SELECT COUNT(*) AS n FROM activity_events WHERE project_id=?"),
     // KD-265: the sidebar "Tickets" badge = the tickets waiting on someone: To Do ('new'), Open and In Progress. Anything further
     // along (blocked, ready for deployment, deployed, QA review, done) or dismissed is not counted; merged-away rows never are.
-    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status IN ('new','open','in_progress')"),
+    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status IN ('new','open','in_progress') AND NOT (status = 'new' AND sim_id IS NOT NULL)"),
   ])
   const num = (s: PromiseSettledResult<any>): number | null =>
     s.status === "fulfilled" ? Number((s.value.rows[0] as any).n) : null
@@ -8869,6 +8869,9 @@ export async function listTicketsPaginated(
   // (both share `where`).
   conditions.push("f.merged_into IS NULL")
 
+  // A Sim report still awaiting triage (status 'new', sim_id set) lives in Sim Reports only — it reaches the board only after a person
+  // accepts it (status → open). The board asks for 'new' (TO DO) explicitly, so this must hold even when statuses includes 'new'.
+  conditions.push("NOT (f.status = 'new' AND f.sim_id IS NOT NULL)")
   // Exclude 'new' (un-triaged) by default
   const statuses = (opts.statuses ?? []).filter(Boolean)
   if (statuses.length) {
