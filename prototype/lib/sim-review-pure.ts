@@ -164,12 +164,9 @@ export interface SimObservation {
   feedbackId?: string
   deduped?: boolean             // true when matched an existing feedback row
   recurrence?: any | null       // RecurrenceMemory (KLA-2) when deduped = true
-  // Visual-QA fields (QA Sims only; ADDITIVE + OPTIONAL): the validation category, expected vs actual appearance, and whether the
-  // screenshot directly shows the defect (Confirmed) or it is only suspected (Potential).
-  category?: string | null
-  expected?: string | null
-  actual?: string | null
-  confidence?: "Confirmed" | "Potential" | null
+  // Rule 2 (ADDITIVE + OPTIONAL): how reliably the affected UI was identified. "high" = verified against captured page metadata;
+  // "medium"/"low" = uncertain — target/region are then hints only, never a confirmed exact element.
+  identification?: { confidence: "high" | "medium" | "low"; basis: "page-metadata" | "screenshot-only"; uncertain: boolean; section?: string } | null
 }
 
 export interface SimReview {
@@ -178,8 +175,6 @@ export interface SimReview {
   initials?: string | null
   accent?: string | null
   observations: SimObservation[]
-  // QA Sims only: per-run visual QA summary (7 categories passed / issues / untested + counts). Absent for every other Sim.
-  visualQa?: import("./sim-validations").VisualQaSummary
 }
 
 // ── hashObservation ──────────────────────────────────────────────────────────

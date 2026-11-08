@@ -30,6 +30,7 @@ import { captureSimRunCompleted, planTierForProject } from "./posthog"
 import { runSimReviews, splitUrl, buildSimRunSummary } from "./sim-review"
 import { evidenceForId, type EvidenceRecord } from "./sim-evidence"
 import { authedScreenshotUrl } from "./sim-preview"
+import { sanitizePageMeta } from "./sim-ui-identity"
 import { safeFetch } from "./safe-fetch"
 import { projectEntitlement } from "./entitlement"
 
@@ -40,7 +41,7 @@ export interface ScheduleRunDeps {
    * production impl can log the project's configured AutoSim Test Account in first (KLA-264 / JTBD
    * 3.12) — letting scheduled runs review pinned behind-login URLs (e.g. the client app dashboard).
    */
-  takeScreenshot: (url: string, projectId: string) => Promise<{ imageB64: string; mediaType: string }>
+  takeScreenshot: (url: string, projectId: string) => Promise<{ imageB64: string; mediaType: string; pageMeta?: unknown }>
   /** React fn forwarded to runSimReviews. */
   reactFn: Parameters<typeof runSimReviews>[0]["reactFn"]
   /** Citation resolver forwarded to runSimReviews. */
@@ -102,7 +103,7 @@ async function runOneSchedule(
     }
 
     // Screenshot the target URL (authed via the project's Test Account when configured — KLA-264).
-    let shot: { imageB64: string; mediaType: string }
+    let shot: { imageB64: string; mediaType: string; pageMeta?: unknown }
     try {
       shot = await deps.takeScreenshot(schedule.targetUrl, schedule.projectId)
     } catch (e: any) {
@@ -139,6 +140,7 @@ async function runOneSchedule(
       targetSims: allSims,
       actorEmail,
       screenshotId, evidence,
+      pageMeta: sanitizePageMeta(shot.pageMeta),
       seenKeys,
       seenHashes: new Set(),
       sessionId: undefined,

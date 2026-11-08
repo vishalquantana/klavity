@@ -64,6 +64,7 @@ import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCo
 import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, objectExists, type UploadedScreenshot } from "./lib/s3"
 import { storeVerifiedScreenshot, type StoredScreenshot } from "./lib/sim-evidence"
 import { enrichQaPersona, normalizePersonaKind, isQaPersona, qaRunPrompt, type PersonaKind } from "./lib/sim-validations"
+import { elementListForPrompt, sanitizePageMeta, type PageMeta } from "./lib/sim-ui-identity"
 import { phaseTimer } from "./lib/phase-timer"
 import { readReplayEvents, replayEvidencePresent } from "./lib/replay-intake"
 import { createLimiter, mapBounded, uploadConcurrency } from "./lib/bounded-concurrency"
@@ -651,7 +652,9 @@ const REACT_SYS =
   "  2. \"target\": a locator object — set \"text\" to the EXACT visible text on or immediately labelling the element, " +
   "copied VERBATIM character-for-character from the screenshot (this is the most reliable anchor, always provide it for " +
   "element-level reactions); set \"selector\" to a short CSS selector only if you can confidently infer one (else omit); " +
-  "set \"role\" and \"name\" to the element's ARIA role and accessible name when evident (else omit).\n" +
+  "set \"role\" and \"name\" to the element's ARIA role and accessible name when evident (else omit). " +
+  "When a PAGE ELEMENTS list is provided, set \"elementId\" to the id of the element that ITSELF is the subject of the reaction, copied exactly — never a neighbouring or " +
+  "containing element; use null if none of them is. Your region and text must describe that same element.\n" +
   "Set region AND target to null ONLY for genuinely page-level/outcome-level observations where no single element is the " +
   "focus (clients usually null). Do not invent coordinates or text you cannot actually see. " +
   "suggestedBug is filled only when it's a real problem worth filing to an issue tracker, else null; set its \"priority\" " +
@@ -668,7 +671,7 @@ const REACT_SYS =
   "Respond with ONLY a JSON object, no prose, in exactly this shape:\n" +
   '{"reactions":[{"observation":string(<=240 chars, first person),"sentiment":"frustrated"|"confused"|"satisfied"|"delighted"|"neutral",' +
   '"emoji":string,"targetDescription":string,' +
-  '"target":{"text":string,"selector":string,"role":string,"name":string}|null,' +
+  '"target":{"elementId":string|null,"text":string,"selector":string,"role":string,"name":string}|null,' +
   '"region":{"x":number,"y":number,"w":number,"h":number}|null,' +
   '"citedTraitIds":string[],' +
   '"suggestedBug":{"title":string,"body":string,"priority":"urgent"|"high"|"medium"|"low"}|null}]}'
@@ -1104,21 +1107,24 @@ function storeSimScreenshot(bytes: Uint8Array, contentType: string, projectId: s
   }, bytes, contentType)
 }
 
-async function reactToPage(persona: any, imageB64: string, mediaType: string, pageUrl: string, ctx?: { email?: string | null; projectId?: string | null }) {
+async function reactToPage(persona: any, imageB64: string, mediaType: string, pageUrl: string, ctx?: { email?: string | null; projectId?: string | null }, pageMeta?: PageMeta | null) {
   // H4/LLM01: the persona is our own trusted data, but the page URL and the screenshot itself are
   // attacker-influenceable — delimit the URL and instruct the model to ignore instructions in page data.
   // Current-date awareness: without this the model assumes its training-era "current year" (e.g. 2024)
   // and wrongly flags valid future-looking dates on the page as errors (a 2026 "Founded Year" reported as
   // "impossible, it's 2024"). Stamp today's real date at call time so date reasoning is grounded in now.
   const today = new Date().toISOString().slice(0, 10)
-  // QA Sims only: the PERSISTED visual-QA rules (persona.validations, loaded with the Sim) are appended to the prompt. Non-QA Sims get
-  // exactly the original prompt. A run feeds one screenshot, so viewportCount is 1 and responsive stays Untested.
-  const qaAddendum = isQaPersona(persona) ? qaRunPrompt(persona, { viewportCount: 1 }) : ""
+  // Rule 2: when the caller captured a read-only element map with the screenshot, show it to EVERY Sim so it picks a real element
+  // instead of guessing from pixels. runSimReviews verifies the answer against the same map before recording it.
+  const elementList = elementListForPrompt(pageMeta)
+  // QA Sims only: the PERSISTED QA rules (persona.validations, loaded with the Sim) are appended to the prompt. Non-QA Sims get the
+  // original prompt (plus the element list when one exists).
+  const qaAddendum = isQaPersona(persona) ? qaRunPrompt(persona, { hasElements: !!elementList }) : ""
   const { content, usage } = await chat([
     { role: "system", content: REACT_SYS + qaAddendum + UNTRUSTED_GUARD },
     {
       role: "user", content: [
-        { type: "text", text: `Today's date is ${today}. Treat this as the current date and year when judging whether any dates shown on the page are valid, impossible, or out of range — do NOT assume an earlier year.\n\n` + "You are this persona:\n" + JSON.stringify(persona, null, 2) + `\n\nReact to this screenshot. The page URL (untrusted) is:\n` + wrapUntrusted(pageUrl || "(unknown URL)") },
+        { type: "text", text: `Today's date is ${today}. Treat this as the current date and year when judging whether any dates shown on the page are valid, impossible, or out of range — do NOT assume an earlier year.\n\n` + "You are this persona:\n" + JSON.stringify(persona, null, 2) + `\n\nReact to this screenshot. The page URL (untrusted) is:\n` + wrapUntrusted(pageUrl || "(unknown URL)") + (elementList ? "\n\n" + wrapUntrusted(elementList) : "") },
         { type: "image_url", image_url: { url: `data:${mediaType};base64,${imageB64}` } },
       ]
     },
@@ -7794,7 +7800,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         seenKeys: activeIndexes.map((i) => seenKeys[i]),
         seenHashes, sessionId: sessionId ?? undefined, mode,
         adhoc,  // bypass seenHashes + near-dup dedup for manual/boot deploys
-        reactFn: (sim, b64, mt, pu) => reactToPage(sim, b64, mt, pu, { email: meR, projectId }),
+        reactFn: (sim, b64, mt, pu, pm) => reactToPage(sim, b64, mt, pu, { email: meR, projectId }, pm),
         resolveCitationsFn: resolveCitations,
         // autoCopy intentionally omitted: Sim findings are triage-gated. Auto-copy fires on
         // PATCH /api/feedback/:id when a member accepts (status → open), not on Sim insert.
@@ -16067,7 +16073,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             actorEmail: mePv, screenshotId, evidence: storedShot.evidence,
             seenKeys, seenHashes: new Set(), sessionId: undefined,
             mode: "all", adhoc: true,
-            reactFn: (sim, b64, mt, pu) => reactToPage(sim, b64, mt, pu, { email: mePv, projectId: authenticatedProjectId }),
+            reactFn: (sim, b64, mt, pu, pm) => reactToPage(sim, b64, mt, pu, { email: mePv, projectId: authenticatedProjectId }, pm),
+            pageMeta: sanitizePageMeta((shot as any).pageMeta),
             resolveCitationsFn: resolveCitations,
             // autoCopy intentionally omitted: triage-gated (fires on PATCH status→open, not on insert).
             markSeen: () => { },  // no seen-key bookkeeping for one-shot URL previews
@@ -16217,7 +16224,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
 
         const deps = buildProductionDeps(
-          (sim, b64, mt, pu) => reactToPage(sim, b64, mt, pu, { email: meTick }),
+          (sim, b64, mt, pu, pm) => reactToPage(sim, b64, mt, pu, { email: meTick }, pm),
           resolveCitations,
           db ?? null,
           storeScreenshot,

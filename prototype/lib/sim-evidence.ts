@@ -10,6 +10,7 @@
 //     browser-driven reproduction (Phase 2) may ever set those differently.
 import { lexicalSim } from "./dedup"
 import type { ObsTarget } from "./sim-review-pure"
+import type { UiIdentity } from "./sim-ui-identity"
 
 // ── Evidence integrity ────────────────────────────────────────────────────────
 
@@ -98,7 +99,7 @@ const CATEGORY_RULES: Array<[QaCategory, RegExp]> = [
   ["form-validation", /\b(validation|required field|invalid|input field|form field|placeholder|password field|email field|submit)\b/i],
   ["navigation", /\b(navigation|nav ?bar|menu|breadcrumb|redirect|link (goes|leads|points)|back button|tab(s)?\b)/i],
   ["loading", /\b(loading|spinner|skeleton|stuck|hang|infinite|unresponsive|slow)\b/i],
-  ["responsive", /\b(responsive|mobile|viewport|overflow|cut ?off|clipp?ed|truncat|overlap|wrap|horizontal scroll)\b/i],
+  ["responsive", /\b(responsive|mobile|viewport|overflow\w*|spill\w*|cut ?off|clipp\w*|truncat\w*|overlap\w*|wrap\w*|horizontal scroll)\b/i],
   ["functional", /\b(button|click|does ?n.t work|not work|disabled|broken|fail|can.?t|cannot|no (response|feedback))\b/i],
   ["visual-consistency", /\b(align|spacing|padding|margin|font|color|colour|layout|inconsistent|misalign|style|icon)\b/i],
 ]
@@ -120,15 +121,19 @@ export type SimReviewContext = {
     pageUrl: string | null
     urlHost: string | null
     urlPath: string | null
+    /** The exact component — ONLY when identification is high (verified against the captured page metadata). Never a guess. */
     component: { kind: ComponentKind; text?: string; selector?: string; role?: string; name?: string } | null
+    /** Rule 2: how the affected UI was identified and how much to trust it. */
+    identification: { confidence: "high" | "medium" | "low"; basis: "page-metadata" | "screenshot-only"; uncertain: boolean; section?: string; elementId?: string; pageLevel?: boolean; reasons: string[] }
+    /** Reproduction is AutoSIM's job; a Sim finding never claims it. */
+    reproduced: false
+    reproductionSteps: string[] | null
     region: { x: number; y: number; w: number; h: number } | null
     category: QaCategory
     uiState: string
     evidence: EvidenceRecord
-    /** Run-time check of the "Accurate UI Identification & Issue Traceability" validation. Flagged, never dropped. */
+    /** Flag (never a drop) for findings whose affected UI could not be pinned down. */
     traceability: { ok: boolean; missing: string[] }
-    /** QA Sims only (see lib/sim-validations.ts). */
-    visual?: { category: string | null; expected: string | null; actual: string | null; confidence: string | null }
   }
 }
 
@@ -144,15 +149,26 @@ export function traceabilityGaps(a: { pageUrl?: string | null; target?: ObsTarge
   return missing
 }
 
+/** Gaps for an identity-resolved finding: the page URL, and (for an element-level claim) an identification better than low. */
+function identityGaps(pageUrl: string | null | undefined, id: UiIdentity): string[] {
+  const missing: string[] = []
+  if (!pageUrl) missing.push("page URL")
+  if (!id.pageLevel && id.confidence === "low") missing.push("verified component")
+  return missing
+}
+
 export function buildSimReviewContext(a: {
   pageUrl?: string | null; urlHost?: string | null; urlPath?: string | null
   target?: ObsTarget | null; region?: { x: number; y: number; w: number; h: number } | null
   observation: string; evidence: EvidenceRecord
-  /** QA Sims: the model's validation category / expected / actual / confidence, recorded on the finding. */
-  visual?: { category?: string | null; expected?: string | null; actual?: string | null; confidence?: string | null } | null
+  /** Rule 2 result. When given, the component/region/confidence come from it (verified), not from the raw model output. */
+  identity?: UiIdentity | null
 }): SimReviewContext {
-  const kind = componentKind(a.target)
-  const t = a.target
+  const id = a.identity ?? null
+  // Exact component ONLY when identification is high. Medium/low never present a guess as a confirmed element.
+  const t = id ? (id.confidence === "high" ? id.target : null) : a.target
+  const kind = componentKind(t)
+  const reg = id ? id.region : a.region
   return {
     simReview: {
       basis: "screenshot",
@@ -161,13 +177,16 @@ export function buildSimReviewContext(a: {
       pageUrl: a.pageUrl ?? null,
       urlHost: a.urlHost ?? null,
       urlPath: a.urlPath ?? null,
+      identification: id
+        ? { confidence: id.confidence, basis: id.basis, uncertain: id.uncertain, ...(id.section ? { section: id.section } : {}), ...(id.elementId ? { elementId: id.elementId } : {}), ...(id.pageLevel ? { pageLevel: true } : {}), reasons: id.reasons }
+        : { confidence: "low", basis: "screenshot-only", uncertain: true, reasons: ["identification not verified"] },
+      reproduced: false, reproductionSteps: null,
       component: t && kind ? { kind, ...(t.text ? { text: t.text } : {}), ...(t.selector ? { selector: t.selector } : {}), ...(t.role ? { role: t.role } : {}), ...(t.name ? { name: t.name } : {}) } : null,
-      region: a.region ?? null,
+      region: reg ?? null,
       category: inferQaCategory(a.observation),
-      ...(a.visual ? { visual: { category: a.visual.category ?? null, expected: a.visual.expected ?? null, actual: a.visual.actual ?? null, confidence: a.visual.confidence ?? null } } : {}),
       uiState: "Page as rendered in one captured screenshot; no clicks, typing, resizing or navigation were performed.",
       evidence: a.evidence,
-      traceability: (() => { const missing = traceabilityGaps({ pageUrl: a.pageUrl, target: a.target, region: a.region }); return { ok: missing.length === 0, missing } })(),
+      traceability: (() => { const missing = id ? identityGaps(a.pageUrl, id) : traceabilityGaps({ pageUrl: a.pageUrl, target: a.target, region: a.region }); return { ok: missing.length === 0, missing } })(),
     },
   }
 }

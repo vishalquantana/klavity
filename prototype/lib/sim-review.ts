@@ -20,7 +20,7 @@ import { isBaselineQa, isAllClearObservation } from "./baseline-qa"
 import { recurrenceFromEvents, type Trait, type TraitEventRow } from "./provenance"
 import { ingestSnapOrSim } from "./expectations-ingest"
 import { buildRecurrenceMemory } from "./recurrence-memory"
-import { isQaPersona, isCategoryId, normalizeConfidence, buildVisualQaSummary } from "./sim-validations"
+import { resolveUiIdentity, type PageMeta } from "./sim-ui-identity"
 import { buildSimReviewContext, evidenceForId, findSameDefect, categoriesConflict, type EvidenceRecord } from "./sim-evidence"
 
 // Re-export everything from the pure module so callers only need one import path.
@@ -40,6 +40,8 @@ export type SimReactFn = (
   imageB64: string,
   mediaType: string,
   pageUrl: string,
+  /** Read-only element map captured with the screenshot (Rule 2). Absent when the caller only has a screenshot. */
+  pageMeta?: PageMeta | null,
 ) => Promise<{ data: any }>
 
 export type ResolveCitationsFn = (
@@ -68,6 +70,8 @@ export interface SimRunOptions {
   screenshotId: string | null
   /** How the screenshot was collected (captured / failed + reason). Derived from screenshotId when omitted. */
   evidence?: EvidenceRecord
+  /** Read-only element map captured with the same page load as the screenshot; lets UI identification be verified. */
+  pageMeta?: PageMeta | null
   seenKeys: string[]
   // CLIENT-SIDE dedup: exact hashes the client has already displayed this session.
   seenHashes?: Set<string>
@@ -155,7 +159,6 @@ type SimPhase1 = {
   simWithMemory: any
   citePre: { traits: Trait[]; eventsByTrait: Map<string, TraitEventRow[]> } | undefined
   rawReactions: any[]
-  inspected: unknown   // QA Sims: category ids the Sim says it examined (feeds the visual QA summary)
 } | null
 
 export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
@@ -163,7 +166,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
     projectId, urlPath, urlHost, pageUrl, imageB64, mediaType,
     targetSims, actorEmail, screenshotId, seenHashes = new Set(),
     sessionId, mode = "all", adhoc = false,
-    reactFn, resolveCitationsFn, autoCopy, markSeen, db, reportEnv,
+    reactFn, resolveCitationsFn, autoCopy, markSeen, db, reportEnv, pageMeta,
   } = opts
 
   const out: SimReview[] = []
@@ -242,11 +245,9 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
 
     // LLM call: get this Sim's reactions to the current page.
     let rawReactions: any[] = []
-    let inspected: unknown = []
     try {
-      const { data } = await reactFn(simWithMemory, imageB64, mediaType, urlPath || pageUrl)
+      const { data } = await reactFn(simWithMemory, imageB64, mediaType, urlPath || pageUrl, pageMeta ?? null)
       rawReactions = Array.isArray(data?.reactions) ? data.reactions : []
-      inspected = data?.categoriesInspected
     } catch (e: any) {
       console.error(`sim-review reactFn [${sim.id}] (non-fatal):`, e?.message || e)
       return null  // error isolation: skip this Sim without cancelling siblings
@@ -254,7 +255,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
     // Count this LLM call toward the session ceiling regardless of how many observations survive.
     if (sessionId) sessionBumpCall(sessionId)
 
-    return { sim, simIndex, simWithMemory, citePre, rawReactions, inspected }
+    return { sim, simIndex, simWithMemory, citePre, rawReactions }
   })
 
   // ── Phase 2: reaction processing — serial for consistent session state ─────
@@ -263,7 +264,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
   // sees the accumulated seen-texts from its predecessors and the ceiling is respected.
   for (const p1 of phase1) {
     if (!p1) continue
-    const { sim, simIndex, citePre, rawReactions, inspected } = p1
+    const { sim, simIndex, citePre, rawReactions } = p1
     const i = simIndex
 
     const observations: SimObservation[] = []
@@ -290,19 +291,15 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
       let bug = r?.suggestedBug
       // UI identification: which element, where on the page. Recorded on the finding as a screenshot observation (never as a
       // browser-verified defect).
-      const obsTarget = parseTarget(r?.target, r?.targetDescription)
-      const obsRegion = parseRegion(r?.region ?? r?.box)
-      // QA Sims record the visual-QA fields on the finding; every other Sim is built exactly as before.
-      const qaSim = isQaPersona(sim)
-      const visual = qaSim
-        ? {
-          category: isCategoryId(r?.category) ? String(r.category) : null,
-          expected: r?.expected ? String(r.expected).slice(0, 300) : null,
-          actual: r?.actual ? String(r.actual).slice(0, 300) : null,
-          confidence: normalizeConfidence(r?.confidence),
-        }
-        : null
-      const simContext = buildSimReviewContext({ pageUrl, urlHost, urlPath, target: obsTarget, region: obsRegion, observation: obsText, evidence, visual })
+      const rawTarget = parseTarget(r?.target, r?.targetDescription)
+      const rawRegion = parseRegion(r?.region ?? r?.box)
+      // Rule 2: VERIFY the model's answer against the captured page metadata before recording it. Selectors/roles/names/regions the
+      // model made up are dropped; only a high-confidence match is recorded as the exact component.
+      const rawElementId = r?.target && typeof r.target === "object" && typeof r.target.elementId === "string" ? r.target.elementId : undefined
+      const identity = resolveUiIdentity({ target: { ...(rawTarget || {}), elementId: rawElementId }, region: rawRegion, meta: pageMeta ?? null })
+      const obsTarget = identity.target
+      const obsRegion = identity.region
+      const simContext = buildSimReviewContext({ pageUrl, urlHost, urlPath, target: obsTarget, region: obsRegion, observation: obsText, evidence, identity })
       // A repeat sighting of an existing finding: keep the original (reference, history) and ADD this sighting's evidence to it.
       const recordSighting = async (existingId: string) => {
         try {
@@ -354,7 +351,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
             const hit = onPage.find((f) => f.id === dedupedInto)
             if (hit && categoriesConflict(candText, hit)) dedupedInto = null
           }
-          if (!dedupedInto) dedupedInto = findSameDefect({ observation: obsText, title: String(bug?.title || ""), target: obsTarget }, onPage)
+          if (!dedupedInto) dedupedInto = findSameDefect({ observation: obsText, title: String(bug?.title || ""), target: identity.confidence === "high" ? obsTarget : null }, onPage)
         } catch (e: any) { console.warn("[sim-review] same-defect lookup skipped:", e?.message || e) }
         if (dedupedInto) {
           await bumpFeedbackRecurrence(dedupedInto, Date.now())
@@ -448,7 +445,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
         feedbackId,
         deduped,
         recurrence: recurrenceMem,
-        ...(visual ? { category: visual.category, expected: visual.expected, actual: visual.actual, confidence: visual.confidence as "Confirmed" | "Potential" } : {}),
+        identification: { confidence: identity.confidence, basis: identity.basis, uncertain: identity.uncertain, ...(identity.section ? { section: identity.section } : {}) },
       }
 
       // FEEDBACK MODE filter: applied after full assembly so sentiment + suggestedBug are set.
@@ -510,13 +507,8 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
     }
 
     // Only include the Sim in output if it has at least one new observation.
-    // QA Sims also carry the honest per-run visual QA summary (computed from every assembled observation, duplicates included, so
-    // "duplicates avoided" is accurate even when the session filter trims what is shown).
-    const visualQa = isQaPersona(sim)
-      ? buildVisualQaSummary({ findings: observations.map((o) => ({ category: o.category, confidence: o.confidence, deduped: o.deduped })), inspected, viewportCount: 1, screenshotsReviewed: 1 })
-      : undefined
     if (finalObservations.length > 0) {
-      out.push({ simId: sim.id, simName: sim.name, initials: sim.initials ?? null, accent: sim.accent ?? null, observations: finalObservations, ...(visualQa ? { visualQa } : {}) })
+      out.push({ simId: sim.id, simName: sim.name, initials: sim.initials ?? null, accent: sim.accent ?? null, observations: finalObservations })
     }
   }
 

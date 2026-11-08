@@ -1,4 +1,4 @@
-// Visual-QA validations: persistence across every creation path, Baseline QA provisioning, edit/reload, non-QA regression.
+// QA validations (three mandatory rules): persistence across every creation path, Baseline QA provisioning, edit/reload, non-QA regression.
 // Hermetic file-backed libsql DB (same pattern as baseline-qa-sim.test.ts).
 import { test, expect, beforeAll } from "bun:test"
 import { tmpdir } from "node:os"
@@ -12,7 +12,7 @@ process.env.TURSO_DATABASE_URL = "file:" + DB_FILE
 delete process.env.TURSO_AUTH_TOKEN
 
 const dbMod = await import("./lib/db")
-const { enrichQaPersona, CATEGORY_IDS, canonicalValidations } = await import("./lib/sim-validations")
+const { enrichQaPersona, QA_RULES, canonicalValidations } = await import("./lib/sim-validations")
 const { runSimReviews } = await import("./lib/sim-review")
 const client = dbMod.reconnectDb("file:" + DB_FILE)
 let projectId = ""
@@ -41,13 +41,13 @@ for (const [label, simSource] of PATHS) {
     await dbMod.upsertPersona(id, projectId, { ...enriched, simSource } as any)
     const row = await get(id)
     expect(row.personaKind).toBe("qa")
-    expect(row.validations!.rules.map((r: any) => r.id)).toEqual(CATEGORY_IDS)
+    expect(row.validations!.rules.map((r: any) => r.id)).toEqual(QA_RULES.map((r) => r.id))
     expect(row.validations).toEqual(enriched.validations)                  // preview == saved
     expect(row.summary).toBe("Custom brief: be thorough.")                 // user-defined text preserved
     expect(row.core!.goals).toEqual(["find defects"])
     const stored = (await client.execute({ sql: "SELECT persona_kind, validations_json FROM personas WHERE id=?", args: [id] })).rows[0] as any
     expect(stored.persona_kind).toBe("qa")
-    expect(JSON.parse(stored.validations_json).rules).toHaveLength(7)
+    expect(JSON.parse(stored.validations_json).rules).toHaveLength(3)
     // Edit that omits personaKind / tries to strip rules: still QA, rules intact.
     await dbMod.upsertPersona(id, projectId, base("QA " + label, { summary: "edited", validations: { version: 1, rules: [], exclusions: [] } }) as any)
     const after = await get(id)
@@ -79,18 +79,18 @@ test("Baseline QA provisioning (INSERT OR IGNORE path) persists kind + rules; le
   const sims = await dbMod.listPersonas(projectId)
   const b = sims.find((p: any) => p.simSource === "baseline")!
   expect(b.personaKind).toBe("qa")
-  expect(b.validations!.rules).toHaveLength(7)
+  expect(b.validations!.rules).toHaveLength(3)
   const stored = (await client.execute({ sql: "SELECT persona_kind, validations_json FROM personas WHERE id=?", args: [b.id] })).rows[0] as any
   expect(stored.persona_kind).toBe("qa")
-  expect(JSON.parse(stored.validations_json).rules).toHaveLength(7)
+  expect(JSON.parse(stored.validations_json).rules).toHaveLength(3)
   // A baseline row created before this change (no kind / rules) still loads as QA with the rules.
   await client.execute({ sql: "UPDATE personas SET persona_kind=NULL, validations_json=NULL WHERE id=?", args: [b.id] })
   const legacy = (await dbMod.listPersonas(projectId)).find((p: any) => p.id === b.id)!
   expect(legacy.personaKind).toBe("qa")
-  expect(legacy.validations!.rules).toHaveLength(7)
+  expect(legacy.validations!.rules).toHaveLength(3)
 })
 
-test("runtime: the persisted rules reach the model for QA Sims only; summary reported for QA only", async () => {
+test("runtime: the persisted rules reach the model for QA Sims only; no category summary is emitted", async () => {
   const qaId = "sim_" + randomUUID(), custId = "sim_" + randomUUID()
   await dbMod.upsertPersona(qaId, projectId, enrichQaPersona(base("RunQA"), "qa") as any)
   await dbMod.upsertPersona(custId, projectId, enrichQaPersona(base("RunCust")) as any)
@@ -98,20 +98,17 @@ test("runtime: the persisted rules reach the model for QA Sims only; summary rep
   const seen: Record<string, any> = {}
   const reactFn = async (sim: any) => {
     seen[sim.name] = sim
-    return { data: { reactions: [{ observation: "The Save button label is clipped", sentiment: "frustrated", target: { text: "Save" }, region: { x: 0.1, y: 0.1, w: 0.1, h: 0.05 }, category: "layout", expected: "full label", actual: "clipped", confidence: "Confirmed", suggestedBug: null }], categoriesInspected: ["layout", "typography"] } }
+    return { data: { reactions: [{ observation: "The Save button label is clipped", sentiment: "frustrated", target: { text: "Save" }, region: { x: 0.1, y: 0.1, w: 0.1, h: 0.05 }, suggestedBug: null }] } }
   }
   const res = await runSimReviews({
     projectId, urlPath: "/p", urlHost: "x.test", pageUrl: "https://x.test/p", imageB64: "AA", mediaType: "image/png",
     targetSims: sims.filter((s: any) => s.id === qaId || s.id === custId), actorEmail: "o@validations.test", screenshotId: null,
     seenKeys: ["a", "b"], reactFn, resolveCitationsFn: async () => ({ citedTraitIds: [], sourceQuote: null, speaker: null, sourceTranscriptId: null, sourceDate: null, issueType: null, sourceQuoteVerified: null, recurrence: null, sourceTime: null, sourceTimeKind: "upload" }),
   } as any)
-  expect(seen["RunQA"].validations.rules).toHaveLength(7)       // loaded from the DB and handed to reactToPage
+  expect(seen["RunQA"].validations.rules).toHaveLength(3)       // loaded from the DB and handed to reactToPage
   expect(seen["RunCust"].validations).toBeUndefined()
-  const qa = res.find((r: any) => r.simName === "RunQA")!, cust = res.find((r: any) => r.simName === "RunCust")!
-  expect(qa.visualQa!.categories.layout).toBe("issues")
-  expect(qa.visualQa!.categories.typography).toBe("passed")
-  expect(qa.visualQa!.categories.responsive).toBe("untested")
-  expect(qa.observations[0].confidence).toBe("Confirmed")
-  expect(cust.visualQa).toBeUndefined()
-  expect(cust.observations[0].category).toBeUndefined()
+  const qa = res.find((r: any) => r.simName === "RunQA")!
+  expect((qa as any).visualQa).toBeUndefined()
+  // screenshot-only run (no page metadata): identification can never be better than medium and is flagged uncertain
+  expect(qa.observations[0].identification).toMatchObject({ confidence: "medium", basis: "screenshot-only", uncertain: true })
 })

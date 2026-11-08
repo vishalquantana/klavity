@@ -8,7 +8,7 @@ import { sanitizeLabelRules, type LabelRule } from "./label-rules"
 import { snapshotStatements } from "./deleted-tickets"
 import { normalizeReferer, coarsenUa } from "./shortlinks"
 import { BASELINE_QA_SIM, BASELINE_QA_SOURCE, baselineQaId } from "./baseline-qa"
-import { normalizePersonaKind, parseValidations, canonicalValidations, VALIDATIONS_VERSION, CATEGORY_IDS, type PersonaKind, type PersonaValidations } from "./sim-validations"
+import { normalizePersonaKind, parseValidations, canonicalValidations, VALIDATIONS_VERSION, QA_RULES, type PersonaKind, type PersonaValidations } from "./sim-validations"
 
 const url = process.env.TURSO_DATABASE_URL
 const authToken = process.env.TURSO_AUTH_TOKEN
@@ -1662,6 +1662,9 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("personas.validations_json ALTER skipped:", e?.message || e))
   await c.execute({ sql: "UPDATE personas SET persona_kind='qa' WHERE sim_source=? AND persona_kind IS NULL", args: [BASELINE_QA_SOURCE] })
     .catch((e: any) => console.warn("personas.persona_kind baseline backfill skipped:", e?.message || e))
+  // Rules were reduced to the three mandatory QA rules (version 2): refresh any QA Sim still holding the retired 7-category set.
+  await c.execute({ sql: "UPDATE personas SET validations_json=? WHERE persona_kind='qa' AND (validations_json IS NULL OR validations_json NOT LIKE '%\"version\":2%')", args: [JSON.stringify(canonicalValidations())] })
+    .catch((e: any) => console.warn("personas.validations_json refresh skipped:", e?.message || e))
   // KLAVITYKLA-253 (JTBD B.13): carry the ORIGINATING grounded quote through graduation.
   // source_quote      — the verbatim complaint/evidence the expectation was born from (Snap/Sim/AutoSim).
   // source_quote_verified — 1 = verified against source text (trait provenance / page text), 0 = present but
@@ -3584,7 +3587,7 @@ function rowToPersona(x: any): PersonaRow {
   const personaKind = x.sim_source === BASELINE_QA_SOURCE ? "qa" : normalizePersonaKind(x.persona_kind)
   // The runtime reads the PERSISTED rules; a missing / malformed / outdated stored set (legacy rows) falls back to the canonical set.
   const stored = personaKind === "qa" ? parseValidations(x.validations_json) : null
-  const validations = personaKind === "qa" ? (stored && stored.version === VALIDATIONS_VERSION && stored.rules.length === CATEGORY_IDS.length ? stored : canonicalValidations()) : undefined
+  const validations = personaKind === "qa" ? (stored && stored.version === VALIDATIONS_VERSION && stored.rules.length === QA_RULES.length ? stored : canonicalValidations()) : undefined
   return {
     personaKind, ...(validations ? { validations } : {}),
     id: String(x.id), projectId: String(x.project_id), name: String(x.name),
