@@ -20,6 +20,7 @@ import { isBaselineQa, isAllClearObservation } from "./baseline-qa"
 import { recurrenceFromEvents, type Trait, type TraitEventRow } from "./provenance"
 import { ingestSnapOrSim } from "./expectations-ingest"
 import { buildRecurrenceMemory } from "./recurrence-memory"
+import { isQaPersona, isCategoryId, normalizeConfidence, buildVisualQaSummary } from "./sim-validations"
 import { buildSimReviewContext, evidenceForId, findSameDefect, categoriesConflict, type EvidenceRecord } from "./sim-evidence"
 
 // Re-export everything from the pure module so callers only need one import path.
@@ -154,6 +155,7 @@ type SimPhase1 = {
   simWithMemory: any
   citePre: { traits: Trait[]; eventsByTrait: Map<string, TraitEventRow[]> } | undefined
   rawReactions: any[]
+  inspected: unknown   // QA Sims: category ids the Sim says it examined (feeds the visual QA summary)
 } | null
 
 export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
@@ -240,9 +242,11 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
 
     // LLM call: get this Sim's reactions to the current page.
     let rawReactions: any[] = []
+    let inspected: unknown = []
     try {
       const { data } = await reactFn(simWithMemory, imageB64, mediaType, urlPath || pageUrl)
       rawReactions = Array.isArray(data?.reactions) ? data.reactions : []
+      inspected = data?.categoriesInspected
     } catch (e: any) {
       console.error(`sim-review reactFn [${sim.id}] (non-fatal):`, e?.message || e)
       return null  // error isolation: skip this Sim without cancelling siblings
@@ -250,7 +254,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
     // Count this LLM call toward the session ceiling regardless of how many observations survive.
     if (sessionId) sessionBumpCall(sessionId)
 
-    return { sim, simIndex, simWithMemory, citePre, rawReactions }
+    return { sim, simIndex, simWithMemory, citePre, rawReactions, inspected }
   })
 
   // ── Phase 2: reaction processing — serial for consistent session state ─────
@@ -259,7 +263,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
   // sees the accumulated seen-texts from its predecessors and the ceiling is respected.
   for (const p1 of phase1) {
     if (!p1) continue
-    const { sim, simIndex, citePre, rawReactions } = p1
+    const { sim, simIndex, citePre, rawReactions, inspected } = p1
     const i = simIndex
 
     const observations: SimObservation[] = []
@@ -288,7 +292,17 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
       // browser-verified defect).
       const obsTarget = parseTarget(r?.target, r?.targetDescription)
       const obsRegion = parseRegion(r?.region ?? r?.box)
-      const simContext = buildSimReviewContext({ pageUrl, urlHost, urlPath, target: obsTarget, region: obsRegion, observation: obsText, evidence })
+      // QA Sims record the visual-QA fields on the finding; every other Sim is built exactly as before.
+      const qaSim = isQaPersona(sim)
+      const visual = qaSim
+        ? {
+          category: isCategoryId(r?.category) ? String(r.category) : null,
+          expected: r?.expected ? String(r.expected).slice(0, 300) : null,
+          actual: r?.actual ? String(r.actual).slice(0, 300) : null,
+          confidence: normalizeConfidence(r?.confidence),
+        }
+        : null
+      const simContext = buildSimReviewContext({ pageUrl, urlHost, urlPath, target: obsTarget, region: obsRegion, observation: obsText, evidence, visual })
       // A repeat sighting of an existing finding: keep the original (reference, history) and ADD this sighting's evidence to it.
       const recordSighting = async (existingId: string) => {
         try {
@@ -434,6 +448,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
         feedbackId,
         deduped,
         recurrence: recurrenceMem,
+        ...(visual ? { category: visual.category, expected: visual.expected, actual: visual.actual, confidence: visual.confidence as "Confirmed" | "Potential" } : {}),
       }
 
       // FEEDBACK MODE filter: applied after full assembly so sentiment + suggestedBug are set.
@@ -495,8 +510,13 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
     }
 
     // Only include the Sim in output if it has at least one new observation.
+    // QA Sims also carry the honest per-run visual QA summary (computed from every assembled observation, duplicates included, so
+    // "duplicates avoided" is accurate even when the session filter trims what is shown).
+    const visualQa = isQaPersona(sim)
+      ? buildVisualQaSummary({ findings: observations.map((o) => ({ category: o.category, confidence: o.confidence, deduped: o.deduped })), inspected, viewportCount: 1, screenshotsReviewed: 1 })
+      : undefined
     if (finalObservations.length > 0) {
-      out.push({ simId: sim.id, simName: sim.name, initials: sim.initials ?? null, accent: sim.accent ?? null, observations: finalObservations })
+      out.push({ simId: sim.id, simName: sim.name, initials: sim.initials ?? null, accent: sim.accent ?? null, observations: finalObservations, ...(visualQa ? { visualQa } : {}) })
     }
   }
 

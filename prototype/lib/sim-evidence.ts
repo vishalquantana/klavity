@@ -127,20 +127,9 @@ export type SimReviewContext = {
     evidence: EvidenceRecord
     /** Run-time check of the "Accurate UI Identification & Issue Traceability" validation. Flagged, never dropped. */
     traceability: { ok: boolean; missing: string[] }
+    /** QA Sims only (see lib/sim-validations.ts). */
+    visual?: { category: string | null; expected: string | null; actual: string | null; confidence: string | null }
   }
-}
-
-/** The two validations every Sim applies on every run, whatever its stored core says. Applied at run time only. */
-export const MANDATORY_VALIDATIONS = [
-  "Duplicate Issue Prevention & Evidence Consolidation: report each defect once per page and component; a further sighting of the same defect is extra evidence, not a new issue",
-  "Accurate UI Identification & Issue Traceability: name the exact component, give its region and verbatim visible text, and tie the issue to the page URL",
-]
-
-/** Copy of the persona whose core.watchFor always leads with the mandatory validations (no duplicates; the stored Sim is untouched). */
-export function withMandatoryValidations<T extends Record<string, any>>(persona: T): T {
-  const core = persona?.core && typeof persona.core === "object" ? persona.core : {}
-  const rest = (Array.isArray(core.watchFor) ? core.watchFor : []).map((x: any) => String(x)).filter((x: string) => !MANDATORY_VALIDATIONS.includes(x))
-  return { ...persona, core: { ...core, watchFor: [...MANDATORY_VALIDATIONS, ...rest] } }
 }
 
 /** What an issue is missing to be traceable. A page-level observation (no target and no region) only needs the page URL. */
@@ -159,6 +148,8 @@ export function buildSimReviewContext(a: {
   pageUrl?: string | null; urlHost?: string | null; urlPath?: string | null
   target?: ObsTarget | null; region?: { x: number; y: number; w: number; h: number } | null
   observation: string; evidence: EvidenceRecord
+  /** QA Sims: the model's validation category / expected / actual / confidence, recorded on the finding. */
+  visual?: { category?: string | null; expected?: string | null; actual?: string | null; confidence?: string | null } | null
 }): SimReviewContext {
   const kind = componentKind(a.target)
   const t = a.target
@@ -173,6 +164,7 @@ export function buildSimReviewContext(a: {
       component: t && kind ? { kind, ...(t.text ? { text: t.text } : {}), ...(t.selector ? { selector: t.selector } : {}), ...(t.role ? { role: t.role } : {}), ...(t.name ? { name: t.name } : {}) } : null,
       region: a.region ?? null,
       category: inferQaCategory(a.observation),
+      ...(a.visual ? { visual: { category: a.visual.category ?? null, expected: a.visual.expected ?? null, actual: a.visual.actual ?? null, confidence: a.visual.confidence ?? null } } : {}),
       uiState: "Page as rendered in one captured screenshot; no clicks, typing, resizing or navigation were performed.",
       evidence: a.evidence,
       traceability: (() => { const missing = traceabilityGaps({ pageUrl: a.pageUrl, target: a.target, region: a.region }); return { ok: missing.length === 0, missing } })(),

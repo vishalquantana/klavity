@@ -8,6 +8,7 @@ import { sanitizeLabelRules, type LabelRule } from "./label-rules"
 import { snapshotStatements } from "./deleted-tickets"
 import { normalizeReferer, coarsenUa } from "./shortlinks"
 import { BASELINE_QA_SIM, BASELINE_QA_SOURCE, baselineQaId } from "./baseline-qa"
+import { normalizePersonaKind, parseValidations, canonicalValidations, VALIDATIONS_VERSION, CATEGORY_IDS, type PersonaKind, type PersonaValidations } from "./sim-validations"
 
 const url = process.env.TURSO_DATABASE_URL
 const authToken = process.env.TURSO_AUTH_TOKEN
@@ -1653,6 +1654,14 @@ export async function applySchema(c: Client) {
   // rows = unknown origin; these are NOT treated as transcript Sims (step 4 stays unticked).
   if (needCol("personas", "sim_source")) await c.execute("ALTER TABLE personas ADD COLUMN sim_source TEXT")
     .catch((e: any) => console.warn("personas.sim_source ALTER skipped:", e?.message || e))
+  // Visual-QA validations: persona_kind ('qa' | 'customer'; NULL = legacy = customer) is the explicit, persistent QA classification;
+  // validations_json holds the structured mandatory rules for QA Sims (see lib/sim-validations.ts). Additive + idempotent.
+  if (needCol("personas", "persona_kind")) await c.execute("ALTER TABLE personas ADD COLUMN persona_kind TEXT")
+    .catch((e: any) => console.warn("personas.persona_kind ALTER skipped:", e?.message || e))
+  if (needCol("personas", "validations_json")) await c.execute("ALTER TABLE personas ADD COLUMN validations_json TEXT")
+    .catch((e: any) => console.warn("personas.validations_json ALTER skipped:", e?.message || e))
+  await c.execute({ sql: "UPDATE personas SET persona_kind='qa' WHERE sim_source=? AND persona_kind IS NULL", args: [BASELINE_QA_SOURCE] })
+    .catch((e: any) => console.warn("personas.persona_kind baseline backfill skipped:", e?.message || e))
   // KLAVITYKLA-253 (JTBD B.13): carry the ORIGINATING grounded quote through graduation.
   // source_quote      — the verbatim complaint/evidence the expectation was born from (Snap/Sim/AutoSim).
   // source_quote_verified — 1 = verified against source text (trait provenance / page text), 0 = present but
@@ -3549,6 +3558,9 @@ export type PersonaRow = {
   isGlobal?: boolean
   // KLAVITYKLA-301: which Add-a-Sim path created this Sim. NULL = legacy/unknown.
   simSource?: string | null
+  // Visual-QA classification. 'qa' Sims carry `validations` (mandatory screenshot-inspection rules); everything else is 'customer'.
+  personaKind?: PersonaKind
+  validations?: PersonaValidations
   // WP-S2: false = deactivated (kept, but skipped by every review/run/offer path). Absent/undefined is treated as active.
   active?: boolean
 }
@@ -3568,7 +3580,13 @@ function rowToPersona(x: any): PersonaRow {
   const temperament = x.temperament != null ? String(x.temperament) : ""
   const voice = x.voice != null ? String(x.voice) : ""
   const hasCore = goals.length || watchFor.length || expertise || temperament || voice
+  // Baseline QA is always QA, whatever the stored kind says; a stored 'qa' is never downgraded on read.
+  const personaKind = x.sim_source === BASELINE_QA_SOURCE ? "qa" : normalizePersonaKind(x.persona_kind)
+  // The runtime reads the PERSISTED rules; a missing / malformed / outdated stored set (legacy rows) falls back to the canonical set.
+  const stored = personaKind === "qa" ? parseValidations(x.validations_json) : null
+  const validations = personaKind === "qa" ? (stored && stored.version === VALIDATIONS_VERSION && stored.rules.length === CATEGORY_IDS.length ? stored : canonicalValidations()) : undefined
   return {
+    personaKind, ...(validations ? { validations } : {}),
     id: String(x.id), projectId: String(x.project_id), name: String(x.name),
     role: String(x.role || ""), type: String(x.type || "client"),
     initials: String(x.initials || ""), accent: String(x.accent || "#6366f1"),
@@ -3618,12 +3636,12 @@ export async function ensureBaselineQaSim(projectId: string): Promise<boolean> {
   const q = BASELINE_QA_SIM
   const now = Date.now()
   const r = await db!.execute({
-    sql: `INSERT OR IGNORE INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,sim_source,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT OR IGNORE INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,sim_source,persona_kind,validations_json,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [baselineQaId(projectId), projectId, q.name, q.role, q.type, q.initials, q.accent, q.summary,
            JSON.stringify(q.insights), null, q.simClass, q.side,
            JSON.stringify(q.core.goals), q.core.expertise, q.core.temperament, q.core.voice, JSON.stringify(q.core.watchFor),
-           BASELINE_QA_SOURCE, now, now],
+           BASELINE_QA_SOURCE, "qa", JSON.stringify(canonicalValidations()), now, now],
   })
   return (r.rowsAffected ?? 0) > 0
 }
@@ -3748,15 +3766,22 @@ export async function setPersonaGlobal(id: string, projectId: string, isGlobal: 
 export async function upsertPersona(id: string, projectId: string, data: Omit<PersonaRow, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>) {
   const now = Date.now()
   const core = data.core ?? null
+  // Central enrichment: every write path (Describe / From site / From call / presets / custom / edit) lands here, so QA Sims always
+  // persist the mandatory rules. `data.personaKind` is the caller's classification; the ON CONFLICT below never demotes a stored QA Sim.
+  const kind: PersonaKind = data.simSource === BASELINE_QA_SOURCE ? "qa" : normalizePersonaKind(data.personaKind)
+  const validationsJson = kind === "qa" ? JSON.stringify(canonicalValidations()) : null
   await db!.execute({
-    sql: `INSERT INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,sim_source,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    sql: `INSERT INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,sim_source,persona_kind,validations_json,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
           ON CONFLICT(id) DO UPDATE SET name=excluded.name,role=excluded.role,type=excluded.type,
           initials=excluded.initials,accent=excluded.accent,summary=excluded.summary,
           insights_json=excluded.insights_json,avatar=excluded.avatar,
           sim_class=excluded.sim_class,side=excluded.side,goals_json=excluded.goals_json,
           expertise=excluded.expertise,temperament=excluded.temperament,voice=excluded.voice,
-          watchfor_json=excluded.watchfor_json,updated_at=excluded.updated_at`,
+          watchfor_json=excluded.watchfor_json,
+          persona_kind=CASE WHEN personas.persona_kind='qa' OR excluded.persona_kind='qa' THEN 'qa' ELSE excluded.persona_kind END,
+          validations_json=CASE WHEN excluded.persona_kind='qa' THEN excluded.validations_json WHEN personas.persona_kind='qa' THEN personas.validations_json ELSE NULL END,
+          updated_at=excluded.updated_at`,
     args: [id, projectId, data.name, data.role, data.type, data.initials, data.accent, data.summary,
            JSON.stringify(data.insights), data.avatar ?? null,
            data.simClass ?? null, data.side ?? null,
@@ -3764,6 +3789,7 @@ export async function upsertPersona(id: string, projectId: string, data: Omit<Pe
            core?.expertise ?? null, core?.temperament ?? null, core?.voice ?? null,
            core ? JSON.stringify(core.watchFor ?? []) : null,
            data.simSource ?? null,
+           kind, validationsJson,
            now, now],
   })
   // KLA-739 (C2-5 residual a): a persona edit (name/role/initials/accent) changes the Sim OG card, but the

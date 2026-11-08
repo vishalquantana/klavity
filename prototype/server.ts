@@ -62,7 +62,8 @@ import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie, uidCookie, clearUidCookie, clearProjectCookie } from "./lib/auth"
 import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, objectExists, type UploadedScreenshot } from "./lib/s3"
-import { storeVerifiedScreenshot, withMandatoryValidations, type StoredScreenshot } from "./lib/sim-evidence"
+import { storeVerifiedScreenshot, type StoredScreenshot } from "./lib/sim-evidence"
+import { enrichQaPersona, normalizePersonaKind, isQaPersona, qaRunPrompt, type PersonaKind } from "./lib/sim-validations"
 import { phaseTimer } from "./lib/phase-timer"
 import { readReplayEvents, replayEvidencePresent } from "./lib/replay-intake"
 import { createLimiter, mapBounded, uploadConcurrency } from "./lib/bounded-concurrency"
@@ -626,7 +627,7 @@ function personaSiteSys(countPhrase: string): string {
     "Classify each on two axes: simClass (\"user\" = actually OPERATES the product hands-on, feedback skews UI/interaction; " +
     "\"client\" = evaluates OVERALL outcomes and business results, feedback skews feature/workflow/strategy — only assign \"client\" when the persona clearly describes an executive, buyer, or outcome-judging stakeholder) " +
     "and side (\"external\" = customer/partner outside the team; \"internal\" = on the product/company team). " +
-    "Respond with ONLY a JSON object, no prose: {\"personas\":[{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"desc\":string(<=90 chars, ONE plain sentence: who this persona is and what they care about),\"summary\":string,\"core\":{\"goals\":string[1-4 jobs-to-be-done],\"expertise\":string,\"temperament\":string,\"voice\":string(short first-person sample),\"watchFor\":string[2-5 concrete things this persona checks or validates on ANY page, e.g. form validation, labels, spelling]},\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}]} with " + countPhrase + " personas, each with exactly 3 insights; each quote is a short first-person line that persona might say."
+    "Respond with ONLY a JSON object, no prose: {\"personas\":[{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"desc\":string(<=90 chars, ONE plain sentence: who this persona is and what they care about),\"summary\":string,\"personaKind\":\"qa\"|\"customer\" (\"qa\" ONLY if this persona IS a QA / visual-testing reviewer inspecting a UI for defects; every customer, buyer, end-user or stakeholder is \"customer\"),\"core\":{\"goals\":string[1-4 jobs-to-be-done],\"expertise\":string,\"temperament\":string,\"voice\":string(short first-person sample),\"watchFor\":string[2-5 concrete things this persona checks or validates on ANY page, e.g. form validation, labels, spelling]},\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}]} with " + countPhrase + " personas, each with exactly 3 insights; each quote is a short first-person line that persona might say."
 }
 
 const REACT_SYS =
@@ -656,9 +657,6 @@ const REACT_SYS =
   "suggestedBug is filled only when it's a real problem worth filing to an issue tracker, else null; set its \"priority\" " +
   "honestly (urgent/high = blocker or serious, medium = has a workaround, low = cosmetic) — it drives the finding's severity. " +
   "Stay in character and be specific to what you actually see.\n\n" +
-  "MANDATORY VALIDATIONS (the first two watchFor items, applied on every run): (1) Duplicate Issue Prevention — list each " +
-  "distinct defect ONCE; if two reactions describe the same defect on the same component, merge them into one. (2) Accurate UI " +
-  "Identification & Traceability — every element-level reaction must name the exact component and carry BOTH region and target.text.\n\n" +
   "The persona's insights each carry a stable \"traitId\". For every reaction, set citedTraitIds to the list of traitIds " +
   "of the persona's documented traits that actually drove that reaction (the pains/wants/loves it stems from). " +
   "Use [] if no documented trait applies. Only ever cite traitIds present in the persona you are given.\n\n" +
@@ -1113,11 +1111,14 @@ async function reactToPage(persona: any, imageB64: string, mediaType: string, pa
   // and wrongly flags valid future-looking dates on the page as errors (a 2026 "Founded Year" reported as
   // "impossible, it's 2024"). Stamp today's real date at call time so date reasoning is grounded in now.
   const today = new Date().toISOString().slice(0, 10)
+  // QA Sims only: the PERSISTED visual-QA rules (persona.validations, loaded with the Sim) are appended to the prompt. Non-QA Sims get
+  // exactly the original prompt. A run feeds one screenshot, so viewportCount is 1 and responsive stays Untested.
+  const qaAddendum = isQaPersona(persona) ? qaRunPrompt(persona, { viewportCount: 1 }) : ""
   const { content, usage } = await chat([
-    { role: "system", content: REACT_SYS + UNTRUSTED_GUARD },
+    { role: "system", content: REACT_SYS + qaAddendum + UNTRUSTED_GUARD },
     {
       role: "user", content: [
-        { type: "text", text: `Today's date is ${today}. Treat this as the current date and year when judging whether any dates shown on the page are valid, impossible, or out of range — do NOT assume an earlier year.\n\n` + "You are this persona:\n" + JSON.stringify(withMandatoryValidations(persona), null, 2) + `\n\nReact to this screenshot. The page URL (untrusted) is:\n` + wrapUntrusted(pageUrl || "(unknown URL)") },
+        { type: "text", text: `Today's date is ${today}. Treat this as the current date and year when judging whether any dates shown on the page are valid, impossible, or out of range — do NOT assume an earlier year.\n\n` + "You are this persona:\n" + JSON.stringify(persona, null, 2) + `\n\nReact to this screenshot. The page URL (untrusted) is:\n` + wrapUntrusted(pageUrl || "(unknown URL)") },
         { type: "image_url", image_url: { url: `data:${mediaType};base64,${imageB64}` } },
       ]
     },
@@ -2147,7 +2148,7 @@ const SIDE_ENUM = new Set(["external", "internal"])
 // { type (legacy shim), simClass, side, core|null }. simClass/side are validated against their
 // enums; core is assembled only when the body carries one. The legacy `type` (client|internal) is
 // derived from simClass/side when present so pre-v3 consumers keep working, else falls back to body.type.
-function v3PersonaFields(body: any): { type: string; simClass: string | null; side: string | null; core: import("./lib/db").PersonaCore | null } {
+function v3PersonaFields(body: any): { type: string; simClass: string | null; side: string | null; core: import("./lib/db").PersonaCore | null; personaKind: PersonaKind } {
   const simClass = SIM_CLASS_ENUM.has(String(body?.simClass)) ? String(body.simClass) : null
   const side = SIDE_ENUM.has(String(body?.side)) ? String(body.side) : null
   // Legacy type shim: client-class OR external-side → "client"; a user/internal persona → "internal".
@@ -2165,7 +2166,7 @@ function v3PersonaFields(body: any): { type: string; simClass: string | null; si
       watchFor: Array.isArray(c.watchFor) ? c.watchFor.map((x: any) => String(x)) : [],
     }
     : null
-  return { type, simClass, side, core }
+  return { type, simClass, side, core, personaKind: normalizePersonaKind(body?.personaKind) }
 }
 
 // ── #643: Preset Sim library ──────────────────────────────────────────────────────────────────────
@@ -7156,7 +7157,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // resolveProject (a brand-new account may have no project yet, but should still see presets).
     // The one-click "Add" then POSTs the chosen preset back through the normal create path below.
     if (req.method === "GET" && path === "/api/personas/presets") {
-      return wjson({ presets: PRESET_SIMS })
+      return wjson({ presets: PRESET_SIMS.map(pr => enrichQaPersona(pr, "qa")) })
     }
     const proj2 = await resolveProject(me2, url.searchParams.get("project"))
     if (!proj2) return wjson({ error: "No project." }, 400)
@@ -7222,6 +7223,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           insights: Array.isArray(body.insights) ? body.insights : [],
           avatar: body.avatar ? String(body.avatar) : null,
           simClass: v3.simClass, side: v3.side, core: v3.core,
+          personaKind: v3.personaKind,
           simSource,
         })
         const [saved] = (await listPersonas(wid)).filter(p => p.id === id)
@@ -7257,6 +7259,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             insights: Array.isArray(body.insights) ? body.insights : [],
             avatar: body.avatar ? String(body.avatar) : null,
             simClass, side, core,
+            personaKind: normalizePersonaKind(body?.personaKind ?? before.personaKind),
           })
           // Global Sims v1: if the body carries `isGlobal`, toggle the flag on the home-project row.
           // Only home-project owners can set this (already guarded above by listPersonas(wid) check).
@@ -8185,7 +8188,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             name: p.name, role: p.role, type: p.type ?? (p.simClass === "client" ? "client" : "internal"),
             initials: String(p.initials || "").slice(0, 2).toUpperCase(), accent: p.accent || "#6366f1",
             summary: p.summary || "", insights: [], avatar: null,
-            simClass: p.simClass ?? null, side: p.side ?? null, core: p.core ?? null, simSource: "transcript",
+            simClass: p.simClass ?? null, side: p.side ?? null, core: p.core ?? null, personaKind: normalizePersonaKind(p.personaKind), simSource: "transcript",
           })
           const addOps = (p.insights || [])
             .map((ins: any, oi: number) => ({ ins, oi }))
@@ -15862,7 +15865,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           "Classify on two axes: simClass (\"user\" = actually OPERATES the product hands-on, feedback skews UI/interaction; " +
           "\"client\" = evaluates OVERALL outcomes and business results, feedback skews feature/workflow/strategy — only assign \"client\" when the brief clearly describes an executive, buyer, or outcome-judging stakeholder) " +
           "and side (\"external\" = customer/partner outside the team; \"internal\" = on the product/company team). " +
-          "Respond with ONLY a JSON object, no prose: {\"persona\":{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"core\":{\"goals\":string[1-4 jobs-to-be-done],\"expertise\":string,\"temperament\":string,\"voice\":string(short first-person sample),\"watchFor\":string[2-5 concrete things this persona checks or validates on ANY page, e.g. form validation, labels, spelling]},\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}} with exactly 3 insights; each quote is a short first-person line this persona might actually say."
+          "Respond with ONLY a JSON object, no prose: {\"persona\":{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"personaKind\":\"qa\"|\"customer\" (\"qa\" ONLY if this persona IS a QA / visual-testing reviewer inspecting a UI for defects; every customer, buyer, end-user or stakeholder is \"customer\"),\"core\":{\"goals\":string[1-4 jobs-to-be-done],\"expertise\":string,\"temperament\":string,\"voice\":string(short first-person sample),\"watchFor\":string[2-5 concrete things this persona checks or validates on ANY page, e.g. form validation, labels, spelling]},\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}} with exactly 3 insights; each quote is a short first-person line this persona might actually say."
         const meB = (await sessionEmail(req)) || (await bearerEmail(req))
         if (aiDemoLimited(meB, req, server)) return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "3600" })
         const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Brief: " + brief + (chosenName ? "\nName the Sim exactly: " + chosenName : "") }], 2000, true, { type: "persona", email: meB, projectId: meB ? null : MARKETING_PRESIGNUP_PROJECT_ID })
@@ -15872,6 +15875,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!SIM_CLASS_ENUM.has(String(data.persona.simClass))) data.persona.simClass = "user"
           if (!SIDE_ENUM.has(String(data.persona.side))) data.persona.side = "external"
           data.persona.core = normalizeGeneratedCore(data.persona.core, { role: data.persona.role, summary: data.persona.summary })
+          data.persona = enrichQaPersona(data.persona)
           if (chosenName) {
             data.persona.name = chosenName
             const w = chosenName.split(" ").filter(Boolean)
@@ -15954,7 +15958,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // desc: a short one-line bio surfaced on the onboarding persona cards. Bounded + ASCII-safe.
           p.desc = String(p?.desc || "").replace(/\s+/g, " ").trim().slice(0, 90)
           p.core = normalizeGeneratedCore(p?.core, { role: p?.role, summary: p?.summary })
-          return p
+          return enrichQaPersona(p)
         })
         return json({ personas, usage })
       } catch (e: any) { return json(oops(e, "create"), 500) }

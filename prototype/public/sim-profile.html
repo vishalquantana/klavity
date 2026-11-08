@@ -271,6 +271,15 @@ async function load() {
       ${row("voice", c.voice ? "&ldquo;" + esc(c.voice) + "&rdquo;" : "")}
     </div>`
   }
+  // QA Sims only: the persisted, mandatory screenshot-inspection rules (read-only).
+  function validationsCard(sim) {
+    const rules = sim && sim.personaKind === "qa" && sim.validations && Array.isArray(sim.validations.rules) ? sim.validations.rules : []
+    if (!rules.length) return ""
+    return `<div class="card" id="simValidationsCard" data-testid="sim-validations" style="margin-bottom:10px">
+      <div class="tt" style="font-weight:600;margin-bottom:6px">SIM Validations <span style="opacity:.6;font-weight:400">&middot; always checked on the screenshot, never edited</span></div>
+      ${rules.map(r => `<div class="trait"><span class="k want">${esc(r.title)}</span><div class="tb"><div class="tt">${(r.checks || []).map(esc).join("; ")}${r.limits ? `<div style="opacity:.7;margin-top:2px">${esc(r.limits)}</div>` : ""}</div></div></div>`).join("")}
+    </div>`
+  }
   const s = data.sim || {}
   // KD-1458: "Open in Studio" lands on the Sims Studio page itself; "Edit" deep-links to this Sim's edit view.
   const studioUrl = pq('/app')
@@ -328,6 +337,7 @@ async function load() {
         <div class="sec">
           <div class="sec-h">${ic('dna')} Persona &amp; trait config <span class="ct mono">${(data.traits||[]).length}</span><a class="kbtn kbtn-sm" href="${editUrl}" style="margin-left:10px">${ic('pencil')} Edit</a></div>
           ${coreCard(s.core)}
+          ${validationsCard(s)}
           ${insights.length ? `<div class="card" style="margin-bottom:10px">${insights.map(i=>`<div class="trait"><span class="k ${["pain","want","love"].includes(i.kind)?i.kind:"pain"}">${esc(i.kind||"note")}</span><div class="tb"><div class="tt">${esc(i.text)}</div>${i.quote?`<div class="tq">“${esc(i.quote)}”</div>`:``}</div></div>`).join("")}</div>` : ``}
           ${traitsCard(data.traits || [])}
         </div>

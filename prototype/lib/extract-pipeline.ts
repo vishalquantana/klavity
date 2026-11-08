@@ -1,4 +1,5 @@
 import { normalizeGeneratedCore } from "./persona-core"
+import { enrichQaPersona } from "./sim-validations"
 /**
  * Canonical transcript → Sim pipeline: shared prompt + normalisation.
  *
@@ -55,6 +56,7 @@ export const EXTRACT_SYS =
   "Respond with ONLY a JSON object, no prose, in exactly this shape:\n" +
   '{"personas":[{"name":string,"role":string,"simClass":"client"|"user","side":"external"|"internal","initials":string(2 uppercase letters),' +
   '"accent":string(hex colour like #6366f1),"summary":string,' +
+  '"personaKind":"qa"|"customer" ("qa" ONLY when this speaker IS a QA / visual-testing reviewer; every customer, buyer, end-user or stakeholder is "customer"),' +
   '"core":{"goals":string[],"expertise":string,"temperament":string,"voice":string,"watchFor":string[]},' +
   '"insights":[{"kind":"pain"|"want"|"love","scope":"ui"|"feature"|"workflow"|"strategy","portability":"portable"|"site-specific",' +
   '"text":string,"quote":string,"area":string|null,' +
@@ -88,6 +90,8 @@ export function normalizeExtractedPersonas(data: any): any {
     }
     // Every extracted Sim must carry a usable core (esp. watchFor) — fill gaps from role/summary.
     p.core = normalizeGeneratedCore(p?.core, { role: p?.role, summary: p?.summary })
+    // Explicit QA classification (model-declared, normalised): QA Sims get the mandatory visual-QA rules, everyone else is "customer".
+    Object.assign(p, enrichQaPersona(p))
     if (Array.isArray(p?.insights)) {
       p.insights = p.insights.map((ins: any) => ({ ...ins, ...sanitizeInsight(ins) }))
     }

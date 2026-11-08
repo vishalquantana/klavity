@@ -114,20 +114,9 @@ test("findSameDefect: no component, same category + strong overlap → duplicate
   expect(findSameDefect({ observation: "Pricing heading has a typo: 'Pricng' instead of 'Pricing'" }, existing)).toBe("fb_2")
 })
 
-import { withMandatoryValidations, MANDATORY_VALIDATIONS, traceabilityGaps, buildSimReviewContext as _bsrc, evidenceForId as _efi } from "./sim-evidence"
+import { traceabilityGaps, buildSimReviewContext as _bsrc, evidenceForId as _efi } from "./sim-evidence"
 
-describe("mandatory run-time validations", () => {
-  test("added to a Sim with no core, without mutating it", () => {
-    const sim = { name: "A" }
-    const out = withMandatoryValidations(sim)
-    expect(out.core.watchFor).toEqual(MANDATORY_VALIDATIONS)
-    expect((sim as any).core).toBeUndefined()
-  })
-  test("leads existing watchFor and never duplicates", () => {
-    const once = withMandatoryValidations({ core: { watchFor: ["typos"] } })
-    expect(once.core.watchFor).toEqual([...MANDATORY_VALIDATIONS, "typos"])
-    expect(withMandatoryValidations(once).core.watchFor).toEqual(once.core.watchFor)
-  })
+describe("traceability flag", () => {
   test("traceability: element-level needs component, region, text; page-level only URL", () => {
     expect(traceabilityGaps({ pageUrl: "https://x/y", target: { text: "Save" } as any, region: { x: 0, y: 0, w: 1, h: 1 } })).toEqual([])
     expect(traceabilityGaps({ pageUrl: "https://x/y", target: { text: "Save" } as any })).toEqual(["region"])
