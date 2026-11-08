@@ -1,0 +1,227 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI QA for Shopify Stores: What to Test Before Launch · Klavity</title>
+<meta name="description" content="AI QA for Shopify stores tests the revenue path as a matrix of product and cart states — variants, discounts, and the handoff into checkout.">
+<link rel="canonical" href="https://klavity.in/blog/ai-qa-for-shopify-stores">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI QA for Shopify Stores: What to Test Before Launch"><meta property="og:description" content="AI QA for Shopify stores tests the revenue path as a matrix of product and cart states — variants, discounts, and the handoff into checkout.">
+<meta property="og:url" content="https://klavity.in/blog/ai-qa-for-shopify-stores"><meta property="og:image" content="https://klavity.in/blog/ai-qa-for-shopify-stores.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI QA for Shopify Stores: What to Test Before Launch"><meta name="twitter:description" content="AI QA for Shopify stores tests the revenue path as a matrix of product and cart states — variants, discounts, and the handoff into checkout."><meta name="twitter:image" content="https://klavity.in/blog/ai-qa-for-shopify-stores.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI QA for Shopify Stores: What to Test Before Launch","description":"AI QA for Shopify stores tests the revenue path as a matrix of product and cart states — variants, discounts, and the handoff into checkout.","datePublished":"2026-11-08","dateModified":"2026-11-08","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-qa-for-shopify-stores.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-qa-for-shopify-stores","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI QA for Shopify Stores: What to Test Before Launch","item":"https://klavity.in/blog/ai-qa-for-shopify-stores"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-qa-for-shopify-stores"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Can you automate testing of Shopify checkout?","acceptedAnswer":{"@type":"Answer","text":"Not the inside of it. Shopify hosts checkout and, on standard non-Plus plans, does not allow custom scripts or arbitrary DOM injection there; customisation moved to Shopify's own extensibility model. Test up to the cart-to-checkout handoff instead and assert that line items, quantities, line item properties and discounts are correct before the redirect."}},{"@type":"Question","name":"What Shopify bugs does a manual theme review usually miss?","acceptedAnswer":{"@type":"Answer","text":"Anything involving a product configuration the reviewer never opened: multi-option variant mapping, sold-out variant states, products with missing images or empty metafields, and discounts that render differently in the cart drawer than on the cart page. Apps the client installs after sign-off are the other common source, because they inject JavaScript into pages that already passed QA."}},{"@type":"Question","name":"How many test products do you need to QA a Shopify store properly?","acceptedAnswer":{"@type":"Answer","text":"Five fixtures cover most of it: a single-variant baseline, a multi-option product, a product with one variant out of stock, a product with sparse data such as one image and no description metafield, and a discounted scenario with both a manual code and an automatic discount."}},{"@type":"Question","name":"Does a small Shopify build need automated QA?","acceptedAnswer":{"@type":"Answer","text":"It depends on how long you stay responsible for the store rather than on build size. A one-off store you never touch again does not need a scheduled suite. A store on a care plan, or one the client edits weekly, does — because the client will install apps and edit sections, and a store that passed QA at handoff is not a store that still passes a month later."}},{"@type":"Question","name":"Why do Shopify test suites break so often?","acceptedAnswer":{"@type":"Answer","text":"Shopify themes rename and reshuffle classes frequently, and app embeds change the DOM at runtime, so tests pinned to brittle CSS selectors fail for reasons unrelated to real bugs. Self-healing or selector-resilient tests are close to a requirement on Shopify rather than a nice-to-have."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-11-08</div>
+    <h1>AI QA for Shopify Stores: What to Test Before Launch</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Shopify store QA flow: product variants to cart to hosted checkout boundary">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="650" cy="70" r="150" fill="#6366f1" opacity="0.07"/>
+
+  <rect x="44" y="92" width="226" height="236" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="44" y="92" width="226" height="236" rx="12" fill="none" stroke="#6366f1" stroke-width="1.6" opacity="0.7"/>
+  <line x1="44" y1="122" x2="270" y2="122" stroke="#6366f1" stroke-width="1.4" opacity="0.5"/>
+  <circle cx="60" cy="107" r="3.5" fill="#f87171" opacity="0.8"/>
+  <circle cx="72" cy="107" r="3.5" fill="#f5f0e8" opacity="0.35"/>
+  <circle cx="84" cy="107" r="3.5" fill="#4ade80" opacity="0.6"/>
+
+  <rect x="64" y="142" width="86" height="86" rx="8" fill="#6366f1" opacity="0.3"/>
+  <path d="M78 212 L100 178 L118 200 L130 188 L136 212 Z" fill="#f5f0e8" opacity="0.4"/>
+  <rect x="166" y="142" width="84" height="9" rx="4.5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="166" y="160" width="58" height="9" rx="4.5" fill="#f5f0e8" opacity="0.18"/>
+
+  <rect x="166" y="188" width="24" height="24" rx="6" fill="none" stroke="#4ade80" stroke-width="2"/>
+  <path d="M172 200 L177 205 L185 195" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round"/>
+  <rect x="196" y="188" width="24" height="24" rx="6" fill="none" stroke="#4ade80" stroke-width="2"/>
+  <path d="M202 200 L207 205 L215 195" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round"/>
+  <rect x="226" y="188" width="24" height="24" rx="6" fill="none" stroke="#f87171" stroke-width="2"/>
+  <path d="M232 194 L244 206 M244 194 L232 206" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+
+  <rect x="64" y="252" width="186" height="30" rx="8" fill="#6366f1" opacity="0.75"/>
+
+  <path d="M288 210 L336 210" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M327 203 L336 210 L327 217" fill="none" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+
+  <rect x="352" y="118" width="178" height="184" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="352" y="118" width="178" height="184" rx="12" fill="none" stroke="#6366f1" stroke-width="1.6" opacity="0.7"/>
+  <path d="M378 150 h22 l6 28 h-34 z" fill="none" stroke="#f5f0e8" stroke-width="2" opacity="0.55"/>
+  <rect x="418" y="152" width="86" height="8" rx="4" fill="#f5f0e8" opacity="0.28"/>
+  <line x1="372" y1="200" x2="510" y2="200" stroke="#f5f0e8" stroke-width="1.2" opacity="0.18"/>
+  <rect x="372" y="216" width="70" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="456" y="216" width="54" height="8" rx="4" fill="#4ade80" opacity="0.65"/>
+  <rect x="372" y="240" width="62" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="464" y="240" width="46" height="8" rx="4" fill="#f87171" opacity="0.7"/>
+  <rect x="372" y="268" width="138" height="20" rx="6" fill="#6366f1" opacity="0.6"/>
+
+  <line x1="568" y1="60" x2="568" y2="360" stroke="#f5f0e8" stroke-width="1.6" stroke-dasharray="7 7" opacity="0.4"/>
+
+  <rect x="608" y="146" width="150" height="128" rx="12" fill="#6366f1" opacity="0.1"/>
+  <rect x="608" y="146" width="150" height="128" rx="12" fill="none" stroke="#f5f0e8" stroke-width="1.6" stroke-dasharray="6 6" opacity="0.45"/>
+  <rect x="660" y="206" width="46" height="36" rx="6" fill="none" stroke="#f5f0e8" stroke-width="2.2" opacity="0.65"/>
+  <path d="M670 206 v-12 a13 13 0 0 1 26 0 v12" fill="none" stroke="#f5f0e8" stroke-width="2.2" opacity="0.65"/>
+  <circle cx="683" cy="224" r="3.5" fill="#f5f0e8" opacity="0.65"/>
+
+  <path d="M540 210 L596 210" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="5 5"/>
+  <path d="M587 203 L596 210 L587 217" fill="none" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI QA for Shopify stores means testing the revenue path as a matrix of product and cart states, not as a set of pages. Because Shopify hosts checkout and blocks custom scripts there on standard plans, your testable surface ends at the cart-to-checkout handoff — so assert the cart state is correct rather than scripting checkout itself. The bugs that reach clients live in configurations nobody previewed: multi-option products, sold-out variants, sparse product data, and apps the client installs after handoff.</div>
+    <div class="prose"><p><strong>AI QA for Shopify stores means running automated, AI-driven checks across the revenue path of a store — variant selection, cart, discounts, and the handoff into checkout — instead of hand-clicking one product and calling the theme done.</strong> It matters on Shopify specifically because the bugs that cost money are not in the theme you previewed; they appear on product configurations you never opened, and on apps the client installs after you hand the store over. The practical approach is to test the store as a matrix of product and cart states, not as a set of pages.</p>
+
+<p>Shopify is unusually prone to this because so much of the storefront is assembled at runtime: theme Liquid, section settings the client edits themselves, metafields that may be empty, and app embeds that inject JavaScript into pages you already signed off on.</p>
+
+<h2>What does AI QA for Shopify stores actually cover?</h2>
+
+<p>It covers the storefront surface you control and the state you pass into the parts you do not. Concretely:</p>
+
+<ul>
+<li><strong>Product page logic</strong> — variant pickers, price and availability updates, sold-out states, image swapping per variant, quantity rules.</li>
+<li><strong>Cart behaviour</strong> — add to cart from product page, collection page, quick-add, and cart drawer; line item properties; quantity updates; removing the last item.</li>
+<li><strong>Discounts</strong> — manual codes, automatic discounts, and whether the cart drawer reflects what the checkout will actually charge.</li>
+<li><strong>Navigation and collection pages</strong> — filters, sorting, pagination, and empty-result states.</li>
+<li><strong>Theme editor resilience</strong> — what happens when a section is reordered, a block removed, or a metafield left blank.</li>
+<li><strong>Forms and non-commerce paths</strong> — contact, newsletter, account creation, address validation.</li>
+</ul>
+
+<p>What it cannot cover is the inside of Shopify's checkout. That boundary is worth understanding properly, because it changes where you spend effort.</p>
+
+<h2>Why can't you test Shopify checkout the way you test the rest of the store?</h2>
+
+<p>Shopify hosts checkout itself, and on standard (non-Plus) plans you cannot inject custom scripts or arbitrary DOM into it. Checkout customisation moved to Shopify's own extensibility model — UI extensions and Functions — rather than editable templates. For an agency this has one direct consequence: <strong>your testable surface ends at the cart-to-checkout handoff</strong>, and the thing to verify is the <em>state</em> you hand over.</p>
+
+<p>So instead of trying to script the checkout itself, assert that the cart carries the right line items, quantities, line item properties, and discount before the redirect. If the cart is correct, Shopify's checkout is Shopify's problem. If the cart is wrong, no amount of checkout testing would have saved you. This is the same principle covered in <a href="/blog/ai-qa-for-ecommerce-websites">AI QA for ecommerce websites</a>, applied to Shopify's particular architecture.</p>
+
+<h2>Which Shopify bugs slip past a normal theme review?</h2>
+
+<p>The pattern is consistent: a reviewer opens the homepage, one or two featured products, and the cart, with a well-formed test product. Real catalogues are messier. The bugs that reach the client tend to live in configurations nobody previewed.</p>
+
+<table>
+<thead><tr><th>Where it breaks</th><th>What actually goes wrong</th><th>Why a manual pass misses it</th></tr></thead>
+<tbody>
+<tr><td>Multi-option products</td><td>Variant picker works for one option but mis-maps price or image with two or three options</td><td>The demo product had a single option</td></tr>
+<tr><td>Sold-out variants</td><td>Add-to-cart stays enabled, or the picker jumps to an unavailable combination</td><td>Everything was in stock during build</td></tr>
+<tr><td>Products with missing data</td><td>Empty metafield renders an empty block; no second image breaks a gallery or hover swap</td><td>Test products were fully populated</td></tr>
+<tr><td>Cart drawer vs cart page</td><td>Two code paths; discounts or line item properties show in one and not the other</td><td>Only one path was used in review</td></tr>
+<tr><td>Client-installed apps</td><td>App embeds inject JS after handoff and break layout or cart events</td><td>The app did not exist at sign-off</td></tr>
+<tr><td>Theme editor edits</td><td>Client removes a block or reorders sections and a dependent section renders blank</td><td>QA ran before the client touched the editor</td></tr>
+</tbody>
+</table>
+
+<h2>How do you build a Shopify test matrix worth running?</h2>
+
+<p>Pick product fixtures that represent the awkward cases, not the pretty ones. A workable minimum for most stores:</p>
+
+<ol>
+<li><strong>A single-variant product</strong> — the baseline path.</li>
+<li><strong>A multi-option product</strong> with at least two option dimensions, to exercise variant mapping.</li>
+<li><strong>A product with one variant deliberately out of stock</strong>, to exercise availability states.</li>
+<li><strong>A product with sparse data</strong> — one image, no description metafield — to exercise empty states.</li>
+<li><strong>A discounted scenario</strong> — one manual code and one automatic discount, checked in both cart drawer and cart page.</li>
+</ol>
+
+<p>Then run each through add-to-cart from every entry point the theme offers. This is where automation earns its place: the matrix is small enough to describe and far too tedious to click weekly. <a href="/autosim">AutoSim</a> is built for exactly this shape of work — E2E flows that survive theme changes, since Shopify themes rename and reshuffle classes constantly and brittle selectors are the main reason agency test suites get abandoned. If you have inherited a flaky suite, <a href="/blog/how-to-write-resilient-test-selectors">resilient test selectors</a> is the place to start.</p>
+
+<h2>How does AI QA for Shopify stores fit an agency's handoff?</h2>
+
+<p>Three moments matter, and they are different kinds of testing.</p>
+
+<h3>Before launch</h3>
+<p>Run the full matrix against the staging theme. This is a scripted, repeatable pass — the same checks every time, so a regression is obvious. Pair it with a <a href="/blog/pre-launch-qa-checklist-for-web-agencies">pre-launch QA checklist</a> for the non-commerce items: redirects from the old site, meta titles, 404 handling, and analytics.</p>
+
+<h3>At handoff</h3>
+<p>Give the client a way to report what they find that is better than a screenshot in WhatsApp. <a href="/snap">Snap</a> turns a right-click into a bug report with the URL, console errors, network activity, and browser context attached — which is the difference between a ticket you can act on and a week of "which page, which product?" Shopify clients in particular report in terms of products ("this one looks wrong"), so capturing the exact URL and variant state is most of the diagnosis.</p>
+
+<h3>After the client starts editing</h3>
+<p>This is the step most agencies skip, and it is where Shopify differs from a static build. The client will install apps, edit sections, and add products with different data shapes. A store that passed QA at handoff is not a store that still passes QA a month later. Re-running the same matrix on a schedule is what converts a one-time launch check into <a href="/blog/continuous-qa">continuous QA</a>. For exploratory coverage — the paths you did not think to script — <a href="/sims">Sims</a> runs AI personas through the store the way different shoppers actually behave, including the impatient ones who double-click and the ones who abandon and come back.</p>
+
+<h2>What should a Shopify pre-launch QA pass include?</h2>
+
+<ul>
+<li><strong>Commerce path</strong>: the full product and cart matrix above, including discounts in both cart surfaces.</li>
+<li><strong>Mobile first</strong>: most Shopify traffic is mobile; check the cart drawer, sticky add-to-cart, and filter drawers on a real viewport, not a resized desktop window.</li>
+<li><strong>Console cleanliness</strong>: app scripts throw frequently and the noise hides real errors — triage them rather than ignoring them.</li>
+<li><strong>Redirects</strong>: a replatform without URL redirects loses rankings regardless of how good the new theme is.</li>
+<li><strong>Empty and error states</strong>: empty cart, no search results, filtered collection with zero matches.</li>
+<li><strong>Accessibility basics</strong>: keyboard access to the variant picker and cart drawer, and focus handling when the drawer opens.</li>
+</ul>
+
+<p>None of this requires a dedicated QA hire. It requires the checks to be written down once and run automatically, which is the whole argument in our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>Is AI QA worth it for a small Shopify build?</h2>
+
+<p>It depends less on build size than on how long you will be responsible for the store. A one-off brochure store you never touch again does not need a scheduled suite. A store on a care plan, or one the client edits weekly, does — because the cost you are avoiding is not the bug, it is the client finding the bug first and the trust that follows it out the door.</p>
+
+<p>The honest framing: automated checks will not catch a design that converts badly or a product photo that is wrong. They catch the mechanical failures — the variant that prices wrong, the discount that does not apply, the add-to-cart that silently fails on mobile — and those are precisely the failures that cost the client money while looking fine in a screenshot.</p>
+
+<h2>Where should you start?</h2>
+
+<p>Start with one store and one flow: the multi-option product through to the cart-to-checkout handoff. Get that running automatically. Add the sold-out variant and the discount case next. You will have covered the majority of money-losing Shopify bugs before you have built anything that feels like a test suite.</p>
+
+<p><a href="/onboarding"><strong>Scan your next client store free</strong></a> — point Klavity at a Shopify storefront and see which product and cart states break before your client does.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Test the cart-to-checkout handoff state, not Shopify's hosted checkout</li><li>Use five product fixtures: multi-option, sold-out, sparse data, discounted, baseline</li><li>Re-run QA after the client installs apps and edits sections</li><li>Check the cart drawer and cart page separately — they are two code paths</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Can you automate testing of Shopify checkout?</summary><p>Not the inside of it. Shopify hosts checkout and, on standard non-Plus plans, does not allow custom scripts or arbitrary DOM injection there; customisation moved to Shopify's own extensibility model. Test up to the cart-to-checkout handoff instead and assert that line items, quantities, line item properties and discounts are correct before the redirect.</p></details><details><summary>What Shopify bugs does a manual theme review usually miss?</summary><p>Anything involving a product configuration the reviewer never opened: multi-option variant mapping, sold-out variant states, products with missing images or empty metafields, and discounts that render differently in the cart drawer than on the cart page. Apps the client installs after sign-off are the other common source, because they inject JavaScript into pages that already passed QA.</p></details><details><summary>How many test products do you need to QA a Shopify store properly?</summary><p>Five fixtures cover most of it: a single-variant baseline, a multi-option product, a product with one variant out of stock, a product with sparse data such as one image and no description metafield, and a discounted scenario with both a manual code and an automatic discount.</p></details><details><summary>Does a small Shopify build need automated QA?</summary><p>It depends on how long you stay responsible for the store rather than on build size. A one-off store you never touch again does not need a scheduled suite. A store on a care plan, or one the client edits weekly, does — because the client will install apps and edit sections, and a store that passed QA at handoff is not a store that still passes a month later.</p></details><details><summary>Why do Shopify test suites break so often?</summary><p>Shopify themes rename and reshuffle classes frequently, and app embeds change the DOM at runtime, so tests pinned to brittle CSS selectors fail for reasons unrelated to real bugs. Self-healing or selector-resilient tests are close to a requirement on Shopify rather than a nice-to-have.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

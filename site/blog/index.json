@@ -1020,5 +1020,12 @@
     "excerpt": "Spec-driven development means writing a precise, testable spec before a coding agent implements it, so acceptance criteria become your test plan.",
     "category": "Learn",
     "date": "2026-11-07"
+  },
+  {
+    "slug": "ai-qa-for-shopify-stores",
+    "title": "AI QA for Shopify Stores: What to Test Before Launch",
+    "excerpt": "AI QA for Shopify stores tests the revenue path as a matrix of product and cart states — variants, discounts, and the handoff into checkout.",
+    "category": "Guides",
+    "date": "2026-11-08"
   }
 ]

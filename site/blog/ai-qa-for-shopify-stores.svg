@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Shopify store QA flow: product variants to cart to hosted checkout boundary">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="650" cy="70" r="150" fill="#6366f1" opacity="0.07"/>
+
+  <rect x="44" y="92" width="226" height="236" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="44" y="92" width="226" height="236" rx="12" fill="none" stroke="#6366f1" stroke-width="1.6" opacity="0.7"/>
+  <line x1="44" y1="122" x2="270" y2="122" stroke="#6366f1" stroke-width="1.4" opacity="0.5"/>
+  <circle cx="60" cy="107" r="3.5" fill="#f87171" opacity="0.8"/>
+  <circle cx="72" cy="107" r="3.5" fill="#f5f0e8" opacity="0.35"/>
+  <circle cx="84" cy="107" r="3.5" fill="#4ade80" opacity="0.6"/>
+
+  <rect x="64" y="142" width="86" height="86" rx="8" fill="#6366f1" opacity="0.3"/>
+  <path d="M78 212 L100 178 L118 200 L130 188 L136 212 Z" fill="#f5f0e8" opacity="0.4"/>
+  <rect x="166" y="142" width="84" height="9" rx="4.5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="166" y="160" width="58" height="9" rx="4.5" fill="#f5f0e8" opacity="0.18"/>
+
+  <rect x="166" y="188" width="24" height="24" rx="6" fill="none" stroke="#4ade80" stroke-width="2"/>
+  <path d="M172 200 L177 205 L185 195" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round"/>
+  <rect x="196" y="188" width="24" height="24" rx="6" fill="none" stroke="#4ade80" stroke-width="2"/>
+  <path d="M202 200 L207 205 L215 195" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round"/>
+  <rect x="226" y="188" width="24" height="24" rx="6" fill="none" stroke="#f87171" stroke-width="2"/>
+  <path d="M232 194 L244 206 M244 194 L232 206" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+
+  <rect x="64" y="252" width="186" height="30" rx="8" fill="#6366f1" opacity="0.75"/>
+
+  <path d="M288 210 L336 210" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M327 203 L336 210 L327 217" fill="none" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+
+  <rect x="352" y="118" width="178" height="184" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="352" y="118" width="178" height="184" rx="12" fill="none" stroke="#6366f1" stroke-width="1.6" opacity="0.7"/>
+  <path d="M378 150 h22 l6 28 h-34 z" fill="none" stroke="#f5f0e8" stroke-width="2" opacity="0.55"/>
+  <rect x="418" y="152" width="86" height="8" rx="4" fill="#f5f0e8" opacity="0.28"/>
+  <line x1="372" y1="200" x2="510" y2="200" stroke="#f5f0e8" stroke-width="1.2" opacity="0.18"/>
+  <rect x="372" y="216" width="70" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="456" y="216" width="54" height="8" rx="4" fill="#4ade80" opacity="0.65"/>
+  <rect x="372" y="240" width="62" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="464" y="240" width="46" height="8" rx="4" fill="#f87171" opacity="0.7"/>
+  <rect x="372" y="268" width="138" height="20" rx="6" fill="#6366f1" opacity="0.6"/>
+
+  <line x1="568" y1="60" x2="568" y2="360" stroke="#f5f0e8" stroke-width="1.6" stroke-dasharray="7 7" opacity="0.4"/>
+
+  <rect x="608" y="146" width="150" height="128" rx="12" fill="#6366f1" opacity="0.1"/>
+  <rect x="608" y="146" width="150" height="128" rx="12" fill="none" stroke="#f5f0e8" stroke-width="1.6" stroke-dasharray="6 6" opacity="0.45"/>
+  <rect x="660" y="206" width="46" height="36" rx="6" fill="none" stroke="#f5f0e8" stroke-width="2.2" opacity="0.65"/>
+  <path d="M670 206 v-12 a13 13 0 0 1 26 0 v12" fill="none" stroke="#f5f0e8" stroke-width="2.2" opacity="0.65"/>
+  <circle cx="683" cy="224" r="3.5" fill="#f5f0e8" opacity="0.65"/>
+
+  <path d="M540 210 L596 210" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="5 5"/>
+  <path d="M587 203 L596 210 L587 217" fill="none" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+</svg>
