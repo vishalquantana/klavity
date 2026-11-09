@@ -17,7 +17,7 @@ import { type CaptureBuffers } from "@klavity/core/capture"
 import { installCaptureContext, buildCaptureContext } from "./capture-context"
 import { installErrorReporter } from "./error-reporter"
 import type { ReportContext, ReportIdentity, Reporter, ClientInfo, ReportRecording } from "@klavity/core"
-import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, shouldUseInteractiveSuccess, compressScreenshot, buildThumbnail, resolveComposerRecord } from "./widget-lib"
+import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, shouldUseInteractiveSuccess, compressScreenshot, buildThumbnail, resolveComposerRecord, mergeRecordings } from "./widget-lib"
 import { SubmitError, newSubmissionKey, sendForm, withRetries, buildRepairForm, refreshTurnstileField, outcomeFromResult, serverSupportsIdempotency, retryFailureCopy, RETRY, type SubmitOutcome, type RetryInfo } from "./submit-flow"
 import { coerceReporter, reporterToIdentity, resolveFallbackReporter, captureClientInfo } from "./identity"
 import { pickElementOnPage as pickElementOnPageShared } from "@klavity/core/element-picker"
@@ -1443,6 +1443,17 @@ async function mount() {
       saveDraft(cfg.projectId, evOrigin, { isOpen: true, desc: ev.desc, title: ev.title })
       void queueEvWrite(() => updateEvidenceFields(ev.id, { isOpen: true }))
     }
+    // KD-1470: ONE seed list for the composer's recordings — the session's saved ones (KD-1074) plus a
+    // "Record me" video that finished after a page reload (record-bridge). They used to be two separate
+    // `initialRecordings` keys in the buildModal options, so the later one silently dropped the arrived video.
+    const arrivedNow = [...(opts?.initialRecordings || []), ...arrivedRecordings]
+    arrivedRecordings = []
+    const seedRecordings = mergeRecordings(ev?.recordings?.map((r) => ({ ...r })), arrivedNow)
+    // The composer never echoes its seed back via onRecordingsChange, so persist an arrived video into the
+    // session here — otherwise a later minimize/reload would lose it again.
+    if (ev && arrivedNow.length) {
+      void queueEvWrite(async () => { evSession = await setEvidenceRecordings(ev.id, seedRecordings) ?? evSession; updateEvDock() })
+    }
     const identified = firstParty || !!getToken()  // already known to Klavity (own page session, or signed-in widget)
     // Only the "login" gate forces the connect flow on third-party sites. "email"/"anonymous" let an
     // end-user file WITHOUT a Klavity account; "email" requires a typed email when not already identified.
@@ -1482,12 +1493,8 @@ async function mount() {
       // resuming an evidence session that already holds shots (we seed those below); a BRAND-NEW session
       // (empty, no region shot) still auto-captures so the first shot lands + persists via onShotAdded.
       autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0) && !opts?.initialRecordings?.length,
-      // A "Record me" video that finished after the reporter navigated (record-bridge) reopens the composer with it.
-      initialRecordings: (() => {
-        const all = [...(opts?.initialRecordings || []), ...arrivedRecordings]
-        arrivedRecordings = []
-        return all.length ? all : undefined
-      })(),
+      // Saved session recordings + a "Record me" video that finished after the reporter navigated (see above).
+      initialRecordings: seedRecordings.length ? seedRecordings : undefined,
       // #638: render the "Attach console logs" toggle (default OFF) in the composer. When the reporter enables
       // it, the submit payload carries attachConsole:true and onSubmit includes the captured console logs.
       consoleAttachToggle: true,
@@ -1686,9 +1693,8 @@ async function mount() {
       // KLAVITYKLA-438 "Record me": expose the button + drive the consent → record → preview overlay from
       // the sdk recorder, returning the captured recording (or null on cancel) to the composer.
       allowRecording: composerRecord,
-      // KD-1074: restore the session's recordings on resume, and persist every add/remove so a minimize (or a
-      // navigation) never loses the recorded video.
-      initialRecordings: ev?.recordings?.length ? ev.recordings.map((r) => ({ ...r })) : undefined,
+      // KD-1074: persist every add/remove so a minimize (or a navigation) never loses the recorded video.
+      // (The session's recordings are restored via the single `initialRecordings` seed above — KD-1470.)
       onRecordingsChange: ev ? (recs) => {
         void queueEvWrite(async () => { evSession = await setEvidenceRecordings(ev.id, recs) ?? evSession; updateEvDock() })
       } : undefined,
@@ -2444,7 +2450,8 @@ async function mount() {
 
   function applyManagedSims(sims: ManagedSim[], change: { action: ManagedSimAction; applied: string[] }) {
     _managedSig = managedSigOf(sims)
-    const deployed = sims.filter((s) => s.deployment === "deployed")
+    // A Sim deactivated on the dashboard Sims tab never runs on the page, whatever its deployment state.
+    const deployed = sims.filter((s) => s.deployment === "deployed" && s.active !== false)
     const running = deployed.filter((s) => s.execution === "running").map((s) => s.id)
     const kl = (window as any).KlavitySims
     _simsWatchCtrl?.stop()
@@ -2482,6 +2489,11 @@ async function mount() {
   // Capture the current viewport and POST to /api/sim/review immediately.
   // This is the "boot" review triggered right after Deploy — no waiting for scroll or mutation.
   async function bootReview(simIds: string[] | 'all') {
+    // KD-1465: report the run's phase to the Sims feedback panel (analysing → running → completed/failed).
+    const runStatus = (s: "analysing" | "running" | "completed" | "failed") => {
+      try { (window as any).KlavitySims?.setRunStatus?.(s) } catch { /* never break page */ }
+    }
+    runStatus("analysing")
     try {
       const benchStart = benchNow()
       const captureStart = benchNow()
@@ -2508,6 +2520,7 @@ async function mount() {
       if (simIds !== 'all') body.simIds = simIds
       const headers: Record<string, string> = { 'content-type': 'application/json' }
       if (getToken()) headers.authorization = `Bearer ${getToken()}`
+      runStatus("running")
       const networkStart = benchNow()
       const res = await fetchWithTimeout(cfg.backendUrl + '/api/sim/review', {
         method: 'POST', headers, credentials: 'include', body: JSON.stringify(body),
@@ -2517,12 +2530,13 @@ async function mount() {
       if (res.status === 401 && !firstParty) {
         clearToken()
         banner("Your Klavity connection expired — deploy Sims again to reconnect.")
+        runStatus("failed")
         return
       }
-      if (!res.ok) return
+      if (!res.ok) { runStatus("failed"); return }
       const data = await res.json().catch(() => ({}))
       const networkMs = benchNow() - networkStart
-      if (!data?.ok || !Array.isArray(data.reviews)) return
+      if (!data?.ok || !Array.isArray(data.reviews)) { runStatus("failed"); return }
       const kl = (window as any).KlavitySims
       const renderStart = benchNow()
       let observations = 0
@@ -2544,6 +2558,7 @@ async function mount() {
       const renderMs = benchNow() - renderStart
       const totalMs = benchNow() - benchStart
       updateIssueCounter()
+      runStatus("completed")
       const server = data.timing?.simReview
       const domNodes = reactionNodeCount()
       console.log(
@@ -2552,7 +2567,7 @@ async function mount() {
         `serverReviewMs=${server?.reviewMs ?? '?'} renderMs=${benchMs(renderMs)} totalMs=${benchMs(totalMs)} ` +
         `sims=${data.reviews.length} observations=${observations} domNodes=${domNodes}`,
       )
-    } catch { /* non-fatal: boot review is best-effort */ }
+    } catch { runStatus("failed") /* non-fatal: boot review is best-effort */ }
   }
 
   // Opens the Klavity connect popup and resolves with the minted widget token, or "" if the user

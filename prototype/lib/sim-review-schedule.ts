@@ -28,7 +28,9 @@ import {
 } from "./db"
 import { captureSimRunCompleted, planTierForProject } from "./posthog"
 import { runSimReviews, splitUrl, buildSimRunSummary } from "./sim-review"
+import { evidenceForId, type EvidenceRecord } from "./sim-evidence"
 import { authedScreenshotUrl } from "./sim-preview"
+import { sanitizePageMeta } from "./sim-ui-identity"
 import { safeFetch } from "./safe-fetch"
 import { projectEntitlement } from "./entitlement"
 
@@ -39,14 +41,14 @@ export interface ScheduleRunDeps {
    * production impl can log the project's configured AutoSim Test Account in first (KLA-264 / JTBD
    * 3.12) — letting scheduled runs review pinned behind-login URLs (e.g. the client app dashboard).
    */
-  takeScreenshot: (url: string, projectId: string) => Promise<{ imageB64: string; mediaType: string }>
+  takeScreenshot: (url: string, projectId: string) => Promise<{ imageB64: string; mediaType: string; pageMeta?: unknown }>
   /** React fn forwarded to runSimReviews. */
   reactFn: Parameters<typeof runSimReviews>[0]["reactFn"]
   /** Citation resolver forwarded to runSimReviews. */
   resolveCitationsFn: Parameters<typeof runSimReviews>[0]["resolveCitationsFn"]
   /** libSQL client (may be null in tests with no DB). */
   db: Client | null
-  /** Optional: store screenshot bytes — if omitted, a no-s3-* id is generated. */
+  /** Optional: store screenshot bytes and return the stored id (throw on failure). If omitted, or it throws, the run has NO screenshot evidence (null id, failure recorded) — never a placeholder id. */
   storeScreenshot?: (bytes: Buffer, mediaType: string, projectId: string) => Promise<string>
 }
 
@@ -101,7 +103,7 @@ async function runOneSchedule(
     }
 
     // Screenshot the target URL (authed via the project's Test Account when configured — KLA-264).
-    let shot: { imageB64: string; mediaType: string }
+    let shot: { imageB64: string; mediaType: string; pageMeta?: unknown }
     try {
       shot = await deps.takeScreenshot(schedule.targetUrl, schedule.projectId)
     } catch (e: any) {
@@ -110,18 +112,21 @@ async function runOneSchedule(
       return { ...base, simCount: 0, totalObservations: 0, simRunId: null, skipped: `screenshot error: ${e?.message || "unknown"}` }
     }
 
-    // Store screenshot (best-effort; if storeScreenshot not provided, use a placeholder id).
-    let screenshotId: string
+    // Store screenshot. Evidence integrity: a failure (or no store configured) leaves screenshotId null and records why — it never
+    // invents an id that would look like an attached screenshot.
+    let screenshotId: string | null = null
+    let evidence: EvidenceRecord
     if (deps.storeScreenshot) {
       try {
         const bytes = Buffer.from(shot.imageB64, "base64")
-        screenshotId = await deps.storeScreenshot(bytes, shot.mediaType, schedule.projectId)
+        screenshotId = (await deps.storeScreenshot(bytes, shot.mediaType, schedule.projectId)) || null
+        evidence = evidenceForId(screenshotId)
       } catch (e: any) {
-        console.warn("[sim-schedule] screenshot storage skipped:", e?.message || e)
-        screenshotId = "no-s3-sched-" + Date.now().toString(36)
+        console.warn("[sim-schedule] screenshot storage failed:", e?.message || e)
+        evidence = { screenshot: "failed", error: String(e?.message || e).slice(0, 200), checkedAt: Date.now() }
       }
     } else {
-      screenshotId = "no-s3-sched-" + Date.now().toString(36)
+      evidence = { screenshot: "failed", error: "no screenshot store configured", checkedAt: Date.now() }
     }
 
     const { urlHost, urlPath } = splitUrl(schedule.targetUrl)
@@ -134,7 +139,8 @@ async function runOneSchedule(
       imageB64: shot.imageB64, mediaType: shot.mediaType,
       targetSims: allSims,
       actorEmail,
-      screenshotId,
+      screenshotId, evidence,
+      pageMeta: sanitizePageMeta(shot.pageMeta),
       seenKeys,
       seenHashes: new Set(),
       sessionId: undefined,

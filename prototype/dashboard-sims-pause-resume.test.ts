@@ -28,12 +28,9 @@ test("running Sim → Pause, paused Sim → Resume, each wired to its own Sim", 
   expect(resume).toContain(`simExecAction('s1', 'resume', this)`)
 })
 
-test("a Sim that isn't running gets a disabled Pause with a hint; unknown state shows nothing", () => {
+test("a Sim that isn't deployed / running shows no Pause or Resume at all; unknown state shows nothing", () => {
   for (const st of [{ deployment: "not_deployed", execution: "not_running" }, { deployment: "deactivated", execution: "not_running" }]) {
-    const b = buttonFor(st)
-    expect(b).toContain("disabled")
-    expect(b).toContain("Select Sims")
-    expect(b).not.toContain("simExecAction")
+    expect(buttonFor(st)).toBe("")
   }
   expect(buttonFor(null)).toBe("")
 })

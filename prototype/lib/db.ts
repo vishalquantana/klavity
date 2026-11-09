@@ -8,6 +8,7 @@ import { sanitizeLabelRules, type LabelRule } from "./label-rules"
 import { snapshotStatements } from "./deleted-tickets"
 import { normalizeReferer, coarsenUa } from "./shortlinks"
 import { BASELINE_QA_SIM, BASELINE_QA_SOURCE, baselineQaId } from "./baseline-qa"
+import { normalizePersonaKind, parseValidations, canonicalValidations, VALIDATIONS_VERSION, QA_RULES, type PersonaKind, type PersonaValidations } from "./sim-validations"
 
 const url = process.env.TURSO_DATABASE_URL
 const authToken = process.env.TURSO_AUTH_TOKEN
@@ -287,7 +288,8 @@ export async function applySchema(c: Client) {
        screenshot_id TEXT,
        source_quote TEXT,
        reporter_email TEXT,
-       created_at INTEGER NOT NULL
+       created_at INTEGER NOT NULL,
+       evidence_json TEXT
      )`,
     `CREATE INDEX IF NOT EXISTS feedback_occ_idx ON feedback_occurrences (feedback_id, seen_at)`,
     // ── A.10 dedup override memory (additive): records human merge/split decisions so intake
@@ -1117,6 +1119,9 @@ export async function applySchema(c: Client) {
     // reads never drag a 100s-of-KB BLOB out of remote Turso. Preload so an established DB issues zero
     // ALTERs on reboot.
     "feedback_replays",
+    // Phase-1 QA evidence integrity: feedback_occurrences.evidence_json records whether each repeat sighting's screenshot was
+    // actually captured. Preloaded so an established DB issues zero ALTERs on reboot.
+    "feedback_occurrences",
   ]
   const _cols = await loadTableColumns(c, ALTERED_TABLES)
   const needCol = (table: string, col: string) => !(_cols.get(table)?.has(col) ?? false)
@@ -1246,6 +1251,7 @@ export async function applySchema(c: Client) {
         console.warn(`feedback.${col} ALTER skipped:`, e?.message || e))
     }
   }
+  if (needCol("feedback_occurrences", "evidence_json")) await c.execute("ALTER TABLE feedback_occurrences ADD COLUMN evidence_json TEXT").catch((e: any) => console.warn("feedback_occurrences.evidence_json ALTER skipped:", e?.message || e))
   await c.execute(`CREATE INDEX IF NOT EXISTS feedback_issue_idx ON feedback (project_id, issue_key)`)
     .catch((e: any) => console.warn("feedback_issue_idx skipped:", e?.message || e))
   await c.execute(`CREATE INDEX IF NOT EXISTS feedback_sig_idx ON feedback (project_id, signature)`)
@@ -1648,6 +1654,17 @@ export async function applySchema(c: Client) {
   // rows = unknown origin; these are NOT treated as transcript Sims (step 4 stays unticked).
   if (needCol("personas", "sim_source")) await c.execute("ALTER TABLE personas ADD COLUMN sim_source TEXT")
     .catch((e: any) => console.warn("personas.sim_source ALTER skipped:", e?.message || e))
+  // Visual-QA validations: persona_kind ('qa' | 'customer'; NULL = legacy = customer) is the explicit, persistent QA classification;
+  // validations_json holds the structured mandatory rules for QA Sims (see lib/sim-validations.ts). Additive + idempotent.
+  if (needCol("personas", "persona_kind")) await c.execute("ALTER TABLE personas ADD COLUMN persona_kind TEXT")
+    .catch((e: any) => console.warn("personas.persona_kind ALTER skipped:", e?.message || e))
+  if (needCol("personas", "validations_json")) await c.execute("ALTER TABLE personas ADD COLUMN validations_json TEXT")
+    .catch((e: any) => console.warn("personas.validations_json ALTER skipped:", e?.message || e))
+  await c.execute({ sql: "UPDATE personas SET persona_kind='qa' WHERE sim_source=? AND persona_kind IS NULL", args: [BASELINE_QA_SOURCE] })
+    .catch((e: any) => console.warn("personas.persona_kind baseline backfill skipped:", e?.message || e))
+  // Rules were reduced to the three mandatory QA rules (version 2): refresh any QA Sim still holding the retired 7-category set.
+  await c.execute({ sql: "UPDATE personas SET validations_json=? WHERE persona_kind='qa' AND (validations_json IS NULL OR validations_json NOT LIKE '%\"version\":2%')", args: [JSON.stringify(canonicalValidations())] })
+    .catch((e: any) => console.warn("personas.validations_json refresh skipped:", e?.message || e))
   // KLAVITYKLA-253 (JTBD B.13): carry the ORIGINATING grounded quote through graduation.
   // source_quote      — the verbatim complaint/evidence the expectation was born from (Snap/Sim/AutoSim).
   // source_quote_verified — 1 = verified against source text (trait provenance / page text), 0 = present but
@@ -3544,6 +3561,9 @@ export type PersonaRow = {
   isGlobal?: boolean
   // KLAVITYKLA-301: which Add-a-Sim path created this Sim. NULL = legacy/unknown.
   simSource?: string | null
+  // Visual-QA classification. 'qa' Sims carry `validations` (mandatory screenshot-inspection rules); everything else is 'customer'.
+  personaKind?: PersonaKind
+  validations?: PersonaValidations
   // WP-S2: false = deactivated (kept, but skipped by every review/run/offer path). Absent/undefined is treated as active.
   active?: boolean
 }
@@ -3563,7 +3583,13 @@ function rowToPersona(x: any): PersonaRow {
   const temperament = x.temperament != null ? String(x.temperament) : ""
   const voice = x.voice != null ? String(x.voice) : ""
   const hasCore = goals.length || watchFor.length || expertise || temperament || voice
+  // Baseline QA is always QA, whatever the stored kind says; a stored 'qa' is never downgraded on read.
+  const personaKind = x.sim_source === BASELINE_QA_SOURCE ? "qa" : normalizePersonaKind(x.persona_kind)
+  // The runtime reads the PERSISTED rules; a missing / malformed / outdated stored set (legacy rows) falls back to the canonical set.
+  const stored = personaKind === "qa" ? parseValidations(x.validations_json) : null
+  const validations = personaKind === "qa" ? (stored && stored.version === VALIDATIONS_VERSION && stored.rules.length === QA_RULES.length ? stored : canonicalValidations()) : undefined
   return {
+    personaKind, ...(validations ? { validations } : {}),
     id: String(x.id), projectId: String(x.project_id), name: String(x.name),
     role: String(x.role || ""), type: String(x.type || "client"),
     initials: String(x.initials || ""), accent: String(x.accent || "#6366f1"),
@@ -3613,12 +3639,12 @@ export async function ensureBaselineQaSim(projectId: string): Promise<boolean> {
   const q = BASELINE_QA_SIM
   const now = Date.now()
   const r = await db!.execute({
-    sql: `INSERT OR IGNORE INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,sim_source,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT OR IGNORE INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,sim_source,persona_kind,validations_json,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [baselineQaId(projectId), projectId, q.name, q.role, q.type, q.initials, q.accent, q.summary,
            JSON.stringify(q.insights), null, q.simClass, q.side,
            JSON.stringify(q.core.goals), q.core.expertise, q.core.temperament, q.core.voice, JSON.stringify(q.core.watchFor),
-           BASELINE_QA_SOURCE, now, now],
+           BASELINE_QA_SOURCE, "qa", JSON.stringify(canonicalValidations()), now, now],
   })
   return (r.rowsAffected ?? 0) > 0
 }
@@ -3743,15 +3769,22 @@ export async function setPersonaGlobal(id: string, projectId: string, isGlobal: 
 export async function upsertPersona(id: string, projectId: string, data: Omit<PersonaRow, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>) {
   const now = Date.now()
   const core = data.core ?? null
+  // Central enrichment: every write path (Describe / From site / From call / presets / custom / edit) lands here, so QA Sims always
+  // persist the mandatory rules. `data.personaKind` is the caller's classification; the ON CONFLICT below never demotes a stored QA Sim.
+  const kind: PersonaKind = data.simSource === BASELINE_QA_SOURCE ? "qa" : normalizePersonaKind(data.personaKind)
+  const validationsJson = kind === "qa" ? JSON.stringify(canonicalValidations()) : null
   await db!.execute({
-    sql: `INSERT INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,sim_source,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    sql: `INSERT INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,sim_source,persona_kind,validations_json,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
           ON CONFLICT(id) DO UPDATE SET name=excluded.name,role=excluded.role,type=excluded.type,
           initials=excluded.initials,accent=excluded.accent,summary=excluded.summary,
           insights_json=excluded.insights_json,avatar=excluded.avatar,
           sim_class=excluded.sim_class,side=excluded.side,goals_json=excluded.goals_json,
           expertise=excluded.expertise,temperament=excluded.temperament,voice=excluded.voice,
-          watchfor_json=excluded.watchfor_json,updated_at=excluded.updated_at`,
+          watchfor_json=excluded.watchfor_json,
+          persona_kind=CASE WHEN personas.persona_kind='qa' OR excluded.persona_kind='qa' THEN 'qa' ELSE excluded.persona_kind END,
+          validations_json=CASE WHEN excluded.persona_kind='qa' THEN excluded.validations_json WHEN personas.persona_kind='qa' THEN personas.validations_json ELSE NULL END,
+          updated_at=excluded.updated_at`,
     args: [id, projectId, data.name, data.role, data.type, data.initials, data.accent, data.summary,
            JSON.stringify(data.insights), data.avatar ?? null,
            data.simClass ?? null, data.side ?? null,
@@ -3759,6 +3792,7 @@ export async function upsertPersona(id: string, projectId: string, data: Omit<Pe
            core?.expertise ?? null, core?.temperament ?? null, core?.voice ?? null,
            core ? JSON.stringify(core.watchFor ?? []) : null,
            data.simSource ?? null,
+           kind, validationsJson,
            now, now],
   })
   // KLA-739 (C2-5 residual a): a persona edit (name/role/initials/accent) changes the Sim OG card, but the
@@ -3907,7 +3941,7 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
   const now = Date.now()
   // #544 follow-up: untrusted/quarantined intake is pinned to 'new' regardless of the claimed priority
   // (priority-self-elevation guard). The priority column below still stores f.priority verbatim.
-  const status = f.forceNewStatus ? "new" : initialFeedbackStatus(f.priority)
+  const status = f.forceNewStatus || f.simId ? "new" : initialFeedbackStatus(f.priority)
   const args = feedbackInsertArgs(f, id, now, status)
   try {
     const rs = await db!.batch([
@@ -3942,7 +3976,7 @@ export async function insertFeedbackForSubmission(
   const now = Date.now()
   // #544 follow-up: untrusted/quarantined intake is pinned to 'new' regardless of the claimed priority
   // (priority-self-elevation guard). The priority column below still stores f.priority verbatim.
-  const status = f.forceNewStatus ? "new" : initialFeedbackStatus(f.priority)
+  const status = f.forceNewStatus || f.simId ? "new" : initialFeedbackStatus(f.priority)
   const args = feedbackInsertArgs(f, id, now, status)
   const guard = "EXISTS (SELECT 1 FROM submission_keys WHERE project_id=? AND submission_key=? AND feedback_id=? AND state='done')"
   const rs = await db!.batch([
@@ -4552,6 +4586,30 @@ export async function listRecentFeedbackForDedup(projectId: string, limit = 50):
   })
 }
 
+/**
+ * Phase-1 QA dedup: the live Sim findings already filed against one page, with the UI component each one was about (read from the
+ * `simReview` block stored in client_context_json). Lets the Sim pipeline recognise "same defect on the same component, worded
+ * differently" which a whole-text similarity alone can miss. Empty on error.
+ */
+export async function listSimFindingsOnPage(projectId: string, urlPath: string | null, limit = 60): Promise<Array<{ id: string; title: string; observation: string; clientContext: any | null }>> {
+  try {
+    const r = await db!.execute({
+      sql: `SELECT id, title, observation, suggested_bug_json, client_context_json FROM feedback
+            WHERE project_id=? AND merged_into IS NULL AND sim_id IS NOT NULL AND COALESCE(url_path,'/')=?
+            ORDER BY created_at DESC LIMIT ?`,
+      args: [projectId, urlPath ?? "/", limit],
+    })
+    return r.rows.map((x: any) => {
+      const observation = x.observation != null ? String(x.observation) : ""
+      return {
+        id: String(x.id), observation,
+        title: effectiveTicketTitle({ title: x.title, suggested_bug_json: x.suggested_bug_json, observation }),
+        clientContext: x.client_context_json != null ? safeJsonParse(x.client_context_json) : null,
+      }
+    })
+  } catch { return [] }
+}
+
 // BugHerd sub-project A: look up an existing feedback row by its client-error signature, scoped
 // to the project, so the (later) error-ingest endpoint can dedupe a repeat client error into the
 // same ticket (via bumpFeedbackRecurrence) instead of filing a new one each time it fires.
@@ -4713,16 +4771,18 @@ export type FeedbackOccurrenceInsert = {
   feedbackId: string; projectId: string; seenAt: number
   observation?: string | null; screenshotId?: string | null
   sourceQuote?: string | null; reporterEmail?: string | null
+  /** Phase-1 QA evidence integrity: JSON describing how this sighting's evidence was collected (captured / failed + reason). */
+  evidence?: any
 }
 export async function insertFeedbackOccurrence(o: FeedbackOccurrenceInsert): Promise<string> {
   const id = "occ_" + crypto.randomUUID()
   await db!.execute({
-    sql: `INSERT INTO feedback_occurrences (id, feedback_id, project_id, seen_at, observation, screenshot_id, source_quote, reporter_email, created_at)
-          VALUES (?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO feedback_occurrences (id, feedback_id, project_id, seen_at, observation, screenshot_id, source_quote, reporter_email, created_at, evidence_json)
+          VALUES (?,?,?,?,?,?,?,?,?,?)`,
     args: [
       id, o.feedbackId, o.projectId, o.seenAt,
       o.observation ?? null, o.screenshotId ?? null, o.sourceQuote ?? null, o.reporterEmail ?? null,
-      Date.now(),
+      Date.now(), o.evidence != null ? JSON.stringify(o.evidence) : null,
     ],
   })
   return id
@@ -4732,6 +4792,7 @@ export type FeedbackOccurrenceRow = {
   id: string; feedbackId: string; projectId: string; seenAt: number
   observation: string | null; screenshotId: string | null
   sourceQuote: string | null; reporterEmail: string | null; createdAt: number
+  evidence: any | null
 }
 // All stored occurrences for a cluster head, chronological. Empty array when none / on error.
 export async function listFeedbackOccurrences(feedbackId: string): Promise<FeedbackOccurrenceRow[]> {
@@ -4748,6 +4809,7 @@ export async function listFeedbackOccurrences(feedbackId: string): Promise<Feedb
       sourceQuote: x.source_quote != null ? String(x.source_quote) : null,
       reporterEmail: x.reporter_email != null ? String(x.reporter_email) : null,
       createdAt: Number(x.created_at),
+      evidence: x.evidence_json != null ? safeJsonParse(x.evidence_json) : null,
     }))
   } catch { return [] }
 }
@@ -5315,7 +5377,7 @@ export async function dashboardCounts(projectId: string): Promise<{ feedback: nu
     q("SELECT COUNT(*) AS n FROM activity_events WHERE project_id=?"),
     // KD-265: the sidebar "Tickets" badge = the tickets waiting on someone: To Do ('new'), Open and In Progress. Anything further
     // along (blocked, ready for deployment, deployed, QA review, done) or dismissed is not counted; merged-away rows never are.
-    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status IN ('new','open','in_progress')"),
+    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status IN ('new','open','in_progress') AND NOT (status = 'new' AND sim_id IS NOT NULL)"),
   ])
   const num = (s: PromiseSettledResult<any>): number | null =>
     s.status === "fulfilled" ? Number((s.value.rows[0] as any).n) : null
@@ -8807,6 +8869,9 @@ export async function listTicketsPaginated(
   // (both share `where`).
   conditions.push("f.merged_into IS NULL")
 
+  // A Sim report still awaiting triage (status 'new', sim_id set) lives in Sim Reports only — it reaches the board only after a person
+  // accepts it (status → open). The board asks for 'new' (TO DO) explicitly, so this must hold even when statuses includes 'new'.
+  conditions.push("NOT (f.status = 'new' AND f.sim_id IS NOT NULL)")
   // Exclude 'new' (un-triaged) by default
   const statuses = (opts.statuses ?? []).filter(Boolean)
   if (statuses.length) {

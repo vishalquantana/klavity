@@ -26,6 +26,7 @@
  * Public API on window.KlavitySims (unchanged contract):
  *   deploy(simIds, sims?, opts?)  — mount the launcher/panel
  *   setReviewing(bool)            — reviewing shimmer in launcher + panel
+ *   setRunStatus(status)          — KD-1465: run status line (analysing → running → completed / failed)
  *   renderFeedback(id, name, obs) — add each new (non-duplicate) finding as a row
  *   undeploy()                    — full teardown
  *   onTriage                      — settable hook: (obs, simName) => void
@@ -86,9 +87,14 @@ export interface DeployOpts {
   mode?: 'critical' | 'all'
 }
 
+/** KD-1465: phase of a Sim run — screenshot capture, AI review, done, or errored. */
+export type SimRunStatus = 'analysing' | 'running' | 'completed' | 'failed'
+
 export interface KlavitySimsAPI {
   deploy(simIds: string[] | 'all', sims?: LiveSimDescriptor[], opts?: DeployOpts): void
   setReviewing(reviewing: boolean): void
+  /** KD-1465: show where the current Sim run is (null clears the status line). */
+  setRunStatus(status: SimRunStatus | null): void
   renderFeedback(simId: string, simName: string, observations: LiveObservation[]): void
   undeploy(): void
   /** Set this to receive "Track as Bug" clicks from finding rows. */
@@ -131,6 +137,10 @@ let panelOpen = false
 let personaFilter: string | null = null       // simId or null
 let sevFilter: 'HIGH' | 'MED' | 'LOW' | null = null
 let reviewing = false
+/** KD-1465: current run phase, and findingSeq when the run started (to count its new findings). */
+let runStatus: SimRunStatus | null = null
+let runStartSeq = 0
+let activeRuns = 0
 
 // Cached panel DOM refs (inside the shadow root).
 let launcherEl: HTMLButtonElement | null = null
@@ -139,6 +149,7 @@ let launcherTxtEl: HTMLElement | null = null
 let launcherBadgeEl: HTMLElement | null = null
 let panelEl: HTMLElement | null = null
 let panelCountEl: HTMLElement | null = null
+let panelStatusEl: HTMLElement | null = null
 let panelFiltersEl: HTMLElement | null = null
 let panelListEl: HTMLElement | null = null
 let announcerEl: HTMLElement | null = null
@@ -166,6 +177,44 @@ function normalizeObservationText(text: string): string {
 /** Stable dedup key for an observation within a Sim. */
 function observationKey(simId: string, obs: LiveObservation): string {
   return `${simId}::${normalizeObservationText(obs.text)}`
+}
+
+// KD-1459: the widget's reviews are adhoc, so the server skips its near-dup filter, and the watch engine
+// re-reviews the same page — the AI rewords the same finding slightly each time and exact-text dedup let
+// both copies through. Same character-trigram cosine as obsIsNearDup (prototype/lib/sim-review-pure.ts).
+// Within a Sim, 0.55 (the server's tuned threshold) catches rephrases; across Sims, only near-identical
+// text (0.8) counts, so two Sims' distinct takes on one element both stay.
+const NEAR_DUP_SAME_SIM = 0.55
+const NEAR_DUP_OTHER_SIM = 0.8
+/** Every observation already shown or handled this deploy, for near-dup checks. */
+const seenObservationTexts: Array<{ simId: string; grams: Set<string> }> = []
+
+function trigramSet(text: string): Set<string> {
+  const norm = String(text || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+  const out = new Set<string>()
+  if (!norm) return out
+  const padded = `  ${norm} `
+  for (let i = 0; i < padded.length - 2; i++) out.add(padded.slice(i, i + 3))
+  return out
+}
+
+function trigramSim(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0
+  let inter = 0
+  for (const t of a) if (b.has(t)) inter++
+  return inter / Math.sqrt(a.size * b.size)
+}
+
+/** True when this observation rewords one already shown or handled (see thresholds above). */
+function isNearDuplicate(simId: string, obs: LiveObservation): boolean {
+  const grams = trigramSet(obs.text)
+  return seenObservationTexts.some(s =>
+    trigramSim(grams, s.grams) >= (s.simId === simId ? NEAR_DUP_SAME_SIM : NEAR_DUP_OTHER_SIM))
+}
+
+function rememberObservation(simId: string, obs: LiveObservation): void {
+  seenObservationKeys.add(observationKey(simId, obs))
+  seenObservationTexts.push({ simId, grams: trigramSet(obs.text) })
 }
 
 function emitLiveDock(active: boolean): void {
@@ -276,6 +325,14 @@ const PANEL_CSS = `
   .ksl-count { font-size: 12.5px; color: var(--fg-3); }
   .ksl-count b { color: var(--accent-3); }
   .ksl-count .ksl-hi { color: var(--sev-h-fg); }
+  /* KD-1465: Sim run status line */
+  .ksl-status { display: flex; align-items: center; gap: 7px; margin-top: 6px; font-size: 12px; color: var(--fg-2); }
+  .ksl-status[hidden] { display: none; }
+  .ksl-status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--accent-2); }
+  .ksl-status.is-analysing .ksl-status-dot,
+  .ksl-status.is-running .ksl-status-dot { animation: ksl-pulse 1.4s ease-out infinite; }
+  .ksl-status.is-completed .ksl-status-dot { background: var(--sev-l-fg); }
+  .ksl-status.is-failed .ksl-status-dot { background: var(--sev-h-fg); }
   .ksl-icon-btn {
     margin-left: auto; width: 30px; height: 30px; border-radius: 8px;
     border: 1px solid var(--line); background: transparent; color: var(--fg-3);
@@ -374,7 +431,7 @@ const PANEL_CSS = `
     .ksl-launcher { right: 12px; bottom: 12px; }
   }
   @media (prefers-reduced-motion:reduce) {
-    .ksl-panel.is-open,.ksl-row,.ksl-shimmer,.ksl-launcher.is-reviewing .ksl-pill-txt::after { animation: none !important; }
+    .ksl-panel.is-open,.ksl-row,.ksl-shimmer,.ksl-launcher.is-reviewing .ksl-pill-txt::after,.ksl-status-dot { animation: none !important; }
     .ksl-panel, .ksl-row, .ksl-pill, .ksl-chip, .ksl-r-act, .ksl-icon-btn { transition: none !important; }
   }
 `
@@ -779,8 +836,10 @@ function deploy(
   titleRow.append(title, collapseBtn)
 
   panelCountEl = document.createElement('div'); panelCountEl.className = 'ksl-count'
+  panelStatusEl = document.createElement('div'); panelStatusEl.className = 'ksl-status'; panelStatusEl.hidden = true
+  panelStatusEl.setAttribute('role', 'status')
   panelFiltersEl = document.createElement('div'); panelFiltersEl.className = 'ksl-chips'
-  head.append(titleRow, panelCountEl, panelFiltersEl)
+  head.append(titleRow, panelCountEl, panelStatusEl, panelFiltersEl)
 
   panelListEl = document.createElement('div'); panelListEl.className = 'ksl-list'
   panelListEl.setAttribute('role', 'list')
@@ -804,6 +863,55 @@ function setReviewing(value: boolean): void {
   launcherEl?.classList.toggle('is-reviewing', value)
   syncSurfaces()
   if (panelOpen) renderList()
+}
+
+// ── setRunStatus() ────────────────────────────────────────────────────────────
+// KD-1465: the panel showed nothing while a Sim run was in progress. Each run now reports its
+// phase here, shown on a status line in the panel header (even when findings are already listed)
+// and in the launcher pill while the run is in progress.
+
+function runStatusText(): string {
+  const sims = simEntries.size
+  const who = sims === 1 ? 'Sim is' : 'Sims are'
+  switch (runStatus) {
+    case 'analysing': return `${sims === 1 ? 'Sim is' : `${sims} Sims are`} analysing this page…`
+    case 'running': return `${who} running on this page…`
+    case 'completed': {
+      const n = findingSeq - runStartSeq
+      return `Sim run completed · ${n ? `${n} new finding${n === 1 ? '' : 's'}` : 'no new findings'}`
+    }
+    case 'failed': return "Sim run didn't finish — it will retry on the next change."
+    default: return ''
+  }
+}
+
+function setRunStatus(status: SimRunStatus | null): void {
+  // The boot review and the watch engine can overlap: only report the end once every run has ended.
+  if (status === 'analysing') {
+    if (activeRuns === 0) runStartSeq = findingSeq
+    activeRuns++
+  } else if (status === 'completed' || status === 'failed') {
+    activeRuns = Math.max(0, activeRuns - 1)
+    if (activeRuns > 0) status = 'running'
+  } else if (status === null) {
+    activeRuns = 0
+  }
+  runStatus = status
+  const inProgress = status === 'analysing' || status === 'running'
+  // Drive the existing reviewing shimmer too, so the empty-state copy matches the run.
+  setReviewing(inProgress)
+  if (announcerEl && status) announcerEl.textContent = runStatusText()
+}
+
+function renderRunStatus(): void {
+  if (!panelStatusEl) return
+  panelStatusEl.hidden = !runStatus
+  panelStatusEl.className = 'ksl-status' + (runStatus ? ` is-${runStatus}` : '')
+  panelStatusEl.textContent = ''
+  if (!runStatus) return
+  const dot = document.createElement('span'); dot.className = 'ksl-status-dot'
+  const txt = document.createElement('span'); txt.className = 'ksl-status-txt'; txt.textContent = runStatusText()
+  panelStatusEl.append(dot, txt)
 }
 
 // ── Panel open/close ──────────────────────────────────────────────────────────
@@ -840,7 +948,9 @@ function syncSurfaces(): void {
   const c = activeCounts()
 
   if (launcherTxtEl) {
-    if (reviewing && c.total === 0) {
+    if (runStatus === 'analysing' || runStatus === 'running') {
+      launcherTxtEl.textContent = runStatusText()
+    } else if (reviewing && c.total === 0) {
       launcherTxtEl.innerHTML = 'Your Sims are reviewing…'
     } else if (c.total === 0) {
       launcherTxtEl.innerHTML = 'Sims are watching this page'
@@ -853,6 +963,7 @@ function syncSurfaces(): void {
     launcherBadgeEl.textContent = `${c.high} high`
   }
 
+  renderRunStatus()
   if (panelOpen) renderHeader(c)
 }
 
@@ -1188,8 +1299,8 @@ function renderFeedback(simId: string, simName: string, observations: LiveObserv
   for (const obs of observations) {
     if (!isConcernObservation(obs)) continue
     const key = observationKey(simId, obs)
-    if (seenObservationKeys.has(key)) continue
-    seenObservationKeys.add(key)
+    if (seenObservationKeys.has(key) || isNearDuplicate(simId, obs)) continue
+    rememberObservation(simId, obs)
     addFinding(entry, obs)
   }
 }
@@ -1203,10 +1314,14 @@ function undeploy(): void {
   findingSeq = 0
   simEntries.clear()
   seenObservationKeys.clear()
+  seenObservationTexts.length = 0
   panelOpen = false
   personaFilter = null
   sevFilter = null
   reviewing = false
+  runStatus = null
+  runStartSeq = 0
+  activeRuns = 0
 
   // 2. Abort global listeners
   deployAbort?.abort(); deployAbort = null
@@ -1218,6 +1333,7 @@ function undeploy(): void {
   launcherBadgeEl = null
   panelEl = null
   panelCountEl = null
+  panelStatusEl = null
   panelFiltersEl = null
   panelListEl = null
   announcerEl = null
@@ -1238,6 +1354,7 @@ function undeploy(): void {
 export const SimsLive: KlavitySimsAPI = {
   deploy,
   setReviewing,
+  setRunStatus,
   renderFeedback,
   undeploy,
   onTriage: null,

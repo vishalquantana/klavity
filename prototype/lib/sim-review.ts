@@ -11,7 +11,7 @@
 //   3. RECURRING-ISSUE MEMORY (KLA-2): deduped reactions carry a RecurrenceMemory so the
 //      client knows "this was already filed by Alice 3 days ago."
 import type { Client } from "@libsql/client"
-import { insertFeedback, bumpFeedbackRecurrence, findFeedbackByIssueKey, listRecentFeedbackForDedup, insertActivity, listTraits, listTraitEvents, incrementUsageMeter, accountIdForAiCall, accountPlan } from "./db"
+import { insertFeedback, bumpFeedbackRecurrence, findFeedbackByIssueKey, listRecentFeedbackForDedup, insertFeedbackOccurrence, listSimFindingsOnPage, insertActivity, listTraits, listTraitEvents, incrementUsageMeter, accountIdForAiCall, accountPlan } from "./db"
 import { reserveCredits } from "./credits"
 import { checkQuotaForProject } from "./quota"
 import { issueKeyFor, chooseDedup } from "./dedup"
@@ -20,6 +20,8 @@ import { isBaselineQa, isAllClearObservation } from "./baseline-qa"
 import { recurrenceFromEvents, type Trait, type TraitEventRow } from "./provenance"
 import { ingestSnapOrSim } from "./expectations-ingest"
 import { buildRecurrenceMemory } from "./recurrence-memory"
+import { resolveUiIdentity, type PageMeta } from "./sim-ui-identity"
+import { buildSimReviewContext, evidenceForId, findSameDefect, categoriesConflict, type EvidenceRecord } from "./sim-evidence"
 
 // Re-export everything from the pure module so callers only need one import path.
 export {
@@ -38,6 +40,8 @@ export type SimReactFn = (
   imageB64: string,
   mediaType: string,
   pageUrl: string,
+  /** Read-only element map captured with the screenshot (Rule 2). Absent when the caller only has a screenshot. */
+  pageMeta?: PageMeta | null,
 ) => Promise<{ data: any }>
 
 export type ResolveCitationsFn = (
@@ -62,7 +66,12 @@ export interface SimRunOptions {
   mediaType: string
   targetSims: any[]
   actorEmail: string
-  screenshotId: string
+  /** Id of a screenshot that was really stored and verified, or null when evidence collection failed (never a placeholder id). */
+  screenshotId: string | null
+  /** How the screenshot was collected (captured / failed + reason). Derived from screenshotId when omitted. */
+  evidence?: EvidenceRecord
+  /** Read-only element map captured with the same page load as the screenshot; lets UI identification be verified. */
+  pageMeta?: PageMeta | null
   seenKeys: string[]
   // CLIENT-SIDE dedup: exact hashes the client has already displayed this session.
   seenHashes?: Set<string>
@@ -157,10 +166,12 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
     projectId, urlPath, urlHost, pageUrl, imageB64, mediaType,
     targetSims, actorEmail, screenshotId, seenHashes = new Set(),
     sessionId, mode = "all", adhoc = false,
-    reactFn, resolveCitationsFn, autoCopy, markSeen, db, reportEnv,
+    reactFn, resolveCitationsFn, autoCopy, markSeen, db, reportEnv, pageMeta,
   } = opts
 
   const out: SimReview[] = []
+  // Phase-1 QA standards: every finding records how its evidence was collected. A null screenshotId is an explicit, recorded failure.
+  const evidence: EvidenceRecord = opts.evidence ?? evidenceForId(screenshotId)
 
   // ── Phase 1: trait loading + vision LLM call — run concurrently ───────────
   // Each Sim's DB reads and the ~7 s reactFn call are independent; running them in
@@ -235,7 +246,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
     // LLM call: get this Sim's reactions to the current page.
     let rawReactions: any[] = []
     try {
-      const { data } = await reactFn(simWithMemory, imageB64, mediaType, urlPath || pageUrl)
+      const { data } = await reactFn(simWithMemory, imageB64, mediaType, urlPath || pageUrl, pageMeta ?? null)
       rawReactions = Array.isArray(data?.reactions) ? data.reactions : []
     } catch (e: any) {
       console.error(`sim-review reactFn [${sim.id}] (non-fatal):`, e?.message || e)
@@ -278,6 +289,27 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
 
       const citation = await resolveCitationsFn(sim.id, r?.citedTraitIds, projectId, citePre)
       let bug = r?.suggestedBug
+      // UI identification: which element, where on the page. Recorded on the finding as a screenshot observation (never as a
+      // browser-verified defect).
+      const rawTarget = parseTarget(r?.target, r?.targetDescription)
+      const rawRegion = parseRegion(r?.region ?? r?.box)
+      // Rule 2: VERIFY the model's answer against the captured page metadata before recording it. Selectors/roles/names/regions the
+      // model made up are dropped; only a high-confidence match is recorded as the exact component.
+      const rawElementId = r?.target && typeof r.target === "object" && typeof r.target.elementId === "string" ? r.target.elementId : undefined
+      const identity = resolveUiIdentity({ target: { ...(rawTarget || {}), elementId: rawElementId }, region: rawRegion, meta: pageMeta ?? null })
+      const obsTarget = identity.target
+      const obsRegion = identity.region
+      const simContext = buildSimReviewContext({ pageUrl, urlHost, urlPath, target: obsTarget, region: obsRegion, observation: obsText, evidence, identity })
+      // A repeat sighting of an existing finding: keep the original (reference, history) and ADD this sighting's evidence to it.
+      const recordSighting = async (existingId: string) => {
+        try {
+          await insertFeedbackOccurrence({
+            feedbackId: existingId, projectId, seenAt: Date.now(),
+            observation: obsText, screenshotId, reporterEmail: actorEmail ?? null,
+            evidence: { ...evidence, sim: sim.id, pageUrl, component: simContext.simReview.component, basis: "screenshot" },
+          })
+        } catch (e: any) { console.warn("[sim-review] occurrence evidence skipped:", e?.message || e) }
+      }
 
       // Baseline QA's "No visible defects found…" is an all-clear, not a finding. It lists what it checked ("no broken images or visible
       // errors"), which the keyword classifier below would read as a hard failure and auto-open as a high-priority ticket — so for the
@@ -299,7 +331,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
       let recurrenceMem: any = null
 
       if (bug) {
-        const dedupedInto = await findDuplicateFeedback({
+        let dedupedInto = await findDuplicateFeedback({
           projectId, urlPath, issueType: citation.issueType,
           citedTraitIds: citation.citedTraitIds,
           title: String(bug?.title || ""), observation: obsText,
@@ -308,8 +340,22 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
           // server.ts copy of this function uses for trait-less Sims. Customer Sims keep the existing behaviour (0).
           exactMinSim: isBaselineQa((sim as any).simSource) ? 0.3 : 0,
         })
+        // Page + component + category + wording checks on the Sim findings already filed on this page:
+        //   * a broad page-key / loose-text match onto a finding of a DIFFERENT kind (e.g. a typo folded into a contrast report) is
+        //     rejected — those are separate defects;
+        //   * a rephrased description of the same defect on the same component is matched even when the first pass missed it.
+        try {
+          const onPage = await listSimFindingsOnPage(projectId, urlPath)
+          const candText = `${String(bug?.title || "")} ${obsText}`
+          if (dedupedInto) {
+            const hit = onPage.find((f) => f.id === dedupedInto)
+            if (hit && categoriesConflict(candText, hit)) dedupedInto = null
+          }
+          if (!dedupedInto) dedupedInto = findSameDefect({ observation: obsText, title: String(bug?.title || ""), target: identity.confidence === "high" ? obsTarget : null }, onPage)
+        } catch (e: any) { console.warn("[sim-review] same-defect lookup skipped:", e?.message || e) }
         if (dedupedInto) {
           await bumpFeedbackRecurrence(dedupedInto, Date.now())
+          await recordSighting(dedupedInto)
           feedbackId = dedupedInto
           deduped = true
           if (db) {
@@ -317,13 +363,9 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
             catch (e: any) { console.warn("[sim-review] recurrence-memory skipped:", e?.message || e) }
           }
         } else {
-          // ACCEPTED EXCEPTION (founder decision, KLA #544 round-4, 2026-08-22): Sim-generated
-          // findings auto-surface to the board — a model-classified `bug.priority` of high/urgent
-          // seeds status='open' via initialFeedbackStatus, without per-finding human triage. This is
-          // DELIBERATE (surfacing findings is the Sim/AutoSim product value; a member triggered the
-          // review intentionally) and is one of three approved exceptions to the untrusted-intake
-          // triage invariant — the others are connector-autofile and /api/errors. Do NOT add
-          // forceNewStatus here to "fix" it; see [[klavity_anon_intake_invariant]].
+          // Sim findings stay in the Sim reports ONLY — including high/urgent. They are saved with status 'new' (forceNewStatus: no
+          // priority-based auto-open onto the Tickets board) and are never auto-copied to a tracker connector; a person promotes a
+          // finding to a ticket explicitly. (Supersedes the earlier #544 round-4 'Sim findings auto-surface' exception.)
           feedbackId = await insertFeedback({
             projectId, simId: sim.id, actorEmail, urlHost, urlPath,
             observation: obsText || null, sentiment: r?.sentiment ?? null,
@@ -332,8 +374,8 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
             sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
             issueKey: issueKeyForFeedback(projectId, urlPath, citation.issueType, citation.citedTraitIds),
             reportEnv: reportEnv ?? null,
+            clientContext: simContext, forceNewStatus: true,
           })
-          if (feedbackId) autoCopy?.(feedbackId, projectId, actorEmail)
           // Feed into expectations spine.
           if (feedbackId && db) {
             await ingestSnapOrSim(db, {
@@ -356,6 +398,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
         const existing = await findFeedbackByIssueKey(projectId, hash)
         if (existing) {
           await bumpFeedbackRecurrence(existing.id, Date.now())
+          await recordSighting(existing.id)
           feedbackId = existing.id
           deduped = true
           if (db) {
@@ -371,6 +414,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
             sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
             issueKey: hash,
             reportEnv: reportEnv ?? null,
+            clientContext: simContext,
           })
         }
       }
@@ -384,18 +428,19 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
         sourceTimeKind: citation.sourceTimeKind,
         hash,
         // region: parse model output; accept both "region" (new) and "box" (legacy field name).
-        region: parseRegion(r?.region ?? r?.box),
+        region: obsRegion,
         // KLA-721 (roam grounding): normalized banana severity derived from the (possibly
         // heuristic-elevated) bug priority. null when there's no bug → no banana.
         severity: severityFromPriority(bug?.priority),
         // KLA-721 (roam grounding): deterministic element locator forwarded to the client so the
         // roaming Sim lands on the EXACT element. Falls back to the model's free-text
         // targetDescription (previously DROPPED) when no structured target was emitted.
-        target: parseTarget(r?.target, r?.targetDescription),
+        target: obsTarget,
         suggestedBug: bug ?? null,
         feedbackId,
         deduped,
         recurrence: recurrenceMem,
+        identification: { confidence: identity.confidence, basis: identity.basis, uncertain: identity.uncertain, ...(identity.section ? { section: identity.section } : {}) },
       }
 
       // FEEDBACK MODE filter: applied after full assembly so sentiment + suggestedBug are set.

@@ -47,11 +47,18 @@ async function assertFinalUrlSafe(
   if (!ok) throw new Error("blocked navigation: final URL failed SSRF guard")
 }
 
+/** Read-only element map for the page that was just screenshotted. Best-effort: any failure just means identification stays screenshot-only. */
+async function captureElementMap(page: { pageElements?: (o?: { fullPage?: boolean }) => Promise<unknown> }, fullPage: boolean): Promise<unknown> {
+  try { return (await page.pageElements?.({ fullPage })) ?? undefined } catch { return undefined }
+}
+
 export interface ScreenshotResult {
   imageB64: string // base64 JPEG, no data: prefix
   mediaType: "image/jpeg"
   /** true when a logged-in session was established before the shot (KLA-264). */
   authed?: boolean
+  /** READ-ONLY element map taken from the same page load right after the shot (Rule 2: accurate UI identification). Untrusted; sanitise before use. */
+  pageMeta?: unknown
 }
 
 /**
@@ -86,7 +93,7 @@ export async function screenshotUrl(
     if (settleMs > 0) await page.waitMs(settleMs)
     const imageB64 = await page.screenshotJpeg(quality, shotTimeoutMs, { fullPage: !!opts.fullPage })
     if (!imageB64 || imageB64.length < 100) throw new Error("empty screenshot")
-    return { imageB64, mediaType: "image/jpeg" }
+    return { imageB64, mediaType: "image/jpeg", pageMeta: await captureElementMap(page, !!opts.fullPage) }
   } finally {
     await browser.close().catch(() => {})
   }
@@ -175,7 +182,7 @@ export async function authedScreenshotUrl(
     if (settleMs > 0) await page.waitMs(settleMs)
     const imageB64 = await page.screenshotJpeg(quality, shotTimeoutMs)
     if (!imageB64 || imageB64.length < 100) throw new Error("empty screenshot")
-    return { imageB64, mediaType: "image/jpeg", authed }
+    return { imageB64, mediaType: "image/jpeg", authed, pageMeta: await captureElementMap(page, false) }
   } finally {
     await browser.close().catch(() => {})
   }
