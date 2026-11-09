@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Ticket unavailable · Klavity</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<script>(function(){try{if(localStorage.getItem('klav-theme')==='dark')document.documentElement.setAttribute('data-theme','dark')}catch(e){}})();</script>
+<link rel="stylesheet" href="/fonts/fonts.css" />
+<link rel="stylesheet" href="/tokens.css" />
+<!--
+  Shown for EVERY ticket link that can't be opened: unknown/mistyped ref, deleted ticket, or a project the viewer isn't a member
+  of. It is deliberately static and identical in all three cases — it must never reveal whether a ticket exists (no-leak rule
+  on /t/:ref and /<slug>/<KEY>-<n>). Served by ticketUnavailablePage() in server.ts with the original 404/403 status.
+-->
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:var(--body);background:var(--ink);color:var(--paper);display:flex;flex-direction:column;min-height:100vh;
+    background-image:radial-gradient(1100px 520px at 50% -10%,rgba(99,102,241,.10),transparent 60%)}
+  .top{padding:22px 28px}
+  .brand{display:inline-flex;align-items:center;gap:10px;text-decoration:none;color:var(--paper);font-family:var(--display);font-size:20px;font-weight:500;letter-spacing:-.01em}
+  .brand img{width:30px;height:30px;border-radius:8px}
+  main{flex:1;display:flex;align-items:center;justify-content:center;padding:24px 16px 64px}
+  .card{width:100%;max-width:520px;background:var(--ink-2);border:1px solid var(--line);border-radius:20px;
+    box-shadow:0 24px 60px rgba(25,20,15,.10);padding:44px 40px 36px;text-align:center}
+  .art{width:88px;height:88px;margin:0 auto 22px;border-radius:24px;display:grid;place-items:center;
+    background:rgba(99,102,241,.12);color:var(--indigo);position:relative}
+  .art svg{width:42px;height:42px}
+  .art .q{position:absolute;right:-6px;bottom:-6px;width:30px;height:30px;border-radius:50%;background:var(--ink-2);
+    border:1px solid var(--line);display:grid;place-items:center;font:600 15px/1 var(--display);color:var(--paper-dim)}
+  .code{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px}
+  h1{font-family:var(--display);font-weight:500;font-size:30px;line-height:1.2;letter-spacing:-.02em;margin-bottom:12px}
+  p.lead{font-size:15px;line-height:1.6;color:var(--paper-dim);max-width:400px;margin:0 auto}
+  ul.why{list-style:none;text-align:left;max-width:360px;margin:22px auto 28px;padding:14px 18px;border:1px solid var(--line);
+    border-radius:14px;background:var(--ink);font-size:13.5px;line-height:1.5;color:var(--paper-dim)}
+  ul.why li{display:flex;gap:10px;align-items:flex-start;padding:5px 0}
+  ul.why li::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--indigo);margin-top:8px;opacity:.7}
+  .acts{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:42px;padding:0 20px;border-radius:11px;
+    font:600 14px/1 var(--body);text-decoration:none;cursor:pointer;border:1px solid var(--line-2);background:var(--ink-2);color:var(--paper)}
+  .btn:hover{background:var(--ink-3)}
+  .btn.pri{background:var(--indigo);border-color:var(--indigo);color:#fff}
+  .btn.pri:hover{filter:brightness(1.07);background:var(--indigo)}
+  .btn:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(99,102,241,.35)}
+  .fine{margin-top:22px;font-size:12.5px;color:var(--paper-faint)}
+  @media (max-width:480px){
+    .top{padding:18px 16px}
+    .card{padding:34px 20px 28px;border-radius:16px}
+    h1{font-size:25px}
+    .acts{flex-direction:column}
+    .btn{width:100%}
+  }
+</style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/dashboard" aria-label="Klavity home"><img src="/favicon.svg" alt="" />Klavity</a>
+  </header>
+  <main>
+    <section class="card" role="main" aria-labelledby="tuTitle">
+      <div class="art" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/>
+          <path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/>
+        </svg>
+        <span class="q">?</span>
+      </div>
+      <div class="code">Ticket unavailable</div>
+      <h1 id="tuTitle">We couldn’t open this ticket</h1>
+      <p class="lead">The link may be out of date, or the ticket isn’t available to you.</p>
+      <ul class="why">
+        <li>It may have been deleted (deleted tickets can be restored from Tickets for 30 days).</li>
+        <li>The link may be mistyped or incomplete.</li>
+        <li>It may belong to a project you’re not a member of.</li>
+      </ul>
+      <div class="acts">
+        <a class="btn pri" href="/dashboard#tickets">Go to Tickets</a>
+        <button class="btn" type="button" id="tuBack">Go back</button>
+      </div>
+      <p class="fine">Think you should have access? Ask a project admin to invite you to the project.</p>
+    </section>
+  </main>
+  <script>
+    (function () {
+      var b = document.getElementById('tuBack')
+      // No in-tab history (opened from a new tab / pasted link) → "Go back" would do nothing, so send them to the dashboard.
+      if (b) b.addEventListener('click', function () { if (history.length > 1) history.back(); else location.href = '/dashboard' })
+    })()
+  </script>
+</body>
+</html>
