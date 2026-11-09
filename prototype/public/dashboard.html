@@ -35580,7 +35580,7 @@
           <input id="smName" class="sm-name-in" type="text" maxlength="60" placeholder="e.g. Eleanor, Cautious Buyer, Finance Lead" autocomplete="off" />
           <div class="sm-name-actions">
             <button type="button" class="btn btn-ghost" id="smNameBack">← Back</button>
-            <button class="btn btn-indigo" id="smCreateGo" disabled>Create Sim →</button>
+            <button class="btn btn-indigo" id="smCreateGo">Create Sim →</button>
           </div>
         </div>
       </div>
@@ -35907,7 +35907,6 @@
               } else if (hd.dataset.orig !== undefined) {
                 hd.textContent = hd.dataset.orig; sub.innerHTML = sub.dataset.orig; delete hd.dataset.orig; delete sub.dataset.orig;
               }
-              $("smCreateGo").disabled = !$("smName").value.trim();
               if (!onName) out.innerHTML = "";
               setTimeout(function () { const f = $(onName ? "smName" : "smBrief"); if (f && ov.classList.contains("show")) f.focus(); }, 30);
             }
@@ -35919,7 +35918,7 @@
             async function genBrief() {
               clearFieldErr();
               const v = $("smBrief").value.trim(); if (v.length < 4) { showBriefStep("brief"); fieldErr($("smBrief"), "Describe your user in a sentence — a few words is enough."); return; }
-              const nm = $("smName").value.trim(); if (!nm) { fieldErr($("smName"), "Give your Sim a name."); return; }
+              const nm = $("smName").value.trim(); if (!nm) { fieldErr($("smName"), "Enter Sim name."); return; }
               think("Imagining your Sim…");
               // KLAVITYKLA-301: stamp which modal tab generated these Sims so saveSim can send source to server
               lastSimSource = PANE_TO_SOURCE["describe"] || "describe";
@@ -36295,8 +36294,7 @@
             $("smBriefGo").onclick = goToName;
             $("smCreateGo").onclick = () => withBusy($("smCreateGo"), "Imagining…", genBrief);
             $("smNameBack").onclick = () => showBriefStep("brief");
-            $("smName").addEventListener("input", () => { $("smCreateGo").disabled = !$("smName").value.trim(); });
-            $("smName").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); if ($("smName").value.trim()) withBusy($("smCreateGo"), "Imagining…", genBrief); } });
+            $("smName").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); withBusy($("smCreateGo"), "Imagining…", genBrief); } });
             $("smUrlGo").onclick = () => withBusy($("smUrlGo"), "Reading…", genSite);
             $("smTxGo").onclick = () => withBusy($("smTxGo"), "Extracting…", genCall);
       const smManualBtn = $("smManualBtn");
@@ -36400,7 +36398,7 @@
               $("simHd").textContent = first ? "Bring your first Sim to life" : "Add a Sim";
               // Prefill the site URL from the project when known — one less hop to a first Sim reaction.
               hideDiscard(); clearFieldErr();
-              out.innerHTML = ""; out.style.display = ""; $("smBrief").value = ""; $("smName").value = ""; $("smBriefStep").hidden = false; $("smNameStep").hidden = true; $("smCreateGo").disabled = true; ov.classList.remove("sm-modal-namestep"); clearCreatedView(); if ($("simHd").dataset.orig !== undefined) { $("simSub").innerHTML = $("simSub").dataset.orig; delete $("simHd").dataset.orig; delete $("simSub").dataset.orig; } $("smUrl").value = (state && state.active && state.active.siteUrl) || ""; $("smTx").value = ""; $("smTx").hidden = true; $("smDrop").classList.remove("has-file", "over"); $("smDropT").textContent = "Drop a transcript file"; $("smDropS").textContent = "TXT, VTT or SRT";
+              out.innerHTML = ""; out.style.display = ""; $("smBrief").value = ""; $("smName").value = ""; $("smBriefStep").hidden = false; $("smNameStep").hidden = true; $("smCreateGo").disabled = false; ov.classList.remove("sm-modal-namestep"); clearCreatedView(); if ($("simHd").dataset.orig !== undefined) { $("simSub").innerHTML = $("simSub").dataset.orig; delete $("simHd").dataset.orig; delete $("simSub").dataset.orig; } $("smUrl").value = (state && state.active && state.active.siteUrl) || ""; $("smTx").value = ""; $("smTx").hidden = true; $("smDrop").classList.remove("has-file", "over"); $("smDropT").textContent = "Drop a transcript file"; $("smDropS").textContent = "TXT, VTT or SRT";
               hideSuccessPanel();
               selectPane(mode);
               ov.classList.add("show"); document.body.style.overflow = "hidden";
