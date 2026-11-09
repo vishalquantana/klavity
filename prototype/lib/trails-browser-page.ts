@@ -218,7 +218,9 @@ function krefSnapshotBody(): string {
       walk(child, emitted ? depth + 1 : depth)
     }
   }
-  walk(document.body, 0)
+  // Mid-navigation the new document can exist before <body> is parsed; emit an empty snapshot so the author
+  // loop's empty-snapshot re-capture kicks in instead of throwing "Cannot read properties of null".
+  if (document.body) walk(document.body, 0)
   return lines.join("\n")
 }
 
@@ -267,6 +269,18 @@ function stableSelectorBody(el: Element): string | null {
 /* eslint-enable */
 
 const cap = (s: string, c: number) => (s.length > c ? s.slice(0, c - 20) + "\n…[snapshot truncated]" : s)
+
+// A click that navigates (e.g. a form POST) can destroy the page's JS context while the next snapshot's
+// evaluate() is in flight. That is a transient race, not a walk failure: wait a beat and retry on the new page.
+const NAV_RACE_RE = /Execution context was destroyed|Cannot find context with specified id|Inspected target navigated or closed/i
+async function retryNavRace<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
+  for (let i = 1; ; i++) {
+    try { return await fn() } catch (e) {
+      if (i >= tries || !NAV_RACE_RE.test(String((e as any)?.message ?? e))) throw e
+      await new Promise((r) => setTimeout(r, 750))
+    }
+  }
+}
 
 // ── Interfaces the author drive programs against ─────────────────────────────────────────────────
 export interface BrowserPage {
@@ -375,7 +389,7 @@ class PlaywrightPage implements BrowserPage {
   url() { return this.page.url() }
   async goto(url: string, timeoutMs: number) { await this.page.goto(url, { timeout: timeoutMs, waitUntil: "domcontentloaded" }) }
   async screenshotJpeg(quality: number, timeoutMs: number, opts?: { fullPage?: boolean }) { return (await this.page.screenshot({ type: "jpeg", quality, timeout: timeoutMs, fullPage: !!opts?.fullPage })).toString("base64") }
-  async krefSnapshot(capChars = KREF_SNAPSHOT_CAP) { return cap(await this.page.evaluate(krefSnapshotBody), capChars) }
+  async krefSnapshot(capChars = KREF_SNAPSHOT_CAP) { return cap(await retryNavRace(() => this.page.evaluate(krefSnapshotBody)), capChars) }
   async count(selector: string) { return await this.page.locator(selector).count() }
   async fingerprint(selector: string) { return await this.page.locator(selector).first().evaluate(fingerprintBody) }
   async stableSelector(selector: string) { try { return await this.page.locator(selector).first().evaluate(stableSelectorBody) } catch { return null } }
@@ -534,7 +548,7 @@ class PuppeteerPage implements BrowserPage {
   url() { return this.page.url() }
   async goto(url: string, timeoutMs: number) { await this.page.goto(url, { timeout: timeoutMs, waitUntil: "domcontentloaded" }) }
   async screenshotJpeg(quality: number, _timeoutMs: number, opts?: { fullPage?: boolean }) { return (await this.page.screenshot({ type: "jpeg", quality, encoding: "base64", fullPage: !!opts?.fullPage })) as string }
-  async krefSnapshot(capChars = KREF_SNAPSHOT_CAP) { return cap(await this.page.evaluate(krefSnapshotBody), capChars) }
+  async krefSnapshot(capChars = KREF_SNAPSHOT_CAP) { return cap(await retryNavRace(() => this.page.evaluate(krefSnapshotBody)), capChars) }
   async count(selector: string) { return await this.page.evaluate((s: string) => document.querySelectorAll(s).length, selector) }
   async fingerprint(selector: string) { return await this.page.$eval(selector, fingerprintBody) }
   async stableSelector(selector: string) { try { return await this.page.$eval(selector, stableSelectorBody) } catch { return null } }
@@ -1128,7 +1142,10 @@ async function launchLocalPuppeteer(executablePath: string, opts: AcquireOpts): 
   const { default: puppeteer } = await import("puppeteer-core")
   let browser: any
   try {
-    browser = await puppeteer.launch({ executablePath, headless: opts.headless ?? true, args: opts.launchArgs ?? [], defaultViewport: null, timeout: 30_000 })
+    // --single-process (a Linux prod memory flag in CHROMIUM_PROD_ARGS) crashes Chromium on Windows at the
+    // first keystroke ("Input.dispatchKeyEvent: Target closed"), so drop it on this Windows-only path.
+    const args = (opts.launchArgs ?? []).filter(a => a !== "--single-process")
+    browser = await puppeteer.launch({ executablePath, headless: opts.headless ?? true, args, defaultViewport: null, timeout: 30_000 })
   } catch (e) {
     throw new BrowserLaunchError(
       "Could not start a local browser (" + String((e as any)?.message ?? e) + "). Install Playwright's Chromium on the host (bunx playwright install chromium), or run walks remotely. " + REMOTE_HINT, e,

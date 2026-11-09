@@ -1,0 +1,28 @@
+# Local dev: run the prototype server on Linux so Playwright (AutoSim verification replays, OG cards)
+# works. Playwright cannot drive Chromium under Bun on Windows.
+#   docker compose -f docker-compose.dev.yml up        → http://localhost:4317
+# Reads prototype/.env as usual. node_modules live in named volumes so the Windows installs on the host
+# (with Windows-only native binaries such as libsql) are never shared with the container.
+# First start installs bun, deps, and Playwright's Chromium (+ its Linux libs); later starts reuse them.
+services:
+  app:
+    image: python:3.11-slim # just a Debian bookworm base; bun is installed on first start
+    working_dir: /app
+    ports: ["4317:4317"]
+    volumes:
+      - .:/app
+      - nm-root:/app/node_modules
+      - nm-core:/app/packages/core/node_modules
+      - nm-sdk:/app/packages/sdk/node_modules
+      - nm-ext:/app/packages/extension/node_modules
+      - nm-proto:/app/prototype/node_modules
+      - pw-browsers:/root/.cache/ms-playwright
+    command: >
+      bash -c "set -e;
+               export PATH=/root/.bun/bin:$$PATH;
+               command -v bun >/dev/null || { apt-get update && apt-get install -y --no-install-recommends curl unzip ca-certificates && curl -fsSL https://bun.sh/install | bash -s bun-v1.3.14; };
+               bun install --no-save;
+               cd prototype; bun install --no-save;
+               [ -f /root/.pw-deps-ok ] || { bunx playwright install --with-deps chromium && touch /root/.pw-deps-ok; };
+               exec bun run server.ts"
+volumes: { nm-root: {}, nm-core: {}, nm-sdk: {}, nm-ext: {}, nm-proto: {}, pw-browsers: {} }
