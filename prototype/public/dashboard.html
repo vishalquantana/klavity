@@ -17744,6 +17744,365 @@
       }
     }
   </style>
+  <style id="figma-sim-ui">
+    /* ── Figma UI refresh: app shell + Sim Reports (light theme tokens; dark theme keeps its own palette) ── */
+    :root:not([data-theme="dark"]) {
+      --ink: #f0eeea;
+      --ink-2: #ffffff;
+      --ink-3: #f5f3ef;
+      --paper: #292723;
+      --paper-dim: #77736d;
+      --paper-faint: #8c8881;
+      --indigo: #625bff;
+      --indigo-deep: #5149e8;
+      --rose: #d92768;
+      --line: #eae7e2;
+      --fg-hair: #e9e7e3;
+      --fg-shadow: 0 1px 2px rgba(25, 20, 15, .05);
+    }
+
+    /* Sidebar */
+    :root:not([data-theme="dark"]) .side {
+      background: linear-gradient(to right, #f0eeea 0%, #f7f5f2 48%, #ffffff 100%);
+      border-right: 1px solid var(--fg-hair);
+    }
+    .side .nv {
+      padding: 6px 10px;
+      border-radius: 8px;
+      gap: 10px;
+      font-size: 13.5px;
+      font-weight: 500;
+    }
+    :root:not([data-theme="dark"]) .side .nv { color: rgba(41, 39, 35, .75); }
+    :root:not([data-theme="dark"]) .side .nv:hover { background: rgba(255, 255, 255, .7); color: #292723; transform: none; box-shadow: none; }
+    :root:not([data-theme="dark"]) .side .nv.active { background: #fff; color: #292723; border-color: transparent; box-shadow: 0 1px 2px rgba(25, 20, 15, .07); }
+    :root:not([data-theme="dark"]) .side .nv .ct { font-size: 12px; color: rgba(41, 39, 35, .65); }
+
+    /* Top bar actions: Snap Reports (dark) · Sims Studio (indigo) · Create New (outlined) */
+    :root:not([data-theme="dark"]) .bar-left .nav-snap { background: #1f1d1a; color: #fff; border: 1px solid #1f1d1a; border-radius: 8px; font-size: 12px; font-weight: 500; }
+    :root:not([data-theme="dark"]) .bar-left .nav-studio { background: #625bff; color: #fff; border: 1px solid #625bff; border-radius: 8px; font-size: 12px; font-weight: 500; }
+    :root:not([data-theme="dark"]) .bar-left .create-btn { background: #fff; color: #292723; border: 1px solid var(--fg-hair); border-radius: 8px; font-size: 12px; font-weight: 500; }
+
+    /* Sim Reports: the page card replaces the big title block */
+    body.view-triage .content > .head { display: none; }
+    .card.full[data-view="triage"] {
+      background: var(--ink-2);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 22px 22px 26px;
+      box-shadow: none;
+    }
+    .sr-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .sr-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .sr-title h2 { font: 600 18px/1.2 var(--body); margin: 0; letter-spacing: 0; text-transform: none; text-decoration: none; border: 0; padding: 0; color: var(--paper); }
+    .sr-title h2::after { display: none; }
+    [data-view="triage"] .kb-card.tg-item.has-cb { padding: 14px; }
+    .sr-count { font: 600 11px/1 var(--mono); background: var(--ink); color: var(--paper-dim); border-radius: 999px; padding: 5px 8px; }
+    .sr-toggle { justify-self: center; display: inline-flex; gap: 2px; background: var(--ink); border: 0; border-radius: 10px; padding: 3px; }
+    .sr-toggle .tkt-vbtn { border: 0; background: transparent; color: var(--paper-dim); font: 500 12.5px var(--body); padding: 8px 16px; border-radius: 8px; box-shadow: none; }
+    .sr-toggle .tkt-vbtn.active { background: var(--ink-2); color: var(--indigo); box-shadow: 0 0 0 1px var(--indigo); }
+    .sr-sim { justify-self: end; }
+    .sr-sim-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--ink-2); border-radius: 999px; padding: 4px 10px 4px 12px; font: 500 13px var(--body); color: var(--paper-dim); }
+    .sr-sim-pill select { border: 0; background: transparent; color: var(--paper); font: 600 13px var(--body); outline: none; cursor: pointer; max-width: 200px; }
+
+    /* Filter chips */
+    [data-view="triage"] .tg-filters { padding: 0 0 18px; margin: 0 0 18px; border-bottom: 1px solid var(--line); }
+    [data-view="triage"] .tg-filter-row { gap: 10px; }
+    [data-view="triage"] .tg-chip { border-radius: 999px; border: 1px solid var(--line); background: var(--ink-2); color: var(--paper); font: 500 13px var(--body); padding: 6px 16px; gap: 8px; box-shadow: none; }
+    [data-view="triage"] .tg-chip.s-frustrated, [data-view="triage"] .tg-chip.s-satisfied { background: var(--ink-2); color: var(--paper); border-color: var(--line); }
+    [data-view="triage"] .tg-chip .tg-chip-n { font: 500 11px var(--mono); opacity: .6; background: transparent; padding: 0; }
+    [data-view="triage"] .tg-chip.on, [data-view="triage"] .tg-chip.on.s-frustrated, [data-view="triage"] .tg-chip.on.s-satisfied { background: #292723; color: #fff; border-color: #292723; }
+    [data-theme="dark"] [data-view="triage"] .tg-chip.on { background: #f3ece1; color: #19140f; border-color: #f3ece1; }
+
+    /* Board */
+    [data-view="triage"] .kanban { display: grid; grid-template-columns: repeat(4, minmax(250px, 1fr)); gap: 16px; align-items: start; overflow-x: auto; padding: 0; }
+    [data-view="triage"] .kb-col { background: rgba(240, 238, 234, .25); border: 1px solid var(--line); border-radius: 12px; padding: 0; min-width: 0; }
+    [data-view="triage"] .kb-head { padding: 14px 16px; border-radius: 12px 12px 0 0; border-bottom: 1px solid var(--line); background: rgba(240, 238, 234, .6); }
+    [data-view="triage"] .kb-col[data-key="urgent"] .kb-head, [data-view="triage"] .kb-col[data-key="high"] .kb-head { background: rgba(255, 240, 245, .8); }
+    [data-view="triage"] .kb-col[data-key="medium"] .kb-head { background: rgba(255, 250, 240, .9); }
+    [data-view="triage"] .kb-title { font: 600 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--paper); }
+    [data-view="triage"] .kb-n { font: 600 10px var(--mono); color: var(--paper-dim); background: var(--ink-2); border-radius: 999px; padding: 2px 7px; }
+    [data-view="triage"] .kb-list { padding: 12px; gap: 12px; }
+
+    /* Report cards (board) */
+    [data-view="triage"] .kb-card.tg-item { position: relative; background: var(--ink-2); border: 1px solid var(--line); border-radius: 12px; padding: 14px; box-shadow: var(--fg-shadow, none); transform: none; }
+    [data-view="triage"] .kb-card.tg-item::before, [data-view="triage"] .tg-row::before { display: none; }
+    [data-view="triage"] .kb-card.tg-item:hover { transform: none; border-color: #d9d5ce; }
+    [data-view="triage"] .kb-card .tg-cb-wrap { position: absolute; top: 14px; left: 14px; }
+    [data-view="triage"] .sr-card-top { display: flex; align-items: center; gap: 8px; padding-left: 26px; margin-bottom: 8px; }
+    [data-view="triage"] .sr-bug { color: var(--rose); display: inline-flex; }
+    [data-view="triage"] .sr-id, [data-view="triage"] .fx-id { font: 500 10px var(--mono); color: var(--paper-dim); }
+    [data-view="triage"] .kb-card-t { font: 600 14px/1.38 var(--body); color: var(--paper); }
+    [data-view="triage"] .kb-card-t svg, [data-view="triage"] .kb-card-t .ki { display: none; }
+    [data-view="triage"] .kb-card-d { font: 400 11.5px var(--body); color: var(--paper-dim); margin-top: 6px; }
+    [data-view="triage"] .kb-card-q { font: 400 11.5px/1.6 var(--body); color: var(--paper-dim); margin-top: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    [data-view="triage"] .kb-card-meta { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); gap: 6px; }
+    [data-view="triage"] .kb-card .tg-shot { display: none; }
+
+    /* Sentiment badges */
+    [data-view="triage"] .chip { font: 700 10.5px var(--body); text-transform: capitalize; letter-spacing: 0; border-radius: 6px; padding: 2px 8px; background: #f0eeea; color: #57534e; border: 0; }
+    [data-view="triage"] .chip.s-satisfied, [data-view="triage"] .chip.s-delighted { background: #d1fae5; color: #065f46; }
+    [data-view="triage"] .chip.s-frustrated { background: #ffe4e6; color: #9f1239; }
+    [data-view="triage"] .chip.s-confused { background: #fef3c7; color: #92400e; }
+
+    /* Actions: priority select · Accept · Dismiss */
+    [data-view="triage"] .tg-actions .btn { height: 28px; padding: 0 12px; border-radius: 8px; font: 500 12px var(--body); box-shadow: none; transform: none; }
+    [data-view="triage"] .tg-actions .btn-indigo { background: var(--indigo); color: #fff; border: 0; }
+    [data-view="triage"] .tg-actions .btn-ghost { background: var(--ink-2); color: var(--paper); border: 1px solid var(--line); }
+    [data-view="triage"] .kb-card-actions { margin-top: 12px; padding-top: 0; border-top: 0; }
+
+    /* List rows */
+    [data-view="triage"] .tg-row { display: grid; grid-template-columns: auto 160px minmax(0, 1fr) auto; gap: 16px; align-items: start; background: var(--ink-2); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin: 0 0 12px; box-shadow: none; transform: none; }
+    [data-view="triage"] .tg-row .tg-shot { width: 160px; height: 110px; border-radius: 8px; background: var(--ink); overflow: hidden; }
+    [data-view="triage"] .tg-row .tg-shot-ph { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--paper-faint); }
+    [data-view="triage"] .tg-row .tg-b { min-width: 0; }
+    [data-view="triage"] .tg-row .fx-t { font: 600 15px/1.4 var(--body); color: var(--paper); margin-top: 2px; }
+    [data-view="triage"] .tg-row .fx-q { font: italic 400 12px/1.55 var(--body); color: var(--paper-dim); margin-top: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    [data-view="triage"] .tg-row .fx-m { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; font: 400 11.5px var(--body); color: var(--paper-dim); }
+    [data-view="triage"] .tg-row .fx-area { font: 500 11.5px var(--mono); }
+    [data-view="triage"] .tg-row .fx-sim { display: inline-flex; align-items: center; gap: 4px; }
+    [data-view="triage"] .tg-row .tg-actions { display: flex; align-items: center; gap: 8px; }
+    /* ── Alignment / size pass (measured against the Figma export) ── */
+    .side .side-plan-pill { border: 0; background: transparent; padding: 0 8px; border-radius: 0; box-shadow: none; font-size: 11.5px; }
+    :root:not([data-theme="dark"]) .bar-left .nav-snap, :root:not([data-theme="dark"]) .bar-left .nav-studio, :root:not([data-theme="dark"]) .bar-left .create-btn { height: 28px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; line-height: 1; }
+    .sr-head { margin-bottom: 20px; }
+    .sr-title h2 { font-size: 17px; }
+    .sr-sim-pill { height: 31px; padding: 0 10px 0 12px; line-height: 1; }
+    .sr-sim-pill select { padding: 0 2px; margin: 0; height: auto; line-height: 1.2; background-image: none; -webkit-appearance: menulist; appearance: menulist; }
+    [data-view="triage"] .tg-filters { margin: 0 -22px 18px; padding: 0 22px 18px; }
+    [data-view="triage"] .tg-chip { line-height: 21px; height: 33px; }
+    [data-view="triage"] .tg-chip .tg-chip-n { background: rgba(41, 39, 35, .07); border-radius: 999px; padding: 1px 7px; opacity: 1; color: var(--paper-dim); }
+    [data-view="triage"] .tg-chip.on .tg-chip-n { background: rgba(255, 255, 255, .2); color: #fff; }
+    [data-view="triage"] .kb-card .tg-cb-wrap { opacity: 1; visibility: visible; display: inline-flex; top: 13px; left: 14px; }
+    [data-view="triage"] .kb-card .tg-cb { width: 16px; height: 16px; opacity: 1; margin: 0; accent-color: var(--indigo); }
+    [data-view="triage"] .kb-card .kb-card-t, [data-view="triage"] .kb-card .kb-card-d, [data-view="triage"] .kb-card .kb-card-q, [data-view="triage"] .kb-card .kb-card-meta { padding-left: 0; margin-left: 0; text-indent: 0; }
+    [data-view="triage"] .kb-card .kb-card-t { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    [data-view="triage"] .tg-pri-kdd .kdd-btn { height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--ink-2); color: var(--paper); font: 500 12px var(--body); gap: 6px; }
+    [data-view="triage"] .tg-pri-kdd .kdd-btn .prop-sq { display: none; }
+    [data-view="triage"] .tg-pri-kdd .kdd-txt { text-transform: lowercase; }
+    [data-view="triage"] .kb-card-actions { display: flex; gap: 8px; align-items: center; }
+    [data-view="triage"] .kb-card-actions .btn { flex: 1 1 0; min-width: 0; justify-content: center; }
+    [data-view="triage"] .kb-card-actions .tg-pri-kdd { flex: 0 0 auto; }
+    /* The board must scroll inside its card instead of stretching the page (this pushed the header toggle off-screen on phones) */
+    .content { min-width: 0; }
+    .card.full[data-view="triage"] { min-width: 0; max-width: 100%; }
+    #triageList { min-width: 0; max-width: 100%; }
+    [data-view="triage"] .kanban { max-width: 100%; }
+    @media (max-width: 1100px) {
+      [data-view="triage"] .kanban { grid-template-columns: repeat(4, minmax(260px, 1fr)); }
+    }
+    @media (max-width: 900px) {
+      .sr-head { grid-template-columns: 1fr auto; }
+      .sr-sim { grid-column: 1 / -1; justify-self: start; }
+      .sr-toggle { justify-self: end; }
+    }
+    @media (max-width: 700px) {
+      .card.full[data-view="triage"] { padding: 16px 14px 20px; border-radius: 14px; }
+      .sr-title h2 { font-size: 16px; white-space: nowrap; }
+      .sr-toggle .tkt-vbtn { padding: 7px 11px; font-size: 12px; }
+      [data-view="triage"] .tg-filters { margin: 0 -14px 14px; padding: 0 14px 14px; overflow-x: auto; }
+      [data-view="triage"] .tg-filter-row { flex-wrap: nowrap; }
+      [data-view="triage"] .tg-chip { flex: none; }
+      [data-view="triage"] .kanban { grid-template-columns: repeat(4, 84vw); }
+      [data-view="triage"] .tg-row .tg-actions { flex-wrap: wrap; }
+    }
+
+    /* ── Exact-measure pass (values read from the Figma export at a 1536px viewport) ── */
+    .bar-in { height: 48px; padding: 0 16px; }
+    .brand-word, .side .brand { font-size: 19px; }
+    .side { gap: 0; padding: 16px 8px 12px; }
+    .side .nv { height: 36px; padding: 0 10px; gap: 10px; }
+    .side .nv .ic { width: 16px; display: inline-flex; align-items: center; justify-content: center; font-size: 0; }
+    .side .nv .ic svg { width: 16px; height: 16px; stroke-width: 1.8; }
+    body.view-triage .wrap { padding: 20px 28px 72px; max-width: none; }
+    .card.full[data-view="triage"] { padding: 0; border: 0; border-radius: 12px; }
+    .sr-head { padding: 14px 20px; margin: 0; min-height: 71px; }
+    .sr-title { gap: 10px; }
+    .sr-title svg { width: 18px; height: 18px; }
+    .sr-title h2 { font-size: 20px; line-height: 30px; font-weight: 600; }
+    .sr-count { font: 600 11px/16.5px var(--mono); padding: 2px 8px; }
+    .sr-toggle { padding: 4px; border-radius: 12px; background: rgba(240, 238, 234, .45); border: .8px solid var(--line); }
+    .sr-toggle .tkt-vbtn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; font: 500 12.5px/17.9px var(--body); }
+    .sr-toggle .tkt-vbtn svg { width: 13px; height: 13px; }
+    .sr-sim-pill { height: 31px; padding: 5px 12px; gap: 6px; font-size: 13px; }
+    [data-view="triage"] .tg-filters { margin: 0; padding: 14px 20px; border-bottom: .8px solid var(--line); }
+    [data-view="triage"] .tg-filter-row { gap: 8px; }
+    [data-view="triage"] .tg-chip { height: 33px; padding: 6px 16px; gap: 6px; line-height: 19.5px; }
+    [data-view="triage"] .tg-chip .tg-chip-n { font: 500 11px/16px var(--body); padding: 1px 6px; }
+    [data-view="triage"] #triageList { padding: 17px 16px 20px; min-width: 0; }
+    [data-view="triage"] .kanban { grid-template-columns: repeat(4, 368px); gap: 16px; padding: 0 0 8px; }
+    [data-view="triage"] .kb-col { border: .8px solid var(--line); width: 368px; min-width: 0; max-width: none; flex: none; }
+    .sr-sim-pill select { appearance: none; -webkit-appearance: none; field-sizing: content; padding: 0 18px 0 2px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2377736d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right center / 12px; }
+    [data-view="triage"] .kb-head { padding: 14px 16px; min-height: 48px; display: flex; align-items: center; gap: 8px; }
+    [data-view="triage"] .kb-title { font: 700 11px var(--mono); letter-spacing: .16em; }
+    [data-view="triage"] .kb-list { padding: 12px; gap: 12px; }
+    [data-view="triage"] .kb-card.tg-item, [data-view="triage"] .kb-card.tg-item.has-cb { padding: 15px; }
+    [data-view="triage"] .sr-card-top { height: 22px; margin-bottom: 8px; padding-left: 24px; gap: 8px; }
+    [data-view="triage"] .sr-bug svg { width: 22px; height: 22px; }
+    [data-view="triage"] .kb-card .tg-cb-wrap { top: 18px; left: 15px; }
+    [data-view="triage"] .kb-card .kb-card-t { line-height: 19.25px; }
+    [data-view="triage"] .kb-card .kb-card-q { line-height: 18.6875px; }
+    [data-view="triage"] .kb-card-meta { margin-top: 8px; padding-top: 8px; }
+    [data-view="triage"] .chip { letter-spacing: .1em; line-height: 17.4px; }
+    [data-view="triage"] .kb-card-actions { margin-top: 0; padding-top: 17px; }
+    [data-view="triage"] .tg-pri-kdd .kdd-btn { min-width: 80px; padding: 0 8px; font-size: 12.5px; }
+    /* Fonts (family / size / weight / colour) matched to the design */
+    :root:not([data-theme="dark"]) .side .side-plan-pill { font-weight: 400; color: rgba(41, 39, 35, .75); }
+    .side .side-plan-pill b { font-weight: 600; color: var(--indigo); }
+    .side .nv .cl-path-tag { font-family: var(--mono); font-size: 9px; font-weight: 500; }
+    .bar-left .nav-snap, .bar-left .nav-studio, .nav-snap-lbl, .nav-studio-lbl { font-size: 12.5px; }
+    .bar-in { height: 47.2px; }
+    .side .nv { padding: 0 10px 0 13px; gap: 15px; }
+    .side .brand { padding-bottom: 18px; }
+    [data-view="triage"] .kb-col { gap: 0; }
+    [data-view="triage"] .kb-list { margin-top: .8px; padding-top: 15px; }
+    .bar-left { gap: 6px; }
+    :root:not([data-theme="dark"]) .bar-left .nav-snap { width: 116px; justify-content: center; padding: 0; }
+    :root:not([data-theme="dark"]) .bar-left .nav-studio { width: 106px; justify-content: center; padding: 0; }
+    [data-view="triage"] .tg-filters { padding-bottom: 13.3px; }
+    .nav-snap-lbl, .nav-studio-lbl, .create-lbl { letter-spacing: 0; }
+    .bar-left .create-wrap { position: relative; margin-left: 19px; }
+    .bar-left .create-wrap::before { content: ""; position: absolute; left: -12px; top: 4px; bottom: 4px; width: 1px; background: var(--line); }
+    :root:not([data-theme="dark"]) .bar-left .create-btn { width: 128px; justify-content: space-between; padding: 0 14px 0 16px; }
+    .side .side-plan-pill { position: relative; top: -4px; }
+    #ntfBtn svg { margin-top: 4px; }
+    #tourBtn svg { margin-top: 4px; }
+    #inboxNavBtn svg { width: 15px; height: 15px; }
+    #themeToggle button { width: 24px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+    /* Brand mark + collapse button (Figma): 30px dark badge with the list glyph; 24px outlined collapse button beside it, in both states */
+    .side .brand .spark, .bar-brand .spark { width: 30px; height: 30px; border-radius: 8px; background: #1c1917; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; }
+    .side .brand .spark svg, .bar-brand .spark svg { width: 17.4px; height: 17.4px; border-radius: 0; }
+    .side .brand { gap: 10px; }
+    .side-collapse-btn { top: 23px; right: 17px; width: 24px; height: 24px; border-radius: 4px; background: transparent; border: .8px solid var(--fg-hair, var(--line)); color: rgba(41, 39, 35, .5); transform: none; }
+    [data-theme="dark"] .side-collapse-btn { color: rgba(243, 236, 225, .6); }
+    .side-collapse-btn:hover { transform: none; }
+    .side-collapse-btn svg { width: 12px; height: 12px; }
+    body.side-collapsed .side { width: 64px; }
+    body.side-collapsed .bar-in, body.side-collapsed .wrap { margin-left: 64px; }
+    body.side-collapsed .side .brand { width: auto; justify-content: flex-start; padding-left: 8px; }
+    body.side-collapsed .side-collapse-btn { position: absolute; top: 23px; left: 44px; right: auto; width: 20px; height: 24px; margin: 0; background: var(--ink-2); z-index: 3; }
+    body.side-collapsed .side .nv-sep { margin: 8px 6px; }
+
+    /* ── Smooth sidebar open / close ──
+       Everything that differs between the two states animates on the same 0.28s curve: rail width, page margin, the collapse button's
+       position, label width/opacity, the plan line and the badges. Only enabled after load (body.side-ready) so a saved "collapsed"
+       preference doesn't animate on every page open, and switched off for reduced-motion users. */
+    .side-collapse-btn { left: 173px; right: auto; }
+    body.side-ready .side { transition: width .28s cubic-bezier(.4, 0, .2, 1), padding .28s cubic-bezier(.4, 0, .2, 1); overflow-x: hidden; }
+    body.side-ready .bar-in, body.side-ready .wrap { transition: margin-left .28s cubic-bezier(.4, 0, .2, 1); }
+    body.side-ready .side-collapse-btn { transition: left .28s cubic-bezier(.4, 0, .2, 1), width .28s cubic-bezier(.4, 0, .2, 1), background .15s, border-color .15s, color .15s; }
+    body.side-ready .side-collapse-btn .chev { transition: transform .28s cubic-bezier(.4, 0, .2, 1); }
+    body.side-ready .side .nv { transition: font-size .26s cubic-bezier(.4, 0, .2, 1), gap .26s cubic-bezier(.4, 0, .2, 1), padding .26s cubic-bezier(.4, 0, .2, 1), background .15s, color .15s, border-color .15s, box-shadow .15s; }
+    body.side-ready .side .nv .ic { transition: width .26s cubic-bezier(.4, 0, .2, 1); }
+    body.side-ready .side .nv-sep { transition: margin .26s cubic-bezier(.4, 0, .2, 1); }
+    body.side-ready .side .brand { transition: gap .26s cubic-bezier(.4, 0, .2, 1), padding .26s cubic-bezier(.4, 0, .2, 1); }
+    /* labels / badges fade + shrink instead of vanishing (display:none cannot animate) */
+    .side .brand-word { display: inline-block; max-width: 120px; overflow: hidden; white-space: nowrap; opacity: 1; }
+    body.side-ready .side .brand-word { transition: max-width .26s cubic-bezier(.4, 0, .2, 1), opacity .16s ease; }
+    body.side-collapsed .side .brand-word { display: inline-block; max-width: 0; opacity: 0; }
+    .side .nv .ct, .side .nv .cl-path-tag { max-width: 90px; overflow: hidden; opacity: 1; }
+    body.side-ready .side .nv .ct, body.side-ready .side .nv .cl-path-tag { transition: max-width .26s cubic-bezier(.4, 0, .2, 1), opacity .14s ease, margin .26s ease; }
+    body.side-collapsed .side .nv .ct, body.side-collapsed .side .nv .cl-path-tag { display: inline-block; max-width: 0; opacity: 0; margin: 0; padding: 0; }
+    .side .side-plan-pill { height: 29px; overflow: hidden; white-space: nowrap; opacity: 1; }
+    body.side-ready .side .side-plan-pill { transition: height .26s cubic-bezier(.4, 0, .2, 1), opacity .16s ease; }
+    body.side-collapsed .side .side-plan-pill { display: block; height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; }
+    body.side-ready .side .side-version { transition: opacity .16s ease; }
+    body.side-collapsed .side .side-version { display: block; opacity: 0; pointer-events: none; }
+    /* ── Top bar layout (Figma): actions on the left; project picker | theme | inbox | tour | avatar grouped on the right, with dividers ── */
+    @media (min-width: 901px) {
+      .bar-in { display: flex; gap: 12px; }
+      .bar-left { flex: 1 1 auto; }
+      .bar-center { order: 2; flex: none; justify-content: flex-end; position: relative; margin-right: 6px; }
+      .bar .right { order: 3; flex: none; gap: 10px; }
+      .bar-center::after { content: ""; position: absolute; right: -12px; top: 50%; height: 20px; margin-top: -10px; width: 1px; background: var(--fg-hair, var(--line)); }
+      #avatarWrap { position: relative; margin-left: 12px; }
+      #avatarWrap::before { content: ""; position: absolute; left: -12px; top: 50%; height: 20px; margin-top: -10px; width: 1px; background: var(--fg-hair, var(--line)); }
+    }
+
+    /* The page-wide reduced-motion rule forces every transition to ~0ms. The sidebar slide is requested behaviour (a plain 0.28s width
+       slide — no scaling, bouncing or parallax), so it opts back in here; remove this block to make the sidebar honour the OS setting. */
+    @media (prefers-reduced-motion: reduce) {
+      body.side-ready .side, body.side-ready .bar-in, body.side-ready .wrap, body.side-ready .side-collapse-btn, body.side-ready .side-collapse-btn .chev,
+      body.side-ready .side .nv, body.side-ready .side .nv .ic, body.side-ready .side .nv .ct, body.side-ready .side .nv .cl-path-tag, body.side-ready .side .nv-sep,
+      body.side-ready .side .brand, body.side-ready .side .brand-word, body.side-ready .side .side-plan-pill, body.side-ready .side .side-version { transition-duration: .28s !important; }
+    }
+    .side .nv-sep { margin: 8px 9px; }
+    .side .brand { gap: 12px; }
+    .brand-word { line-height: 28.5px; }
+    .sr-title { gap: 12px; }
+    .sr-title h2 { letter-spacing: -.5px; }
+    .sr-head { height: 71px; min-height: 0; padding-top: 0; padding-bottom: 0; align-items: center; }
+    [data-view="triage"] .kb-title { line-height: 16.5px; margin-left: 4px; }
+    [data-view="triage"] .kb-title { text-transform: none; color: var(--paper-dim); }
+    [data-view="triage"] .tg-chip.on { font-weight: 500; }
+    .sr-sim-pill > span { color: var(--paper); font-weight: 500; }
+    .sr-sim-pill select { font-weight: 600; font-size: 13px; }
+    [data-theme="dark"] .sr-toggle { background: rgba(255, 255, 255, .06); }
+    .sr-toggle { margin: 0; }
+    @media (max-width: 480px) {
+      .sr-head { grid-template-columns: 1fr; row-gap: 10px; }
+      .sr-toggle { justify-self: start; }
+    }
+    @media (max-width: 700px) {
+      body.view-triage .wrap { padding: 14px 12px 56px; }
+      [data-view="triage"] #triageList { padding: 14px 12px 16px; }
+      [data-view="triage"] .kanban { grid-template-columns: repeat(4, min(84vw, 368px)); }
+      [data-view="triage"] .kb-col { width: min(84vw, 368px); }
+      .sr-head { padding: 12px 14px; }
+      [data-view="triage"] .tg-filters { padding: 12px 14px; overflow-x: auto; margin: 0; }
+    }
+    /* Dark theme variants of the tinted board columns + badges */
+    [data-theme="dark"] [data-view="triage"] .kb-col { background: rgba(255, 255, 255, .025); }
+    [data-theme="dark"] [data-view="triage"] .kb-head { background: rgba(255, 255, 255, .05); }
+    [data-theme="dark"] [data-view="triage"] .kb-col[data-key="urgent"] .kb-head, [data-theme="dark"] [data-view="triage"] .kb-col[data-key="high"] .kb-head { background: rgba(232, 132, 154, .14); }
+    [data-theme="dark"] [data-view="triage"] .kb-col[data-key="medium"] .kb-head { background: rgba(232, 162, 74, .13); }
+    [data-theme="dark"] [data-view="triage"] .kb-n { background: rgba(255, 255, 255, .08); }
+    [data-theme="dark"] [data-view="triage"] .chip { background: rgba(255, 255, 255, .09); color: #d6cdbd; }
+    [data-theme="dark"] [data-view="triage"] .chip.s-satisfied, [data-theme="dark"] [data-view="triage"] .chip.s-delighted { background: rgba(32, 181, 106, .2); color: #8fe3b8; }
+    [data-theme="dark"] [data-view="triage"] .chip.s-frustrated { background: rgba(232, 132, 154, .2); color: #f4a9bb; }
+    [data-theme="dark"] [data-view="triage"] .chip.s-confused { background: rgba(232, 162, 74, .2); color: #f1c47f; }
+    [data-theme="dark"] [data-view="triage"] .tg-actions .btn-ghost { background: transparent; }
+    @media (max-width: 900px) {
+      [data-view="triage"] .tg-row { grid-template-columns: auto minmax(0, 1fr); }
+      [data-view="triage"] .tg-row .tg-shot { display: none; }
+      [data-view="triage"] .tg-row .tg-actions { grid-column: 1 / -1; flex-wrap: wrap; }
+    }
+  </style>
+  <style id="shell-zoom">
+    /* Shell (sidebar + top bar) rendered ~11% larger so it reads like the Figma design on a 90%-zoom browser. Desktop only. */
+    .side .nv .cl-path-tag { margin-left: auto !important; }
+    body.side-collapsed .side .nv .cl-path-tag { margin: 0 !important; }
+  </style>
+  <script id="figma-icons">
+    /* Lucide icons exactly as used by the Figma design (stroke 1.8): sidebar 16px, top bar 13px, Sim Reports header 18px, board bug 22px. */
+    (function () {
+      var I = {"layout-dashboard":"<rect width=\"7\" height=\"9\" x=\"3\" y=\"3\" rx=\"1\" /> <rect width=\"7\" height=\"5\" x=\"14\" y=\"3\" rx=\"1\" /> <rect width=\"7\" height=\"9\" x=\"14\" y=\"12\" rx=\"1\" /> <rect width=\"7\" height=\"5\" x=\"3\" y=\"16\" rx=\"1\" />","tickets":"<path d=\"m3.173 8.18 11-5a2 2 0 0 1 2.647.993L18.56 8\" /> <path d=\"M6 10V8\" /> <path d=\"M6 14v1\" /> <path d=\"M6 19v2\" /> <rect x=\"2\" y=\"8\" width=\"20\" height=\"13\" rx=\"2\" />","file-chart-column-increasing":"<path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" /> <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" /> <path d=\"M8 18v-2\" /> <path d=\"M12 18v-4\" /> <path d=\"M16 18v-6\" />","calendar-clock":"<path d=\"M16 14v2.2l1.6 1\" /> <path d=\"M16 2v3\" /> <path d=\"M21 7.338V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h2.338\" /> <path d=\"M3 9h5.859\" /> <path d=\"M8 2v3\" /> <circle cx=\"16\" cy=\"16\" r=\"6\" />","bot":"<path d=\"M12 8V4H8\" /> <rect width=\"16\" height=\"12\" x=\"4\" y=\"8\" rx=\"2\" /> <path d=\"M2 14h2\" /> <path d=\"M20 14h2\" /> <path d=\"M15 13v2\" /> <path d=\"M9 13v2\" />","workflow":"<rect width=\"8\" height=\"8\" x=\"3\" y=\"3\" rx=\"2\" /> <path d=\"M7 11v4a2 2 0 0 0 2 2h4\" /> <rect width=\"8\" height=\"8\" x=\"13\" y=\"13\" rx=\"2\" />","scan-line":"<path d=\"M3 7V5a2 2 0 0 1 2-2h2\" /> <path d=\"M17 3h2a2 2 0 0 1 2 2v2\" /> <path d=\"M21 17v2a2 2 0 0 1-2 2h-2\" /> <path d=\"M7 21H5a2 2 0 0 1-2-2v-2\" /> <path d=\"M7 12h10\" />","chart-no-axes-combined":"<path d=\"M12 16v5\" /> <path d=\"M16 14.639V21\" /> <path d=\"M20 10.656V21\" /> <path d=\"m22 3-8.646 8.646a.5.5 0 0 1-.708 0L9.354 8.354a.5.5 0 0 0-.707 0L2 15\" /> <path d=\"M4 18.463V21\" /> <path d=\"M8 14.656V21\" />","shield-check":"<path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\" /> <path d=\"m9 12 2 2 4-4\" />","users-round":"<path d=\"M18 21a8 8 0 0 0-16 0\" /> <circle cx=\"10\" cy=\"8\" r=\"5\" /> <path d=\"M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3\" />","settings-2":"<path d=\"M14 17H5\" /> <path d=\"M19 7h-9\" /> <circle cx=\"17\" cy=\"17\" r=\"3\" /> <circle cx=\"7\" cy=\"7\" r=\"3\" />","code-xml":"<path d=\"m18 16 4-4-4-4\" /> <path d=\"m6 8-4 4 4 4\" /> <path d=\"m14.5 4-5 16\" />","pencil":"<path d=\"M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z\" /> <path d=\"m15 5 4 4\" />","chevron-down":"<path d=\"m6 9 6 6 6-6\" />","list":"<path d=\"M3 5h.01\" /> <path d=\"M3 12h.01\" /> <path d=\"M3 19h.01\" /> <path d=\"M8 5h13\" /> <path d=\"M8 12h13\" /> <path d=\"M8 19h13\" />","columns-3":"<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" /> <path d=\"M9 3v18\" /> <path d=\"M15 3v18\" />","bell":"<path d=\"M10.268 21a2 2 0 0 0 3.464 0\" /> <path d=\"M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326\" />","bug":"<path d=\"M12 20v-9\" /> <path d=\"M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z\" /> <path d=\"M14.12 3.88 16 2\" /> <path d=\"M21 21a4 4 0 0 0-3.81-4\" /> <path d=\"M21 5a4 4 0 0 1-3.55 3.97\" /> <path d=\"M22 13h-4\" /> <path d=\"M3 21a4 4 0 0 1 3.81-4\" /> <path d=\"M3 5a4 4 0 0 0 3.55 3.97\" /> <path d=\"M6 13H2\" /> <path d=\"m8 2 1.88 1.88\" /> <path d=\"M9 7.13V6a3 3 0 1 1 6 0v1.13\" />","chevrons-left":"<path d=\"m11 17-5-5 5-5\" /> <path d=\"m18 17-5-5 5-5\" />","sun":"<circle cx=\"12\" cy=\"12\" r=\"4\" /> <path d=\"M12 2v2\" /> <path d=\"M12 20v2\" /> <path d=\"m4.93 4.93 1.41 1.41\" /> <path d=\"m17.66 17.66 1.41 1.41\" /> <path d=\"M2 12h2\" /> <path d=\"M20 12h2\" /> <path d=\"m6.34 17.66-1.41 1.41\" /> <path d=\"m19.07 4.93-1.41 1.41\" />","moon":"<path d=\"M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401\" />","inbox":"<polyline points=\"22 12 16 12 14 15 10 15 8 12 2 12\" /> <path d=\"M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z\" />","footprints":"<path d=\"M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z\" /> <path d=\"M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z\" /> <path d=\"M16 17h4\" /> <path d=\"M4 13h4\" />","message-square-more":"<path d=\"M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z\" /> <path d=\"M12 11h.01\" /> <path d=\"M16 11h.01\" /> <path d=\"M8 11h.01\" />","send":"<path d=\"M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z\" /> <path d=\"m21.854 2.147-10.94 10.939\" />"};
+      function svg(n, s, w, cls) {
+        if (!I[n]) return "";
+        return '<svg xmlns="http://www.w3.org/2000/svg" class="' + (cls ? cls + ' ' : '') + 'lucide lucide-' + n + '" width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (w || 1.8) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none">' + I[n] + '</svg>';
+      }
+      window.figmaIcon = svg;
+      var NAV = { overview: "layout-dashboard", tickets: "tickets", triage: "file-chart-column-increasing", recurring: "calendar-clock", sims: "bot", autosims: "workflow", snap: "scan-line", pagebugs: "chart-no-axes-combined", guards: "shield-check", team: "users-round", settings: "settings-2" };
+      function put(el, html) { if (el && el.getAttribute("data-fi") !== "1") { el.innerHTML = html; el.setAttribute("data-fi", "1") } }
+      function swap(host, sel, html) { var e = host && host.querySelector(sel); if (e && e.getAttribute("data-fi") !== "1") { var t = document.createElement("span"); t.style.display = "inline-flex"; t.setAttribute("data-fi", "1"); t.innerHTML = html; e.replaceWith(t.firstChild); } }
+      function apply() {
+        Object.keys(NAV).forEach(function (k) { put(document.querySelector('.side .nv[data-go="' + k + '"] .ic'), svg(NAV[k], 16)) });
+        swap(document.querySelector(".nav-snap"), "svg", svg("code-xml", 13));
+        swap(document.querySelector(".nav-studio"), "svg", svg("pencil", 13));
+        swap(document.querySelector(".create-btn"), ".create-caret", svg("chevron-down", 11, 1.8, "create-caret"));
+        swap(document.getElementById("ntfBtn"), "svg", svg("bell", 18));
+        swap(document.querySelector('#themeToggle button[title="Light mode"]'), "svg", svg("sun", 13));
+        swap(document.querySelector('#themeToggle button[title="Dark mode"]'), "svg", svg("moon", 13));
+        swap(document.getElementById("inboxNavBtn"), "svg", svg("inbox", 15));
+        swap(document.getElementById("tourBtn"), "svg", svg("footprints", 17));
+        swap(document.getElementById("sideCollapseBtn"), "svg", svg("chevrons-left", 12, 1.8, "chev"));
+        var l = document.getElementById("tgListBtn"), b = document.getElementById("tgBoardBtn");
+        put(l, svg("list", 13) + " List"); put(b, svg("columns-3", 13) + " Board");
+        put(document.querySelector('.sr-title [data-ki="bell"]'), svg("bell", 18));
+      }
+      document.addEventListener("DOMContentLoaded", function () { apply(); setTimeout(apply, 500); setTimeout(apply, 1800); setTimeout(function () { document.body.classList.add("side-ready") }, 700) });
+    })();
+  </script>
 </head>
 
 <body data-view="overview">
@@ -17752,29 +18111,7 @@
   <div class="bar">
     <div class="bar-in">
       <!-- Mobile-only: brand lives here when the sidebar collapses to a horizontal tab row -->
-      <div class="brand bar-brand"><span class="spark"><svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"
-            aria-hidden="true">
-            <rect width="48" height="48" rx="11" fill="#1a1023" />
-            <g fill="white">
-              <circle cx="15" cy="9" r="2" />
-              <circle cx="11" cy="16" r="2" />
-              <circle cx="10" cy="24" r="2" />
-              <circle cx="11" cy="32" r="2" />
-              <circle cx="15" cy="39" r="2" />
-              <circle cx="33" cy="9" r="2" />
-              <circle cx="37" cy="16" r="2" />
-              <circle cx="38" cy="24" r="2" />
-              <circle cx="37" cy="32" r="2" />
-              <circle cx="33" cy="39" r="2" />
-            </g>
-            <g stroke="white" stroke-width="1.6" stroke-linecap="round" opacity="0.35">
-              <line x1="15" y1="9" x2="33" y2="9" />
-              <line x1="11" y1="16" x2="37" y2="16" />
-              <line x1="10" y1="24" x2="38" y2="24" />
-              <line x1="11" y1="32" x2="37" y2="32" />
-              <line x1="15" y1="39" x2="33" y2="39" />
-            </g>
-          </svg></span><span class="brand-word">Klavity</span></div>
+      <div class="brand bar-brand"><span class="spark"><svg width="17.4" height="17.4" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2.5" width="4" height="1.5" rx="0.5" fill="white"></rect><rect x="7.5" y="2.5" width="6.5" height="1.5" rx="0.5" fill="white"></rect><rect x="2" y="6" width="4" height="1.5" rx="0.5" fill="white"></rect><rect x="7.5" y="6" width="6.5" height="1.5" rx="0.5" fill="white"></rect><rect x="2" y="9.5" width="4" height="1.5" rx="0.5" fill="white"></rect><rect x="7.5" y="9.5" width="6.5" height="1.5" rx="0.5" fill="white"></rect><rect x="2" y="13" width="4" height="1.5" rx="0.5" fill="white"></rect><rect x="7.5" y="13" width="6.5" height="1.5" rx="0.5" fill="white"></rect></svg></span><span class="brand-word">Klavity</span></div>
       <span class="ws hide" id="wsName"></span>
       <div class="bar-left">
         <!-- "Snap Reports": jumps to the sidebar's Reports view (page bugs captured by Snap) -->
@@ -17898,29 +18235,7 @@
   <div class="wrap">
     <aside class="side" aria-label="Dashboard sections">
       <!-- Brand at the very top of the sidebar -->
-      <div class="brand"><span class="spark"><svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"
-            aria-hidden="true">
-            <rect width="48" height="48" rx="11" fill="#1a1023" />
-            <g fill="white">
-              <circle cx="15" cy="9" r="2" />
-              <circle cx="11" cy="16" r="2" />
-              <circle cx="10" cy="24" r="2" />
-              <circle cx="11" cy="32" r="2" />
-              <circle cx="15" cy="39" r="2" />
-              <circle cx="33" cy="9" r="2" />
-              <circle cx="37" cy="16" r="2" />
-              <circle cx="38" cy="24" r="2" />
-              <circle cx="37" cy="32" r="2" />
-              <circle cx="33" cy="39" r="2" />
-            </g>
-            <g stroke="white" stroke-width="1.6" stroke-linecap="round" opacity="0.35">
-              <line x1="15" y1="9" x2="33" y2="9" />
-              <line x1="11" y1="16" x2="37" y2="16" />
-              <line x1="10" y1="24" x2="38" y2="24" />
-              <line x1="11" y1="32" x2="37" y2="32" />
-              <line x1="15" y1="39" x2="33" y2="39" />
-            </g>
-          </svg></span><span class="brand-word">Klavity</span></div>
+      <div class="brand"><span class="spark"><svg width="17.4" height="17.4" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="2" y="2.5" width="4" height="1.5" rx="0.5" fill="white"></rect><rect x="7.5" y="2.5" width="6.5" height="1.5" rx="0.5" fill="white"></rect><rect x="2" y="6" width="4" height="1.5" rx="0.5" fill="white"></rect><rect x="7.5" y="6" width="6.5" height="1.5" rx="0.5" fill="white"></rect><rect x="2" y="9.5" width="4" height="1.5" rx="0.5" fill="white"></rect><rect x="7.5" y="9.5" width="6.5" height="1.5" rx="0.5" fill="white"></rect><rect x="2" y="13" width="4" height="1.5" rx="0.5" fill="white"></rect><rect x="7.5" y="13" width="6.5" height="1.5" rx="0.5" fill="white"></rect></svg></span><span class="brand-word">Klavity</span></div>
       <!-- #677: collapse/expand the rail to an icon-only rail; preference persists in localStorage -->
       <button type="button" class="side-collapse-btn" id="sideCollapseBtn" aria-label="Collapse sidebar"
         aria-expanded="true" title="Collapse sidebar"><svg class="chev" xmlns="http://www.w3.org/2000/svg" width="15"
@@ -18505,12 +18820,12 @@
 
         <!-- Triage inbox -->
         <div class="card full" data-view="triage">
-          <div class="kb-toolbar">
-            <h2 style="display:flex;align-items:center;gap:8px"><span data-ki="bell"></span> Sim Reports <span
-                class="h-tag">accept as a bug or dismiss</span></h2>
-            <div class="tkt-view-toggle"><button class="tkt-vbtn" id="tgListBtn" type="button" title="List view">&#9776;
+          <div class="sr-head">
+            <div class="sr-title"><span data-ki="bell"></span><h2>Sim Reports</h2><span class="sr-count" id="triageHdrCount">0</span></div>
+            <div class="tkt-view-toggle sr-toggle"><button class="tkt-vbtn" id="tgListBtn" type="button" title="List view">&#9776;
                 List</button><button class="tkt-vbtn active" id="tgBoardBtn" type="button" title="Board view">&#8862;
                 Board</button></div>
+            <div class="sr-sim" id="triageSimHost"></div>
           </div>
           <div class="tg-filters" id="triageFilters"></div>
           <div id="triageList">
@@ -21554,8 +21869,8 @@
       if (!simKeys.includes(_triageSim)) _triageSim = "all"
       const simCount = (k) => all.filter(t => tgSimKey(t) === k).length
       const simLabel = (k) => k === "__direct__" ? "Direct reports" : k
-      const simOpts = [`<option value="all">All Sims (${all.length})</option>`]
-        .concat(simKeys.map(k => `<option value="${esc(k)}"${_triageSim === k ? " selected" : ""}>${esc(simLabel(k))} (${simCount(k)})</option>`))
+      const simOpts = [`<option value="all">All Sims</option>`]
+        .concat(simKeys.map(k => `<option value="${esc(k)}"${_triageSim === k ? " selected" : ""}>${esc(simLabel(k))}</option>`))
         .join("")
       const canDismissSim = _triageSim !== "all" && simCount(_triageSim) > 0
       const simDismissBtn = canDismissSim
@@ -21565,16 +21880,12 @@
       const clearBtnHtml = hasActiveFilters
         ? `<button type="button" class="btn btn-ghost btn-sm tg-clear-filters" id="tgClearFilters" title="Clear all filters" style="font-size:11.5px;padding:3px 8px;margin-left:auto;color:var(--paper-dim)">✕ Clear filters</button>`
         : ""
-      host.innerHTML =
-        `<div class="tg-filter-row">${sentHtml}</div>` +
-        `<div class="tg-filter-row tg-sim-row">` +
-        `<span class="bulk-lbl">Priority:</span>` +
-        priHtml +
-        `<span class="bulk-lbl" style="margin-left:4px">Sim:</span>` +
-        `<select class="bulk-sel" id="tgSimFilter" aria-label="Filter by originating Sim">${simOpts}</select>` +
-        simDismissBtn +
-        clearBtnHtml +
-        `</div>`
+      // Figma Sim Reports: chips only in the filter bar; the Sim picker lives in the header (#triageSimHost). The Priority dropdown, the
+      // bulk 'dismiss all from Sim' button and the clear-filters button are gone (the board columns already split by priority).
+      host.innerHTML = `<div class="tg-filter-row">${sentHtml}</div>`
+      const simHost = $("triageSimHost")
+      if (simHost) simHost.innerHTML = `<label class="sr-sim-pill"><span>Sim:</span><select id="tgSimFilter" aria-label="Filter by originating Sim">${simOpts}</select></label>`
+      const hdrCount = $("triageHdrCount"); if (hdrCount) hdrCount.textContent = String(all.length)
       host.querySelectorAll("[data-tg-sent]").forEach(b => b.addEventListener("click", () => {
         _triageSentiment = b.getAttribute("data-tg-sent"); _tgSelected.clear(); renderTriageView()
       }))
@@ -21695,7 +22006,7 @@
         })
       }
 
-      const simSel = host.querySelector("#tgSimFilter")
+      const simSel = $("tgSimFilter")
       if (simSel) simSel.addEventListener("change", () => { _triageSim = simSel.value; _tgSelected.clear(); renderTriageView() })
       const simDis = host.querySelector("#tgSimDismiss")
       if (simDis) simDis.addEventListener("click", (ev) => {
@@ -22195,11 +22506,12 @@
               return `
     <div class="tg-row tg-item ${sevRailClass(t.priority)}${sel ? " tg-selected" : ""}${_tgFocus === id ? " tg-focus" : ""}" data-id="${esc(id)}"${srcKind ? ` data-source="${esc(srcKind)}"` : ""} tabindex="-1">
       <label class="tg-cb-wrap" title="Select for bulk action"><input type="checkbox" class="tg-cb"${sel ? " checked" : ""} aria-label="Select report"></label>
-      ${t.screenshotId ? `<div class="tg-shot" data-shot="${esc(String(t.screenshotId))}" title="Open screenshot"><div class="tg-shot-ph">${kicon('image', { size: 16 })}</div></div>` : ""}
+      ${t.screenshotId ? `<div class="tg-shot" data-shot="${esc(String(t.screenshotId))}" title="Open screenshot"><div class="tg-shot-ph">${kicon('image', { size: 16 })}</div></div>` : `<div class="tg-shot tg-shot-empty"><div class="tg-shot-ph">${kicon('image', { size: 16 })}</div></div>`}
       <div class="tg-b">
-        <div class="fx-t">${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}</div>
+        ${t.seqNum ? `<div class="fx-id">${esc(seqPillText(t))}</div>` : ""}
+        <div class="fx-t">${esc(t.title || "Untitled report")}</div>
         ${t.sourceQuote ? `<div class="fx-q">"${esc(t.sourceQuote)}"</div>` : (t.observation ? `<div class="fx-q">${esc(t.observation)}</div>` : "")}
-        <div class="fx-m">${srcBadge}${t.urlPath ? `<span class="fx-area">${esc(t.urlPath)}</span>` : ""}${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${t.simName ? `<span>${kicon('bot', { size: 14 })} ${esc(t.simName)}</span>` : ""}${dupAckHtml(t, { badge: true })}${t.createdAt ? `<span class="muted" data-ago="${Number(t.createdAt)}">${esc(ago(t.createdAt))}</span>` : ""}</div>
+        <div class="fx-m">${t.urlPath ? `<span class="fx-area">${esc(t.urlPath)}</span>` : ""}${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${t.simName ? `<span class="fx-sim">${kicon('bot', { size: 14 })} ${esc(t.simName)}</span>` : ""}${t.createdAt ? `<span class="muted" data-ago="${Number(t.createdAt)}">${esc(ago(t.createdAt))}</span>` : ""}</div>
       </div>
       <div class="tg-actions">
         ${tgRoutingAffordance(t)}
@@ -22227,15 +22539,15 @@
             card.setAttribute("data-id", id)
             if (srcKind) card.setAttribute("data-source", srcKind)
             card.setAttribute("tabindex", "-1")
-            const sub = [t.simName ? ("by " + t.simName) : "", t.urlPath ? t.urlPath : "", ago(t.createdAt)].filter(Boolean).map(esc).join(" · ")
+            const sub = [t.simName ? ("by " + t.simName) : "", t.urlPath ? t.urlPath : ""].filter(Boolean).map(esc).join(" · ")
             const quote = t.sourceQuote ? `<div class="kb-card-q">"${esc(t.sourceQuote)}"</div>` : (t.observation ? `<div class="kb-card-q">${esc(t.observation)}</div>` : "")
             const srcBadge = tgSourceBadgeHtml(t)
-            const meta = `${srcBadge}${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}${dupAckHtml(t, { badge: true })}${tgRoutingAffordance(t)}`
+            const meta = `${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${tgRoutingAffordance(t)}`
             card.innerHTML = `
     <label class="tg-cb-wrap" title="Select for bulk action"><input type="checkbox" class="tg-cb"${sel ? " checked" : ""} aria-label="Select report"></label>
-    <div class="kb-card-t">${kicon('bug')} ${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
+    <div class="sr-card-top"><span class="sr-bug">${window.figmaIcon ? figmaIcon('bug', 22, 1.8) : kicon('bug')}</span>${t.seqNum ? `<span class="sr-id">${esc(seqPillText(t))}</span>` : ""}</div>
+    <div class="kb-card-t">${esc(t.title || "Untitled report")}</div>
     ${sub ? `<div class="kb-card-d">${sub}</div>` : ""}
-    ${t.screenshotId ? `<div class="tg-shot" data-shot="${esc(String(t.screenshotId))}" title="Open screenshot"><div class="tg-shot-ph">${kicon('image', { size: 16 })}</div></div>` : ""}
     ${quote}
     ${meta ? `<div class="kb-card-meta">${meta}</div>` : ""}
     <div class="tg-actions kb-card-actions">
@@ -22634,6 +22946,7 @@
           }
           function applyViewHeader(v) {
             const hello = $("hello"), lead = $("lead")
+            document.body.classList.toggle("view-triage", v === "triage")
             if (!hello || !lead) return
             if (v && v !== "overview" && VIEW_TITLES[v]) {
               hello.textContent = VIEW_TITLES[v][0]
