@@ -316,13 +316,18 @@ const cap = (s: string, c: number) => (s.length > c ? s.slice(0, c - 20) + "\nâ€
 
 // A click that navigates (e.g. a form POST) can destroy the page's JS context while the next snapshot's
 // evaluate() is in flight. That is a transient race, not a walk failure: wait a beat and retry on the new page.
-const NAV_RACE_RE = /Execution context was destroyed|Cannot find context with specified id|Inspected target navigated or closed/i
-async function retryNavRace<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
+// Caught at the wrong instant, evaluate() can also just hang on the dying context instead of throwing, so each
+// attempt is capped (4 tries Ã— 3s + gaps stays under the author loop's 15s snapshot bound).
+const NAV_RACE_RE = /Execution context was destroyed|Cannot find context with specified id|Inspected target navigated or closed|attempt hung/i
+export async function retryNavRace<T>(fn: () => Promise<T>, tries = 4, attemptMs = 3_000): Promise<T> {
   for (let i = 1; ; i++) {
-    try { return await fn() } catch (e) {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([fn(), new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error("snapshot attempt hung")), attemptMs) })])
+    } catch (e) {
       if (i >= tries || !NAV_RACE_RE.test(String((e as any)?.message ?? e))) throw e
       await new Promise((r) => setTimeout(r, 750))
-    }
+    } finally { clearTimeout(timer) }
   }
 }
 
