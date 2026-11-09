@@ -9473,15 +9473,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   //                        dashboard uses: GET /api/feedback/:id (+/comments), PATCH, POST comment).
   // The project is resolved from the feedback row server-side (resolveFeedbackRef) — a query param is
   // never trusted. The in-dashboard focus (?ticket=…) still works; this route is purely additive.
+  // Friendly "Ticket unavailable" page for every ticket link that can't be opened (unknown/mistyped ref, deleted ticket, or a
+  // project the viewer isn't in) — replaces the bare "Not found" text. The page is STATIC and identical in every case and the
+  // original status code is kept, so it reveals nothing more than the old plain response did (no-leak rule below).
+  const ticketUnavailablePage = async (status: 404 | 403 = 404): Promise<Response> => {
+    const headers = { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" }
+    try { return new Response(await Bun.file(PUB + "/ticket-unavailable.html").text(), { status, headers }) }
+    catch { return new Response("Not found", { status, headers: { "content-type": "text/plain; charset=utf-8" } }) }
+  }
   const ticketRefMatch = path.match(/^\/t\/([A-Za-z0-9_-]{1,80})$/)
   if (req.method === "GET" && ticketRefMatch) {
     if (!rlAllow("ticket:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
     const resolved = await resolveFeedbackRef(ticketRefMatch[1]).catch(() => null)
-    if (!resolved) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } })
+    if (!resolved) return await ticketUnavailablePage(404)
     const access = await ticketViewAccess(resolved.id, me)
     if (access === "login") {
-      // share_mode=off — members only. Anon → login gate; signed-in non-member → bare 404 (no leak).
-      return me ? new Response("Not found", { status: 404 }) : loginGate(path, url.search)
+      // share_mode=off — members only. Anon → login gate; signed-in non-member → the same 404 page as a missing ticket (no leak).
+      return me ? await ticketUnavailablePage(404) : loginGate(path, url.search)
     }
     const memberAcc = me ? await projectAccess(me, resolved.projectId).catch(() => null) : null
     // Member/admin full → the fast standalone member page (KLA-491, unchanged).
@@ -9489,7 +9497,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // reload of the in-dashboard ticket page stays in the dashboard. Non-members keep the teaser.
     if (access === "full" && memberAcc) return await dashboardPage(req, me, { id: resolved.id, projectId: resolved.projectId })
     const pagePath = (access === "full" && memberAcc) ? (PUB + "/ticket.html") : (PUB + "/ticket-teaser.html")
-    if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
+    if (!(await Bun.file(pagePath).exists())) return await ticketUnavailablePage(404)
     let _tHtml = await Bun.file(pagePath).text()
     _tHtml = _tHtml.replaceAll("__TICKET_ID__", resolved.id).replaceAll("__PROJECT_ID__", resolved.projectId)
     // KLA-738: per-type og:image so a shared link's social card reflects its ticket type. KLA-739
@@ -9525,15 +9533,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   if (req.method === "GET" && prettyTicketMatch && !isReservedSlug(prettyTicketMatch[1])) {
     if (!rlAllow("ticket:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
     const res = await resolveWorkspaceTicket(prettyTicketMatch[1], prettyTicketMatch[2]).catch(() => null)
-    if (!res) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } })
+    if (!res) return await ticketUnavailablePage(404)
     if (res.kind === "pretty") {
       // STRICT member-only gate — enumerable key path. No teaser, ever.
       const memberAcc = me ? await projectAccess(me, res.projectId).catch(() => null) : null
       if (!memberAcc) {
         // Non-member and anon get IDENTICAL treatment whether or not the handle was a stale alias,
         // so a 301 can never confirm an alias/slug/key exists. Signed-in non-member → 403; anon → login.
+        // The 403 now carries the same static "Ticket unavailable" page (status unchanged, so no new information is revealed).
         return me
-          ? new Response("Forbidden", { status: 403, headers: { "x-robots-tag": "noindex, nofollow" } })
+          ? await ticketUnavailablePage(403)
           : loginGate(path, url.search)
       }
       // Member: honor the stale-alias canonical 301 now (auth-gated), else serve the fast page.
@@ -9546,12 +9555,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // Opaque fb_ handle (unguessable, tenant-bound): normal share/teaser policy, same as /t/:ref.
     const access = await ticketViewAccess(res.id, me)
     if (access === "login") {
-      return me ? new Response("Not found", { status: 404 }) : loginGate(path, url.search)
+      return me ? await ticketUnavailablePage(404) : loginGate(path, url.search)
     }
     const memberAcc = me ? await projectAccess(me, res.projectId).catch(() => null) : null
     if (access === "full" && memberAcc) return await dashboardPage(req, me, { id: res.id, projectId: res.projectId })
     const pagePath = (access === "full" && memberAcc) ? (PUB + "/ticket.html") : (PUB + "/ticket-teaser.html")
-    if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
+    if (!(await Bun.file(pagePath).exists())) return await ticketUnavailablePage(404)
     let _tHtml = await Bun.file(pagePath).text()
     _tHtml = _tHtml.replaceAll("__TICKET_ID__", res.id).replaceAll("__PROJECT_ID__", res.projectId)
     try {

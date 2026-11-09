@@ -141,6 +141,18 @@ test("GET /t/:ref serves the teaser to an unauthenticated visitor under default 
 test("GET /t/:ref 404s an unknown ref without leaking existence", async () => {
   const r = await get(`/t/fb_00000000`, SID)
   expect(r.status).toBe(404)
+  // Friendly, static "Ticket unavailable" page — not the bare "Not found" text — with nothing ticket-specific in it.
+  expect(r.headers.get("content-type") || "").toContain("text/html")
+  const html = await r.text()
+  expect(html).toContain("We couldn’t open this ticket")
+  expect(html).toContain('href="/dashboard#tickets"')
+  expect(html).not.toContain("fb_00000000")
+})
+
+test("an unknown pretty ticket key gets the same Ticket unavailable page (404)", async () => {
+  const r = await get(`/nosuchworkspace/ZZ-999999`, SID)
+  expect(r.status).toBe(404)
+  expect(await r.text()).toContain("We couldn’t open this ticket")
 })
 
 test("single-ticket API returns the enriched report (reporter + pageUrl) for a member", async () => {
