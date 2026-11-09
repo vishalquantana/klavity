@@ -4421,11 +4421,15 @@ export type FeedbackMeta = {
 }
 // Opt-in variant of listFeedback (identical SQL/rows/order): additionally returns, per row id, the meta
 // columns already present on the SELECT * result. FeedbackRow itself is deliberately unchanged.
-export async function listFeedbackWithMeta(projectId: string, opts: { limit?: number; simOnly?: boolean } = {}): Promise<{ rows: FeedbackRow[]; meta: Record<string, FeedbackMeta> }> {
+// `boardOnly` drops Sim reports still awaiting triage (status 'new', sim_id set) — the same rule as listTicketsPaginated. Those live in
+// Sim Reports only and reach the Tickets board after a person accepts them; without it they leaked onto the board via /api/dashboard's
+// `tickets` (the kanban's cold-cache fallback and the overview "Recent tickets").
+export async function listFeedbackWithMeta(projectId: string, opts: { limit?: number; simOnly?: boolean; boardOnly?: boolean } = {}): Promise<{ rows: FeedbackRow[]; meta: Record<string, FeedbackMeta> }> {
   const limit = opts.limit ?? 20
+  const boardFilter = opts.boardOnly ? " AND NOT (status = 'new' AND sim_id IS NOT NULL)" : ""
   const sql = opts.simOnly
-    ? "SELECT * FROM feedback WHERE project_id=? AND sim_id IS NOT NULL AND merged_into IS NULL ORDER BY created_at DESC LIMIT ?"
-    : "SELECT * FROM feedback WHERE project_id=? AND merged_into IS NULL ORDER BY created_at DESC LIMIT ?"
+    ? "SELECT * FROM feedback WHERE project_id=? AND sim_id IS NOT NULL AND merged_into IS NULL" + boardFilter + " ORDER BY created_at DESC LIMIT ?"
+    : "SELECT * FROM feedback WHERE project_id=? AND merged_into IS NULL" + boardFilter + " ORDER BY created_at DESC LIMIT ?"
   const r = await db!.execute({ sql, args: [projectId, limit] })
   const meta: Record<string, FeedbackMeta> = {}
   for (const x of r.rows as any[]) {

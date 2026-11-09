@@ -12236,7 +12236,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // assigned. Raise to a bounded 50 (matches the list view's page size, well under the board's 200)
           // so quick-filters over state.tickets can surface 20+ without an unbounded per-poll payload.
           // Returns the status/assignee/notes/recurrence meta from the same rows (no second SELECT by id).
-          listFeedbackWithMeta(projectId, { limit: 50 }),
+          // boardOnly: un-accepted Sim reports (status 'new' + sim_id) stay in Sim Reports, never on the Tickets board.
+          listFeedbackWithMeta(projectId, { limit: 50, boardOnly: true }),
           // Non-admins see only their own activity (own-rows-only); admins see all.
           listActivity(projectId, { actorEmail: isAdmin ? null : me, limit: 25 }),
           // Only Sim-generated observations (sim_id IS NOT NULL) — bugs never bleed into the Sims feeds.

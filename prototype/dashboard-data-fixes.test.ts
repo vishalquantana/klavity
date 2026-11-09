@@ -78,7 +78,16 @@ test("KLA-779: /api/dashboard ticket feed is raised from 12 so assignee filters 
   expect(SERVER).not.toContain("listFeedbackWithMeta(projectId, { limit: 12 })")
   // The dashboard now reads the 50 rows via listFeedbackWithMeta (same rows + meta, no second SELECT);
   // the cap itself is unchanged.
-  expect(SERVER).toContain("listFeedbackWithMeta(projectId, { limit: 50 })")
+  expect(SERVER).toContain("listFeedbackWithMeta(projectId, { limit: 50, boardOnly: true })")
+})
+
+// ── Sim reports stay in Sim Reports until accepted: /api/dashboard's `tickets` (kanban cold-cache fallback +
+// overview "Recent tickets") must drop un-accepted Sim reports, same rule as the paginated board query. ──
+test("dashboard ticket feed excludes un-accepted Sim reports (status 'new' + sim_id)", async () => {
+  const DB = await Bun.file(new URL("./lib/db.ts", import.meta.url)).text()
+  const fn = DB.slice(DB.indexOf("export async function listFeedbackWithMeta"), DB.indexOf("// ── Sim Profile"))
+  expect(fn).toContain("boardOnly")
+  expect(fn).toContain("NOT (status = 'new' AND sim_id IS NOT NULL)")
 })
 
 // ── KLA-779 (structural): a cold board must load the FULL 200-row set before "My items"/assignee
