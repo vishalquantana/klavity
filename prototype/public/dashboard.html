@@ -18068,6 +18068,11 @@
       [data-view="triage"] .tg-row .tg-actions { grid-column: 1 / -1; flex-wrap: wrap; }
     }
   </style>
+  <style id="shell-zoom">
+    /* Shell (sidebar + top bar) rendered ~11% larger so it reads like the Figma design on a 90%-zoom browser. Desktop only. */
+    .side .nv .cl-path-tag { margin-left: auto !important; }
+    body.side-collapsed .side .nv .cl-path-tag { margin: 0 !important; }
+  </style>
   <script id="figma-icons">
     /* Lucide icons exactly as used by the Figma design (stroke 1.8): sidebar 16px, top bar 13px, Sim Reports header 18px, board bug 22px. */
     (function () {
