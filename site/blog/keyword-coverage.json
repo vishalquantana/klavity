@@ -50,7 +50,8 @@
     "what is agentic coding": "what-is-agentic-coding",
     "claude code testing": "claude-code-testing",
     "vibe coding best practices": "vibe-coding-best-practices",
-    "what is spec-driven development": "what-is-spec-driven-development"
+    "what is spec-driven development": "what-is-spec-driven-development",
+    "how to hand off a vibe-coded app to developers": "vibe-coded-app-handoff-to-developers"
   },
   "tier-c": {
     "marker.io alternative": "marker-io-alternative",

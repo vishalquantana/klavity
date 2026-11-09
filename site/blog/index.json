@@ -1027,5 +1027,12 @@
     "excerpt": "AI QA for Shopify stores tests the revenue path as a matrix of product and cart states — variants, discounts, and the handoff into checkout.",
     "category": "Guides",
     "date": "2026-11-08"
+  },
+  {
+    "slug": "vibe-coded-app-handoff-to-developers",
+    "title": "How to Hand Off a Vibe-Coded App to Developers: 8 Steps",
+    "excerpt": "Hand off a vibe-coded app with three artifacts: a feature inventory, a verified run book, and a triaged bug list with reproducible evidence.",
+    "category": "Guides",
+    "date": "2026-11-09"
   }
 ]

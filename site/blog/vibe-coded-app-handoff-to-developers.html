@@ -1,0 +1,192 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Hand Off a Vibe-Coded App to Developers: 8 Steps · Klavity</title>
+<meta name="description" content="Hand off a vibe-coded app with three artifacts: a feature inventory, a verified run book, and a triaged bug list with reproducible evidence.">
+<link rel="canonical" href="https://klavity.in/blog/vibe-coded-app-handoff-to-developers">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Hand Off a Vibe-Coded App to Developers: 8 Steps"><meta property="og:description" content="Hand off a vibe-coded app with three artifacts: a feature inventory, a verified run book, and a triaged bug list with reproducible evidence.">
+<meta property="og:url" content="https://klavity.in/blog/vibe-coded-app-handoff-to-developers"><meta property="og:image" content="https://klavity.in/blog/vibe-coded-app-handoff-to-developers.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Hand Off a Vibe-Coded App to Developers: 8 Steps"><meta name="twitter:description" content="Hand off a vibe-coded app with three artifacts: a feature inventory, a verified run book, and a triaged bug list with reproducible evidence."><meta name="twitter:image" content="https://klavity.in/blog/vibe-coded-app-handoff-to-developers.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Hand Off a Vibe-Coded App to Developers: 8 Steps","description":"Hand off a vibe-coded app with three artifacts: a feature inventory, a verified run book, and a triaged bug list with reproducible evidence.","datePublished":"2026-11-09","dateModified":"2026-11-09","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/vibe-coded-app-handoff-to-developers.svg"}},"mainEntityOfPage":"https://klavity.in/blog/vibe-coded-app-handoff-to-developers","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Hand Off a Vibe-Coded App to Developers: 8 Steps","item":"https://klavity.in/blog/vibe-coded-app-handoff-to-developers"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/vibe-coded-app-handoff-to-developers"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What documents do developers need when inheriting a vibe-coded app?","acceptedAnswer":{"@type":"Answer","text":"At minimum: a feature inventory with one observable acceptance line per flow, a run book proven to work from a clean clone, a triaged bug list where each entry is reproducible from the report alone, a secrets and access register, platform and dependency notes, a passing critical-path test baseline, and a one-page decisions log."}},{"@type":"Question","name":"Should I fix the bugs before handing the app over to developers?","acceptedAnswer":{"@type":"Answer","text":"Fix what is a live risk or cheap for you and expensive for them: exposed credentials, broken signup, login or payment, and confirming the builder platform's export actually works. Hand over work that needs sustained engineering judgment, such as missing error and empty states, duplicated components and accessibility gaps."}},{"@type":"Question","name":"Why do vibe-coded handoffs produce so many 'cannot reproduce' tickets?","acceptedAnswer":{"@type":"Answer","text":"Because the evidence is usually a screenshot pasted into a chat message, which loses the console errors, the failing network request and the environment the bug occurred in. A bug report that carries console, network, DOM and environment state with it can be reproduced by a developer who was not present when it happened."}},{"@type":"Question","name":"Do I need automated tests before a handoff?","acceptedAnswer":{"@type":"Answer","text":"You need a baseline on the critical paths, because the first thing a new team does is rename and restructure code, and without a baseline nobody can tell whether their cleanup changed behaviour. Keep it narrow and durable: a brittle suite that breaks on every rename gets deleted within weeks."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-11-09</div>
+    <h1>How to Hand Off a Vibe-Coded App to Developers: 8 Steps</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Handing off a vibe-coded app: unstructured AI-generated code on the left, a verified handoff package in the middle, a structured repository with passing checks on the right">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="44" y="54" width="250" height="208" rx="12" fill="#f5f0e8" fill-opacity="0.04" stroke="#6366f1" stroke-opacity="0.3" stroke-width="1.5"/>
+  <circle cx="64" cy="74" r="4" fill="#f5f0e8" fill-opacity="0.25"/>
+  <circle cx="78" cy="74" r="4" fill="#f5f0e8" fill-opacity="0.18"/>
+  <rect x="62" y="96" width="140" height="9" rx="4" fill="#f5f0e8" fill-opacity="0.16"/>
+  <rect x="62" y="116" width="196" height="9" rx="4" fill="#f5f0e8" fill-opacity="0.12"/>
+  <rect x="78" y="136" width="108" height="9" rx="4" fill="#f5f0e8" fill-opacity="0.16"/>
+  <rect x="62" y="156" width="170" height="9" rx="4" fill="#f5f0e8" fill-opacity="0.1"/>
+  <rect x="90" y="176" width="74" height="9" rx="4" fill="#f5f0e8" fill-opacity="0.14"/>
+  <rect x="62" y="196" width="128" height="9" rx="4" fill="#f5f0e8" fill-opacity="0.1"/>
+  <circle cx="246" cy="160" r="9" fill="#f87171" fill-opacity="0.9"/>
+  <circle cx="224" cy="212" r="7" fill="#f87171" fill-opacity="0.75"/>
+  <path d="M206 100 q10 10 20 0 q10 -10 20 0" fill="none" stroke="#f87171" stroke-width="2.4" stroke-opacity="0.8" stroke-linecap="round"/>
+  <line x1="306" y1="158" x2="486" y2="158" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <polyline points="470,146 486,158 470,170" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="352" y="118" width="88" height="80" rx="10" fill="#1e1b2e" stroke="#6366f1" stroke-opacity="0.75" stroke-width="2"/>
+  <line x1="352" y1="144" x2="440" y2="144" stroke="#6366f1" stroke-opacity="0.5" stroke-width="1.5"/>
+  <rect x="366" y="156" width="46" height="7" rx="3.5" fill="#f5f0e8" fill-opacity="0.3"/>
+  <rect x="366" y="170" width="60" height="7" rx="3.5" fill="#f5f0e8" fill-opacity="0.2"/>
+  <polyline points="366,131 371,136 382,125" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="506" y="54" width="250" height="208" rx="12" fill="#f5f0e8" fill-opacity="0.04" stroke="#6366f1" stroke-opacity="0.45" stroke-width="1.5"/>
+  <circle cx="526" cy="74" r="4" fill="#4ade80" fill-opacity="0.6"/>
+  <rect x="524" y="96" width="178" height="9" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="524" y="128" width="178" height="9" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="524" y="160" width="178" height="9" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="524" y="192" width="178" height="9" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+  <polyline points="716,99 721,104 732,93" fill="none" stroke="#4ade80" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="716,131 721,136 732,125" fill="none" stroke="#4ade80" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="716,163 721,168 732,157" fill="none" stroke="#4ade80" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="716,195 721,200 732,189" fill="none" stroke="#4ade80" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="44" y="306" width="218" height="62" rx="10" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.35" stroke-width="1.5"/>
+  <rect x="291" y="306" width="218" height="62" rx="10" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.35" stroke-width="1.5"/>
+  <rect x="538" y="306" width="218" height="62" rx="10" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.35" stroke-width="1.5"/>
+  <rect x="64" y="326" width="120" height="8" rx="4" fill="#6366f1" fill-opacity="0.55"/>
+  <rect x="64" y="344" width="78" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.14"/>
+  <rect x="311" y="326" width="120" height="8" rx="4" fill="#6366f1" fill-opacity="0.55"/>
+  <rect x="311" y="344" width="96" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.14"/>
+  <rect x="558" y="326" width="120" height="8" rx="4" fill="#6366f1" fill-opacity="0.55"/>
+  <rect x="558" y="344" width="60" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.14"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>To hand off a vibe-coded app to developers, supply a feature inventory, a run book verified from a clean clone, and a triaged bug list with reproducible evidence. The handoff fails when a team inherits AI-generated code with no specification, no tests and no bug list, because intent has to be re-derived from code that may never have matched the prompt.</div>
+    <div class="prose"><p>To hand off a vibe-coded app to developers, give them three things alongside repository access: a written map of what the app is supposed to do, a verified way to run it from a clean clone, and evidence of what currently works versus what is broken. Handoffs fail when a team inherits AI-generated code with no specification, no tests and no bug list, because they have to re-derive intent from code that may never have matched the prompt that produced it. A day spent producing a feature inventory, a run book and a triaged bug list usually saves the receiving team weeks of archaeology.</p>
+
+<h2>Why is handing off a vibe-coded app harder than a normal codebase?</h2>
+<p>A conventionally built project arrives with artifacts the handoff can lean on: tickets, designs, commit messages tied to requirements, and whatever tests the team wrote along the way. A vibe-coded app built in Cursor, Lovable, Bolt, v0 or Replit often arrives with none of that, because the specification lived in a chat window that nobody kept.</p>
+<p>Four things make these handoffs distinctive:</p>
+<ul>
+<li><strong>The prompt was the spec, and the prompt is gone.</strong> The code is the only surviving record of intent, and it is a lossy one — it tells you what was built, not what was wanted.</li>
+<li><strong>Patterns drift between sessions.</strong> Each generation session makes its own local choices about state, data fetching and error handling. An agent will not refactor across sessions unless asked, so you get two or three competing conventions in one repo, plus duplicated utilities.</li>
+<li><strong>The code looks finished because the happy path works.</strong> AI-generated code tends to be syntactically clean and demo-ready. The gaps cluster in the places you never clicked: empty states, error states, permission boundaries, concurrent edits, slow networks.</li>
+<li><strong>Platform scaffolding is baked in.</strong> Builder platforms add their own glue, seeded demo data and sometimes hosting assumptions. Developers need to know which parts are yours and which parts are the platform's.</li>
+</ul>
+<p>None of this means the code is unusable. It means the handoff has to supply the context that the build process never wrote down. Our <a href="/blog/how-to-qa-a-vibe-coded-app">practical process for QA-ing a vibe-coded app</a> covers the verification half of that in more depth.</p>
+
+<h2>How do you hand off a vibe-coded app to developers, step by step?</h2>
+<p>Work through these in order. Steps 1–3 are documentation, 4–6 are verification, and 7–8 are ownership.</p>
+<ol>
+<li><strong>Freeze the feature set.</strong> Stop generating new features the moment you decide to hand off. A moving codebase makes every other artifact stale before it is read.</li>
+<li><strong>Write a feature inventory.</strong> One line per screen and per flow: what it does, who is allowed to reach it, and what "working" means in observable terms. "Checkout" is not a spec; "a logged-in user with items in the cart can pay by card and receives a confirmation email" is.</li>
+<li><strong>Make it run from a clean clone.</strong> List every environment variable, external service, database migration and seed step. Then have someone who did not build it follow your document on a fresh machine. Whatever they get stuck on is the real documentation gap.</li>
+<li><strong>Audit secrets and access.</strong> Check for API keys committed to the repo or pasted into prompts, and rotate anything exposed. Do this before you widen repository access, not after.</li>
+<li><strong>Walk the critical paths and record evidence.</strong> Identify the handful of flows the app exists for — signup, login, the core action, payment — and exercise each one deliberately, including the failure branches. Capture a reproducible report for every defect rather than a note that says "cart is weird sometimes".</li>
+<li><strong>Triage into three buckets.</strong> Blockers that make the app unsafe or unusable, issues to fix before launch, and backlog. Developers need your judgment on priority, not a flat list.</li>
+<li><strong>Leave a decisions log.</strong> A short page of "we chose X because Y" — the auth provider, the database, anything you tried and abandoned. This is the cheapest document to write and the one most often missing.</li>
+<li><strong>Transfer ownership explicitly.</strong> Repository, hosting, domain and DNS, database, email sending, payment processor, analytics, and the AI builder account itself. Enumerate them; assume nothing transfers implicitly.</li>
+</ol>
+
+<h2>What should the handoff package contain?</h2>
+<table>
+<tr><th>Artifact</th><th>Why the receiving team needs it</th><th>Good enough looks like</th></tr>
+<tr><td>Feature inventory</td><td>Recovers intent the prompts no longer hold</td><td>One observable acceptance line per flow</td></tr>
+<tr><td>Run book</td><td>Lets them change code on day one instead of day five</td><td>A clean clone runs after following it once, unaided</td></tr>
+<tr><td>Triaged bug list</td><td>Separates known debt from new regressions they cause</td><td>Each entry reproducible from the report alone</td></tr>
+<tr><td>Secrets and access register</td><td>Prevents a lockout and closes exposed credentials</td><td>Every account named with its current owner</td></tr>
+<tr><td>Platform and dependency notes</td><td>Shows what is yours versus the builder's scaffolding</td><td>Export path confirmed to actually work</td></tr>
+<tr><td>Test baseline</td><td>Tells them whether their refactor broke something</td><td>Critical paths covered and currently passing</td></tr>
+<tr><td>Decisions log</td><td>Stops them relitigating choices you already made</td><td>One page of choices with reasons</td></tr>
+</table>
+
+<h2>How do you prove the app actually works at the moment of handoff?</h2>
+<p>A handoff needs two kinds of evidence: reproducible reports for what is broken, and passing checks for what works. Claims without either are the reason handoffs turn into arguments about whether a bug is pre-existing or newly introduced.</p>
+<p>For the broken half, the bottleneck is reproducibility. A screenshot pasted into a chat message loses the console errors, the failing network call and the environment the bug happened in, which is how "cannot reproduce" tickets are born. <a href="/snap">Snap</a> captures a bug by right-clicking it in the browser and attaches the console log, network activity, DOM state and environment to the ticket, so the developer inheriting the app can reproduce it without you in the room.</p>
+<p>For the working half, you need coverage of flows you may never have tried yourself. <a href="/sims">Sims</a> runs AI personas through the app the way different user types would — the cautious new signup, the user with an empty account, the one who abandons mid-flow — which surfaces the empty-state and permission gaps that AI-generated code commonly leaves open. <a href="/autosim">AutoSim</a> then turns the critical paths into self-healing end-to-end tests. That property matters specifically at handoff: the first thing a new team does is rename and restructure things, and a brittle suite that breaks on every rename gets deleted in week two. A suite that survives refactoring is the baseline that tells them whether their cleanup changed behaviour.</p>
+<p>Whatever tooling you use, write the critical-path list down and require each path to pass before the handoff meeting. For the broader picture of where automated checking fits, see our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>What should you fix before handoff, and what should developers fix?</h2>
+<p>Fix what is cheap for you and expensive for them, or what is a live risk. Hand over what needs sustained engineering judgment.</p>
+<table>
+<tr><th>Issue</th><th>Who fixes it</th><th>Reasoning</th></tr>
+<tr><td>Exposed or committed secrets</td><td>You, before handoff</td><td>Live security risk; rotation is quick</td></tr>
+<tr><td>Broken signup, login or payment</td><td>You, before handoff</td><td>Nothing else can be assessed around a dead core path</td></tr>
+<tr><td>Confirming the platform export works</td><td>You, before handoff</td><td>Discovering lock-in after the contract starts is expensive</td></tr>
+<tr><td>Critical-path test baseline</td><td>You start it, they extend it</td><td>A baseline is only useful if it predates their changes</td></tr>
+<tr><td>Missing error and empty states</td><td>Developers</td><td>Needs design decisions, not patches</td></tr>
+<tr><td>Duplicated components, competing patterns</td><td>Developers</td><td>Consolidation is architectural work — see <a href="/blog/ai-technical-debt">AI technical debt</a></td></tr>
+<tr><td>Accessibility gaps</td><td>Developers</td><td>Systematic; note known gaps in the inventory</td></tr>
+</table>
+
+<h2>Who owns quality after the handoff?</h2>
+<p>The handoff is a moment; quality is a process. The common failure is treating verification as a gate cleared on handoff day, after which the app degrades at the speed the new team ships. Two things prevent that.</p>
+<p>First, keep the feature inventory alive. It is now the only written specification the project has, so whoever changes behaviour updates the line that describes it. Second, make the critical-path checks run on every change rather than before releases. The reason vibe-coded apps accumulate bugs is not that AI writes bad code — it is that code gets written faster than anyone verifies it, and a handoff does not change that arithmetic unless the verification becomes continuous.</p>
+<p>If you are an agency receiving one of these projects, build the inventory and the bug list yourself during scoping and bill for it. It is the cheapest insurance against inheriting blame for defects you did not create, and the evidence trail shows the client which problems arrived with the code.</p>
+
+<h2>Where to start</h2>
+<p>Pick your three most important user flows, run them end to end today, and file every defect as a report a stranger could reproduce. That exercise produces most of a handoff package, and tells you whether you are handing over a working app with known gaps or an untested demo.</p>
+<p><a href="/onboarding">Try Klavity free</a> — capture reproducible bug reports with Snap, run AI personas through your flows with Sims, and leave the new team a self-healing test baseline instead of a verbal promise.</p>
+</div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Freeze the feature set before you start documenting the handoff.</li><li>Prove the run book by having someone else follow it on a clean machine.</li><li>Rotate every credential committed to the repo or pasted into a prompt.</li><li>File each defect as a report a stranger could reproduce without you.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What documents do developers need when inheriting a vibe-coded app?</summary><p>At minimum: a feature inventory with one observable acceptance line per flow, a run book proven to work from a clean clone, a triaged bug list where each entry is reproducible from the report alone, a secrets and access register, platform and dependency notes, a passing critical-path test baseline, and a one-page decisions log.</p></details><details><summary>Should I fix the bugs before handing the app over to developers?</summary><p>Fix what is a live risk or cheap for you and expensive for them: exposed credentials, broken signup, login or payment, and confirming the builder platform's export actually works. Hand over work that needs sustained engineering judgment, such as missing error and empty states, duplicated components and accessibility gaps.</p></details><details><summary>Why do vibe-coded handoffs produce so many 'cannot reproduce' tickets?</summary><p>Because the evidence is usually a screenshot pasted into a chat message, which loses the console errors, the failing network request and the environment the bug occurred in. A bug report that carries console, network, DOM and environment state with it can be reproduced by a developer who was not present when it happened.</p></details><details><summary>Do I need automated tests before a handoff?</summary><p>You need a baseline on the critical paths, because the first thing a new team does is rename and restructure code, and without a baseline nobody can tell whether their cleanup changed behaviour. Keep it narrow and durable: a brittle suite that breaks on every rename gets deleted within weeks.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
