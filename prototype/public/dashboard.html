@@ -11001,6 +11001,10 @@
       border-top: 1px solid var(--line)
     }
 
+    .tkt-occ-item[hidden] {
+      display: none
+    }
+
     .tkt-occ-item:first-child {
       border-top: none
     }
@@ -28485,6 +28489,23 @@
                     })
                     listEl.appendChild(grp); loadOccShot(grp)
                   })
+                  // KD-396: even when expanded, show only the first 2 rows; the rest sit behind "Show N more".
+                  const OCC_VISIBLE = 2
+                  const occRows = Array.from(listEl.children)
+                  if (occRows.length > OCC_VISIBLE) {
+                    const rest = occRows.slice(OCC_VISIBLE)
+                    rest.forEach(r => { r.hidden = true })
+                    const restBtn = document.createElement("button")
+                    restBtn.type = "button"; restBtn.className = "tkt-occ-more tkt-occ-rest"; restBtn.setAttribute("aria-expanded", "false")
+                    restBtn.textContent = "Show " + rest.length + " more"
+                    restBtn.addEventListener("click", () => {
+                      const open = restBtn.getAttribute("aria-expanded") !== "true"
+                      rest.forEach(r => { r.hidden = !open })
+                      restBtn.setAttribute("aria-expanded", open ? "true" : "false")
+                      restBtn.textContent = open ? "Show fewer" : "Show " + rest.length + " more"
+                    })
+                    listEl.appendChild(restBtn)
+                  }
                   const firstAt = occ[0].seenAt, lastAt = occ[occ.length - 1].seenAt
                   copyBody = occCopyBody(groups, occ.length, day)
                   if (sumEl) sumEl.textContent = "Reported " + occ.length + " times · first " + day(firstAt) + " · last " + day(lastAt) + (groups.length < occ.length ? " · " + groups.length + " distinct" : "")
