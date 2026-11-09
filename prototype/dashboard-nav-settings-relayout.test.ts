@@ -33,6 +33,21 @@ test("#744 WORK group order: overview · tickets · triage (Sim Reports) · recu
   expect(iRecurring).toBeLessThan(iSims)
 })
 
+// Sidebar must paint in its final order on first load. normalizeSidebar() only runs once the (very large) dashboard
+// script executes, so if the <aside> markup is in a different order the items visibly jump into place on load.
+test("sidebar markup is authored in VIEWS order with SEP_AFTER dividers (no reorder jump on load)", () => {
+  const views = (HTML.match(/var VIEWS\s*=\s*\[([^\]]*)\]/) || [])[1]
+  const seps = (HTML.match(/var SEP_AFTER\s*=\s*\{([^}]*)\}/) || [])[1]
+  expect(views).toBeTruthy(); expect(seps).toBeTruthy()
+  const order = views!.split(",").map((s) => s.trim().replace(/^['"]|['"]$/g, ""))
+  const sepAfter = seps!.split(",").map((s) => s.split(":")[0].trim().replace(/^['"]|['"]$/g, ""))
+  const expected: string[] = []
+  for (const v of order) { expected.push(v); if (sepAfter.includes(v)) expected.push("|") }
+  const aside = HTML.slice(HTML.indexOf('<aside class="side"'), HTML.indexOf("</aside>", HTML.indexOf('<aside class="side"')))
+  const actual = [...aside.matchAll(/<button class="nv[^"]*" data-go="([^"]+)"|<div class="nv-sep"/g)].map((m) => m[1] || "|")
+  expect(actual).toEqual(expected)
+})
+
 test("#713 Getting started is gone from the sidebar (VIEWS + nav button)", () => {
   expect(viewsArray()).not.toContain("getting-started")
   expect(HTML).not.toContain('data-go="getting-started"')

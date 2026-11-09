@@ -18108,6 +18108,9 @@
 <body data-view="overview">
   <!-- A #sims deep link (e.g. "‹ Sims" back from a Sim page) shows the Sims tab from the first paint; the boot setView() below still owns the rest. -->
   <script>if (location.hash === "#sims") document.body.setAttribute("data-view", "sims")</script>
+  <!-- Apply the saved collapsed-sidebar preference before the sidebar paints, so it doesn't render expanded and then snap to the
+       icon rail when the boot script (#677 toggle below) runs. That script still owns the button state + toggling. -->
+  <script>try { if (localStorage.getItem("klav-side-collapsed") === "1") document.body.classList.add("side-collapsed") } catch (e) { }</script>
   <div class="bar">
     <div class="bar-in">
       <!-- Mobile-only: brand lives here when the sidebar collapses to a horizontal tab row -->
@@ -18261,19 +18264,38 @@
             <path d="M8 11h.01" />
             <path d="M8 16h.01" />
           </svg></span>Overview</button>
-      <!-- #713: "Getting started" removed from the sidebar (it duplicated Overview). setView() still
-         redirects a programmatic getting-started route back to Overview as a safety net. -->
-      <!-- Snap / report-widget install — first nav item after Overview so it's immediately discoverable -->
-      <button class="nv" data-go="snap"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18"
-            height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-            stroke-linejoin="round" aria-hidden="true">
-            <path d="M9 9l5 12 1.8-5.2L21 14Z" />
-            <path d="M7.2 2.2 8 5.1" />
-            <path d="m5.1 7.2-2.9-.8" />
-            <path d="M14 4.1 12 6" />
-            <path d="m6 12-1.9 2" />
-          </svg></span>Snap <span class="cl-path-tag"
-          style="margin-left:2px;font-size:9px;padding:2px 5px">widget</span></button>
+      <button class="nv" data-go="tickets"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon"
+            width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 20v-9" />
+            <path d="M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z" />
+            <path d="M14.12 3.88 16 2" />
+            <path d="M21 21a4 4 0 0 0-3.81-4" />
+            <path d="M21 5a4 4 0 0 1-3.55 3.97" />
+            <path d="M22 13h-4" />
+            <path d="M3 21a4 4 0 0 1 3.81-4" />
+            <path d="M3 5a4 4 0 0 0 3.55 3.97" />
+            <path d="M6 13H2" />
+            <path d="m8 2 1.88 1.88" />
+            <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" />
+          </svg></span>Tickets <span class="ct" id="navTicketCount"
+          title="To Do, Open and In Progress tickets"></span></button>
+      <button class="nv" data-go="triage"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon"
+            width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+            <path
+              d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+          </svg></span>Sim Reports <span class="ct" id="navTriageCount"></span></button>
+      <button class="nv" data-go="recurring"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon"
+            width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+            <path d="M21 3v5h-5" />
+            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+            <path d="M8 16H3v5" />
+          </svg></span>Recurring <span class="ct" id="navRecurringCount"></span></button>
+      <div class="nv-sep" aria-hidden="true"></div>
       <button class="nv" data-go="sims"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18"
             height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
             stroke-linejoin="round" aria-hidden="true">
@@ -18301,29 +18323,20 @@
             <path d="M16 17h4" />
             <path d="M4 13h4" />
           </svg></span>AutoSims</button>
-      <button class="nv" data-go="tickets"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon"
-            width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 20v-9" />
-            <path d="M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z" />
-            <path d="M14.12 3.88 16 2" />
-            <path d="M21 21a4 4 0 0 0-3.81-4" />
-            <path d="M21 5a4 4 0 0 1-3.55 3.97" />
-            <path d="M22 13h-4" />
-            <path d="M3 21a4 4 0 0 1 3.81-4" />
-            <path d="M3 5a4 4 0 0 0 3.55 3.97" />
-            <path d="M6 13H2" />
-            <path d="m8 2 1.88 1.88" />
-            <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" />
-          </svg></span>Tickets <span class="ct" id="navTicketCount"
-          title="To Do, Open and In Progress tickets"></span></button>
-      <button class="nv" data-go="triage"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon"
-            width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M22 12h-6l-2 3h-4l-2-3H2" />
-            <path
-              d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
-          </svg></span>Sim Reports <span class="ct" id="navTriageCount"></span></button>
+      <div class="nv-sep" aria-hidden="true"></div>
+      <!-- #713: "Getting started" removed from the sidebar (it duplicated Overview). setView() still
+         redirects a programmatic getting-started route back to Overview as a safety net. -->
+      <!-- Snap / report-widget install — leads the SET UP/ANALYZE group -->
+      <button class="nv" data-go="snap"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18"
+            height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 9l5 12 1.8-5.2L21 14Z" />
+            <path d="M7.2 2.2 8 5.1" />
+            <path d="m5.1 7.2-2.9-.8" />
+            <path d="M14 4.1 12 6" />
+            <path d="m6 12-1.9 2" />
+          </svg></span>Snap <span class="cl-path-tag"
+          style="margin-left:2px;font-size:9px;padding:2px 5px">widget</span></button>
       <!-- Bugs by page: the in-app equivalent of QA mode for teammates who don't use the extension —
          pick a reported page, see its bugs grouped with status + counts, mark them working & close. -->
       <button class="nv" data-go="pagebugs"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon"
@@ -18334,14 +18347,6 @@
             <path d="M9 13h6" />
             <path d="M9 17h3" />
           </svg></span>Reports</button>
-      <button class="nv" data-go="recurring"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon"
-            width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-            <path d="M21 3v5h-5" />
-            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-            <path d="M8 16H3v5" />
-          </svg></span>Recurring <span class="ct" id="navRecurringCount"></span></button>
       <!-- Guards (B.10): the "things Klavity re-checks forever because they broke once" board, promoted
          out of AutoSims to its own top-level view so a Snap-only customer can reach it directly. -->
       <button class="nv" data-go="guards"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon"
@@ -18350,6 +18355,7 @@
             <path
               d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
           </svg></span>Guards <span class="ct" id="navGuardsCount"></span></button>
+      <div class="nv-sep" aria-hidden="true"></div>
       <button class="nv" data-go="team"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18"
             height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
             stroke-linejoin="round" aria-hidden="true">
@@ -35308,6 +35314,9 @@
             // ===== sidebar view switching =====
             (function () {
               // #744: sidebar clustered into four separator-divided groups (owner adopted the UX recommendation):
+              // The <aside class="side"> markup is authored in this SAME order with the same .nv-sep dividers, so the sidebar paints
+              // in place on first load; normalizeSidebar() is then a no-op safety net. If you change VIEWS/SEP_AFTER, reorder the
+              // HTML too, or the items visibly jump into place on load (guarded by dashboard-nav-settings-relayout.test.ts).
               //   Group A (WORK):            overview · tickets · triage("Sim Reports") · recurring
               //   Group B (SIMS):            sims · autosims
               //   Group C (SET UP/ANALYZE):  snap · pagebugs("Reports") · guards
