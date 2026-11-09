@@ -14856,6 +14856,13 @@
       flex: 1
     }
 
+    /* KD-999: Sim card — Type picker (User/Client) and the Add/Edit buttons share one left edge, one gap and the
+       same control height, with breathing room between the two rows. */
+    .sm-class-pick { gap: 6px; margin-top: 10px; min-height: 26px }
+    .sm-class-pick .sm-class-btn { height: 26px; padding: 0 12px; display: inline-flex; align-items: center }
+    .sm-foot { gap: 6px; margin-top: 10px }
+    .sm-foot .btn { height: 32px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box }
+
     /* v3 preview: client/user + side badges, persona-core panel, scope/portability tags */
     .sm-badges {
       margin-left: auto;
