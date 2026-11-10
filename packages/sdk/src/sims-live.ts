@@ -85,6 +85,35 @@ export interface DeployOpts {
    * Triage but do not surface in the panel. Retained for API compatibility.
    */
   mode?: 'critical' | 'all'
+  /**
+   * The card's Close (×). When set, Close means "stop all my Sims and close the card" — the host stops the Sims (server Run state)
+   * and tears the card down. Without it, × just minimizes the card to its launcher pill (the old behaviour).
+   */
+  onClose?: () => void
+  /**
+   * The header's "Sims" menu: lists every Sim of the project with Run / Stop (and multi-select Run / Stop selected). Deactivated
+   * Sims are shown greyed out and point to the dashboard Sims tab. The host owns the data + the actions (server Run state).
+   */
+  simControls?: CardSimControls
+}
+
+/** One Sim in the card's "Sims" menu. */
+export interface CardSim {
+  id: string
+  name: string
+  role?: string
+  initials?: string | null
+  accent?: string | null
+  /** false = Deactivated on the dashboard Sims tab (can't be run from here). */
+  active: boolean
+  running: boolean
+}
+
+export interface CardSimControls {
+  list(): Promise<CardSim[]>
+  /** Start / stop these Sims; resolves with the fresh list. */
+  run(ids: string[]): Promise<CardSim[]>
+  stop(ids: string[]): Promise<CardSim[]>
 }
 
 /** KD-1465: phase of a Sim run — screenshot capture, AI review, done, or errored. */
@@ -92,6 +121,11 @@ export type SimRunStatus = 'analysing' | 'running' | 'completed' | 'failed'
 
 export interface KlavitySimsAPI {
   deploy(simIds: string[] | 'all', sims?: LiveSimDescriptor[], opts?: DeployOpts): void
+  /**
+   * Change which Sims are running WITHOUT clearing the card: a Sim that stops keeps the findings it already reported (and stops
+   * adding new ones); a Sim that starts is added. Mounts the card when it isn't up yet. Empty list → callers undeploy() instead.
+   */
+  updateSims?(sims: LiveSimDescriptor[], opts?: DeployOpts): void
   setReviewing(reviewing: boolean): void
   /** KD-1465: show where the current Sim run is (null clears the status line). */
   setRunStatus(status: SimRunStatus | null): void
@@ -141,6 +175,17 @@ let reviewing = false
 let runStatus: SimRunStatus | null = null
 let runStartSeq = 0
 let activeRuns = 0
+/** Sims currently RUNNING on the card. simEntries also keeps stopped Sims so their earlier findings still render. */
+let runningIds = new Set<string>()
+/** The host's Close handler (stop all Sims + tear the card down) — see DeployOpts.onClose. */
+let onCloseHandler: (() => void) | null = null
+/** The header's "Sims" menu (DeployOpts.simControls). */
+let simControls: CardSimControls | null = null
+let simMenuEl: HTMLElement | null = null
+let simMenuSims: CardSim[] = []
+const simMenuSel = new Set<string>()
+let simMenuBusy = false
+let simMenuNote = ''
 
 // Cached panel DOM refs (inside the shadow root).
 let launcherEl: HTMLButtonElement | null = null
@@ -340,6 +385,73 @@ const PANEL_CSS = `
     transition: transform .15s var(--ease), background .15s, color .15s;
   }
   .ksl-icon-btn:hover { transform: translateY(-1px); background: rgba(255,255,255,.06); color: var(--fg); }
+  .ksl-head-btns { margin-left: auto; display: inline-flex; gap: 6px; }
+  .ksl-head-btns .ksl-icon-btn { margin-left: 0; }
+  .ksl-close-btn:hover { color: #f87171; }
+
+  /* ── header "Sims" button + menu (Run / Stop each Sim, multi-select) ── */
+  .ksl-sims-btn {
+    height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); background: transparent;
+    color: var(--fg-2); font-size: 12px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+  .ksl-sims-btn:hover, .ksl-sims-btn[aria-expanded="true"] { background: rgba(139,92,246,.14); border-color: rgba(139,92,246,.4); color: var(--accent-3); }
+  .ksl-sims-btn:focus-visible, .ksl-sm-row:focus-visible, .ksl-sm-act:focus-visible, .ksl-sm-bulk:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The Sims menu is a full view INSIDE the card (slides over the findings) — not a floating popover. */
+  .ksl-simmenu {
+    position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column;
+    background: linear-gradient(168deg, var(--surface-2), var(--surface)); border-radius: inherit;
+    animation: ksl-sm-in .22s var(--ease) both;
+  }
+  @keyframes ksl-sm-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+  .ksl-sm-head { display: flex; align-items: center; gap: 10px; padding: 16px 16px 14px; border-bottom: 1px solid var(--line-soft); flex-shrink: 0; }
+  .ksl-sm-back { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--fg-2); cursor: pointer; transition: background .15s, color .15s; }
+  .ksl-sm-back:hover { background: rgba(255,255,255,.06); color: var(--fg); }
+  .ksl-sm-back:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ksl-sm-titles { min-width: 0; }
+  .ksl-sm-title { font-size: 15px; font-weight: 700; color: var(--fg); letter-spacing: -.01em; }
+  .ksl-sm-sub { font-size: 12px; color: var(--fg-3); margin-top: 2px; }
+  .ksl-sm-list { flex: 1; overflow-y: auto; padding: 8px 12px 12px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+  /* Thin dark scrollbar (matches the findings list) instead of the browser's default white one. */
+  .ksl-sm-list::-webkit-scrollbar { width: 9px; }
+  .ksl-sm-list::-webkit-scrollbar-track { background: transparent; }
+  .ksl-sm-list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; border: 2px solid var(--surface); }
+  .ksl-sm-list::-webkit-scrollbar-button { display: none; height: 0; }
+  .ksl-sm-head .ksl-head-btns { margin-left: auto; }
+  .ksl-sm-empty { padding: 28px 16px; text-align: center; font-size: 12.5px; color: var(--fg-3); }
+  .ksl-sm-all { display: flex; align-items: center; gap: 10px; margin: 4px 0 2px; padding: 9px 10px; border-radius: 10px; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--fg-2); }
+  .ksl-sm-all:hover { background: rgba(255,255,255,.04); }
+  .ksl-sm-all:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ksl-sm-group { margin: 14px 4px 6px; font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--fg-4); display: flex; align-items: center; gap: 8px; }
+  .ksl-sm-group::after { content: ""; flex: 1; height: 1px; background: var(--line-soft); }
+  .ksl-sm-group-note { margin: -2px 4px 8px; font-size: 11.5px; color: var(--fg-3); line-height: 1.4; }
+  .ksl-sm-row { display: flex; align-items: center; gap: 10px; padding: 10px; margin-bottom: 6px; border-radius: 12px; border: 1px solid var(--line-soft); background: rgba(255,255,255,.02); cursor: pointer; transition: background .15s, border-color .15s; }
+  .ksl-sm-row:hover { background: rgba(255,255,255,.045); }
+  .ksl-sm-row.is-running { border-color: rgba(52,211,153,.24); background: rgba(52,211,153,.05); }
+  .ksl-sm-row.is-sel { border-color: rgba(139,92,246,.5); background: rgba(139,92,246,.09); }
+  .ksl-sm-row.is-off { border-color: transparent; background: transparent; opacity: .6; cursor: help; padding: 7px 10px; margin-bottom: 2px; }
+  .ksl-sm-chk { width: 17px; height: 17px; flex: none; display: grid; place-items: center; border-radius: 5px; border: 1.5px solid var(--fg-4); color: #fff; transition: background .14s, border-color .14s; }
+  .ksl-sm-chk.on, .ksl-sm-chk.mixed { background: var(--accent); border-color: var(--accent); }
+  .ksl-sm-av { width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #fff; }
+  .ksl-sm-row.is-off .ksl-sm-av { width: 26px; height: 26px; font-size: 9.5px; filter: grayscale(1); }
+  .ksl-sm-meta { flex: 1; min-width: 0; }
+  .ksl-sm-name { font-size: 13px; font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ksl-sm-st { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--fg-3); margin-top: 2px; }
+  .ksl-sm-st::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .85; }
+  .ksl-sm-row.is-running .ksl-sm-st { color: #6ee7b7; }
+  .ksl-sm-row.is-off .ksl-sm-st { color: #f87171; }
+  .ksl-sm-row.is-off .ksl-sm-name { font-size: 12.5px; color: var(--fg-2); }
+  .ksl-sm-act, .ksl-sm-bulk {
+    flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 8px;
+    border: 1px solid rgba(52,211,153,.45); background: rgba(52,211,153,.08); color: #6ee7b7; font-size: 12px; font-weight: 700; cursor: pointer;
+    transition: background .15s, transform .15s;
+  }
+  .ksl-sm-act.is-stop, .ksl-sm-bulk.is-stop { border-color: rgba(248,113,113,.42); background: rgba(248,113,113,.07); color: #fca5a5; }
+  .ksl-sm-act:hover:not(:disabled), .ksl-sm-bulk:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.12); }
+  .ksl-sm-act:disabled, .ksl-sm-bulk:disabled { opacity: .35; cursor: default; }
+  .ksl-sm-note { margin: 0 12px 10px; padding: 9px 11px; border-radius: 10px; background: rgba(139,92,246,.13); border: 1px solid rgba(139,92,246,.25); color: var(--accent-3); font-size: 12px; line-height: 1.45; flex-shrink: 0; }
+  .ksl-sm-foot { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--line-soft); background: rgba(0,0,0,.18); flex-shrink: 0; }
+  .ksl-sm-cnt { margin-right: auto; font-size: 11.5px; color: var(--fg-3); }
   .ksl-icon-btn:active { transform: scale(.94); }
   .ksl-icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .ksl-icon-btn svg { width: 15px; height: 15px; }
@@ -760,6 +872,236 @@ function avatarFor(entry: SimEntry, size: number): HTMLElement {
   } as SimProps)
 }
 
+// ── launcher avatars + updateSims() ──────────────────────────────────────────
+
+function renderLauncherAvatars(): void {
+  if (!launcherAvatarsEl) return
+  launcherAvatarsEl.textContent = ''
+  ;[...runningIds].slice(0, 3).forEach((id) => {
+    const entry = simEntries.get(id)
+    if (entry) launcherAvatarsEl!.appendChild(avatarFor(entry, 26))
+  })
+}
+
+/**
+ * Change the running Sims without clearing the card. A stopped Sim stays in simEntries (so its findings keep rendering) but is no
+ * longer "running" — renderFeedback() ignores anything it sends after this. Mounts the card when it isn't up.
+ */
+function updateSims(sims: LiveSimDescriptor[], opts: DeployOpts = {}): void {
+  if (typeof document === 'undefined') return
+  if (!hostEl || !hostEl.isConnected) { deploy(sims.map(s => s.id), sims, opts); return }
+  if (opts.onClose) onCloseHandler = opts.onClose
+  if (opts.simControls) simControls = opts.simControls
+  for (const sim of sims.slice(0, 8)) {
+    if (!simEntries.has(sim.id)) {
+      simEntries.set(sim.id, { simId: sim.id, accent: sim.accent || '#6366f1', initials: sim.initials || sim.name.slice(0, 2).toUpperCase(), name: sim.name, photoUrl: sim.photoUrl })
+    }
+  }
+  runningIds = new Set(sims.slice(0, 8).map(s => s.id))
+  renderLauncherAvatars()
+  syncSurfaces()
+  if (panelOpen) renderList()
+}
+
+// ── "Sims" menu (header): Run / Stop each Sim, multi-select Run / Stop selected ─────────────
+
+function closeSimMenu(): void {
+  safeRemove(simMenuEl); simMenuEl = null
+  simMenuSel.clear(); simMenuNote = ''
+  panelEl?.querySelector('.ksl-sims-btn')?.setAttribute('aria-expanded', 'false')
+}
+
+function toggleSimMenu(btn: HTMLElement): void {
+  if (simMenuEl) { closeSimMenu(); return }
+  if (!panelEl || !simControls) return
+  simMenuEl = document.createElement('div')
+  simMenuEl.className = 'ksl-simmenu'
+  simMenuEl.setAttribute('role', 'dialog')
+  simMenuEl.setAttribute('aria-label', 'Run or stop Sims')
+  panelEl.appendChild(simMenuEl)
+  btn.setAttribute('aria-expanded', 'true')
+  simMenuSims = []
+  renderSimMenu(true)
+  void simControls.list().then((sims) => { simMenuSims = sims; renderSimMenu() }).catch((e: any) => {
+    simMenuNote = e?.message || "Couldn't load your Sims."; renderSimMenu()
+  })
+}
+
+function simMenuRow(s: CardSim): HTMLElement {
+  const row = document.createElement('div')
+  const on = simMenuSel.has(s.id)
+  row.className = 'ksl-sm-row' + (!s.active ? ' is-off' : s.running ? ' is-running' : '') + (on ? ' is-sel' : '')
+  row.dataset.simId = s.id
+  const av = document.createElement('span'); av.className = 'ksl-sm-av'
+  av.style.background = safeColor(s.accent) || '#6366f1'
+  av.textContent = (s.initials || s.name.slice(0, 2)).slice(0, 2).toUpperCase()
+  const meta = document.createElement('div'); meta.className = 'ksl-sm-meta'
+  const nm = document.createElement('div'); nm.className = 'ksl-sm-name'; nm.textContent = s.name
+  const st = document.createElement('div'); st.className = 'ksl-sm-st'
+  st.textContent = !s.active ? 'Deactivated' : s.running ? 'Running' : 'Stopped'
+  st.dataset.kind = 'run'
+  meta.append(nm, st)
+  if (!s.active) {
+    // Deactivated: can't be ticked or run here — say where to turn it on.
+    row.setAttribute('aria-disabled', 'true'); row.tabIndex = 0
+    const hint = () => { simMenuNote = `${s.name} is deactivated. Activate this Sim on the Sims tab to run it.`; renderSimMenu() }
+    row.addEventListener('click', hint)
+    row.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); hint() } })
+    row.append(av, meta)
+    return row
+  }
+  const chk = document.createElement('span')
+  chk.className = 'ksl-sm-chk' + (on ? ' on' : '')
+  chk.innerHTML = on ? icon('check', { size: 11 }) : ''
+  row.setAttribute('role', 'checkbox'); row.setAttribute('aria-checked', String(on)); row.tabIndex = 0
+  const toggle = () => { if (simMenuBusy) return; on ? simMenuSel.delete(s.id) : simMenuSel.add(s.id); simMenuNote = ''; renderSimMenu() }
+  row.addEventListener('click', toggle)
+  row.addEventListener('keydown', (e) => { if (e.target === row && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); toggle() } })
+  const b = document.createElement('button'); b.type = 'button'
+  b.className = 'ksl-sm-act' + (s.running ? ' is-stop' : '')
+  b.dataset.action = s.running ? 'stop' : 'run'
+  b.disabled = simMenuBusy
+  b.setAttribute('aria-label', `${s.running ? 'Stop' : 'Run'} ${s.name}`)
+  b.innerHTML = icon(s.running ? 'square' : 'play', { size: 11 }) + `<span>${s.running ? 'Stop' : 'Run'}</span>`
+  b.addEventListener('click', (e) => { e.stopPropagation(); void simMenuAct(s.running ? 'stop' : 'run', [s.id]) })
+  b.addEventListener('keydown', (e) => e.stopPropagation())
+  row.append(chk, av, meta, b)
+  return row
+}
+
+function renderSimMenu(loading = false): void {
+  const m = simMenuEl
+  if (!m) return
+  const scroll = m.querySelector('.ksl-sm-list')?.scrollTop ?? 0
+  m.textContent = ''
+  const activeSims = simMenuSims.filter((s) => s.active)
+  const running = activeSims.filter((s) => s.running)
+  const stopped = activeSims.filter((s) => !s.running)
+  const off = simMenuSims.filter((s) => !s.active)
+
+  // Header: ← back to the findings · title · how many are running.
+  const head = document.createElement('div'); head.className = 'ksl-sm-head'
+  const back = document.createElement('button'); back.type = 'button'; back.className = 'ksl-sm-back'
+  back.setAttribute('aria-label', 'Back to findings'); back.title = 'Back to findings'
+  back.innerHTML = icon('chevron-left', { size: 16 }); back.addEventListener('click', () => closeSimMenu())
+  const titles = document.createElement('div'); titles.className = 'ksl-sm-titles'
+  const t = document.createElement('div'); t.className = 'ksl-sm-title'; t.textContent = 'Sims on this page'
+  const sub = document.createElement('div'); sub.className = 'ksl-sm-sub'
+  sub.textContent = loading ? 'Loading…' : activeSims.length ? `${running.length} of ${activeSims.length} running` : 'No activated Sims yet'
+  titles.append(t, sub)
+  // Same Minimize (–) / Close (×) as the card's own header, which this view covers.
+  const btns = document.createElement('span'); btns.className = 'ksl-head-btns'
+  const minB = document.createElement('button'); minB.type = 'button'; minB.className = 'ksl-icon-btn ksl-sm-min'
+  minB.title = 'Minimize'; minB.setAttribute('aria-label', 'Minimize Sims feedback panel')
+  minB.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>'
+  minB.addEventListener('click', () => { closeSimMenu(); closePanel() })
+  btns.appendChild(minB)
+  if (onCloseHandler) {
+    const closeB = document.createElement('button'); closeB.type = 'button'; closeB.className = 'ksl-icon-btn ksl-close-btn ksl-sm-close'
+    closeB.title = 'Close and stop all Sims'; closeB.setAttribute('aria-label', 'Close Sims feedback and stop all Sims')
+    closeB.innerHTML = icon('x', { size: 15 })
+    closeB.addEventListener('click', () => { try { onCloseHandler?.() } catch { /* the host owns teardown */ } })
+    btns.appendChild(closeB)
+  }
+  head.append(back, titles, btns)
+  m.appendChild(head)
+
+  const list = document.createElement('div'); list.className = 'ksl-sm-list'
+  if (loading) list.innerHTML = '<div class="ksl-sm-empty">Loading Sims…</div>'
+  else if (!simMenuSims.length) list.innerHTML = '<div class="ksl-sm-empty">No Sims in this project yet.</div>'
+  else {
+    // Select all — every Activated Sim (Deactivated ones can't be ticked).
+    if (activeSims.length > 1) {
+      const nOn = activeSims.filter((s) => simMenuSel.has(s.id)).length
+      const allOn = nOn === activeSims.length
+      const all = document.createElement('div'); all.className = 'ksl-sm-all'
+      all.setAttribute('role', 'checkbox'); all.setAttribute('aria-checked', allOn ? 'true' : nOn ? 'mixed' : 'false'); all.tabIndex = 0
+      const chk = document.createElement('span'); chk.className = 'ksl-sm-chk' + (allOn ? ' on' : nOn ? ' mixed' : '')
+      chk.innerHTML = allOn ? icon('check', { size: 11 }) : nOn ? '<span style="width:8px;height:2px;background:#fff;border-radius:2px"></span>' : ''
+      const lbl = document.createElement('span'); lbl.textContent = 'Select all'
+      all.append(chk, lbl)
+      const toggleAll = () => { if (simMenuBusy) return; activeSims.forEach((s) => allOn ? simMenuSel.delete(s.id) : simMenuSel.add(s.id)); simMenuNote = ''; renderSimMenu() }
+      all.addEventListener('click', toggleAll)
+      all.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleAll() } })
+      list.appendChild(all)
+    }
+    const group = (label: string, sims: CardSim[], note?: string) => {
+      if (!sims.length) return
+      const g = document.createElement('div'); g.className = 'ksl-sm-group'; g.textContent = `${label} · ${sims.length}`
+      list.appendChild(g)
+      if (note) { const n = document.createElement('div'); n.className = 'ksl-sm-group-note'; n.textContent = note; list.appendChild(n) }
+      for (const s of sims) list.appendChild(simMenuRow(s))
+    }
+    group('Running', running)
+    group('Stopped', stopped)
+    group('Deactivated', off, 'Activate these on the Sims tab to run them here.')
+  }
+  m.appendChild(list)
+  list.scrollTop = scroll
+
+  if (simMenuNote) {
+    const n = document.createElement('div'); n.className = 'ksl-sm-note'; n.setAttribute('role', 'status'); n.textContent = simMenuNote
+    m.appendChild(n)
+  }
+
+  // Footer (pinned): act on the ticked Sims — each action only on the ones it applies to.
+  const sel = activeSims.filter((s) => simMenuSel.has(s.id))
+  const toRun = sel.filter((s) => !s.running).map((s) => s.id)
+  const toStop = sel.filter((s) => s.running).map((s) => s.id)
+  const foot = document.createElement('div'); foot.className = 'ksl-sm-foot'
+  const cnt = document.createElement('span'); cnt.className = 'ksl-sm-cnt'
+  cnt.textContent = sel.length ? `${sel.length} selected` : 'Tick Sims to run or stop several'
+  const runB = document.createElement('button'); runB.type = 'button'; runB.className = 'ksl-sm-bulk'
+  runB.dataset.action = 'run-selected'
+  runB.disabled = simMenuBusy || !toRun.length
+  runB.innerHTML = icon('play', { size: 11 }) + `<span>Run${toRun.length ? ' ' + toRun.length : ''}</span>`
+  runB.addEventListener('click', () => void simMenuAct('run', toRun))
+  const stopB = document.createElement('button'); stopB.type = 'button'; stopB.className = 'ksl-sm-bulk is-stop'
+  stopB.dataset.action = 'stop-selected'
+  stopB.disabled = simMenuBusy || !toStop.length
+  stopB.innerHTML = icon('square', { size: 11 }) + `<span>Stop${toStop.length ? ' ' + toStop.length : ''}</span>`
+  stopB.addEventListener('click', () => void simMenuAct('stop', toStop))
+  foot.append(cnt, runB, stopB)
+  m.appendChild(foot)
+}
+
+// INSTANT Run / Stop: the menu shows the result straight away and the host call runs in the background, queued so quick clicks
+// never race. The server's answer replaces the prediction once the last queued call is done; a failure reloads the real list.
+let simMenuQueue: Promise<void> = Promise.resolve()
+let simMenuPending = 0
+async function simMenuAct(action: 'run' | 'stop', ids: string[]): Promise<void> {
+  if (!simControls || !ids.length) return
+  const ctl = simControls
+  const set = new Set(ids)
+  simMenuSims = simMenuSims.map((s) => s.active && set.has(s.id) ? { ...s, running: action === 'run' } : s)
+  for (const id of ids) simMenuSel.delete(id)
+  const n = ids.length
+  simMenuNote = action === 'run'
+    ? `${n === 1 ? 'Sim is' : `${n} Sims are`} running.`
+    : `${n === 1 ? 'Sim' : `${n} Sims`} stopped. Reported issues stay here and in Sim Reports.`
+  renderSimMenu()
+  simMenuPending++
+  simMenuQueue = simMenuQueue.then(async () => {
+    try {
+      const sims = await (action === 'run' ? ctl.run(ids) : ctl.stop(ids))
+      simMenuPending--
+      if (!simMenuPending) simMenuSims = sims
+    } catch (e: any) {
+      simMenuPending--
+      simMenuNote = e?.message || "Couldn't update the Sims — please try again."
+      try { simMenuSims = await ctl.list() } catch { /* keep what we have */ }
+    }
+    // The host may have closed the card (no Sim left running) — the menu went with it.
+    if (simMenuEl && simMenuEl.isConnected) renderSimMenu()
+  })
+  await simMenuQueue
+}
+
+/** Only a strict #rgb / #rrggbb colour reaches a style attribute (accent is model/user data). */
+function safeColor(v: string | null | undefined): string | null {
+  return /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(String(v || '')) ? String(v) : null
+}
+
 // ── deploy() ─────────────────────────────────────────────────────────────────
 
 function deploy(
@@ -767,9 +1109,10 @@ function deploy(
   sims: LiveSimDescriptor[] = [],
   opts: DeployOpts = {},
 ): void {
-  void opts
   if (typeof document === 'undefined') return
   undeploy()   // clean slate
+  onCloseHandler = opts.onClose ?? null
+  simControls = opts.simControls ?? null
 
   const shadow = ensureHost()
   ensureOverlay()
@@ -813,11 +1156,9 @@ function deploy(
   launcherEl.append(pill, launcherBadgeEl)
   root.appendChild(launcherEl)
 
-  // launcher avatar stack (up to 3)
-  visible.slice(0, 3).forEach((sim) => {
-    const entry = simEntries.get(sim.id)
-    if (entry) launcherAvatarsEl!.appendChild(avatarFor(entry, 26))
-  })
+  // launcher avatar stack (up to 3) — the RUNNING Sims
+  runningIds = new Set(visible.slice(0, 8).map(s => s.id))
+  renderLauncherAvatars()
 
   // ── panel ──
   panelEl = document.createElement('section')
@@ -831,9 +1172,34 @@ function deploy(
   const collapseBtn = document.createElement('button')
   collapseBtn.type = 'button'; collapseBtn.className = 'ksl-icon-btn'
   collapseBtn.title = 'Minimize'; collapseBtn.setAttribute('aria-label', 'Minimize Sims feedback panel')
-  collapseBtn.innerHTML = icon('x', { size: 15 })
-  collapseBtn.addEventListener('click', () => closePanel())
-  titleRow.append(title, collapseBtn)
+  if (onCloseHandler) {
+    // Two controls: "–" shrinks the card to its pill (Sims keep running); "×" closes it and stops every Sim.
+    collapseBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>'
+    collapseBtn.addEventListener('click', () => closePanel())
+    const closeBtn = document.createElement('button')
+    closeBtn.type = 'button'; closeBtn.className = 'ksl-icon-btn ksl-close-btn'
+    closeBtn.title = 'Close and stop all Sims'
+    closeBtn.setAttribute('aria-label', 'Close Sims feedback and stop all Sims')
+    closeBtn.innerHTML = icon('x', { size: 15 })
+    closeBtn.addEventListener('click', () => { try { onCloseHandler?.() } catch { /* the host owns teardown */ } })
+    const btns = document.createElement('span'); btns.className = 'ksl-head-btns'
+    if (simControls) {
+      // "Sims" menu: Run / Stop each Sim (or several at once) without leaving the page.
+      const simsBtn = document.createElement('button')
+      simsBtn.type = 'button'; simsBtn.className = 'ksl-sims-btn'
+      simsBtn.setAttribute('aria-haspopup', 'dialog'); simsBtn.setAttribute('aria-expanded', 'false')
+      simsBtn.title = 'Run or stop Sims'
+      simsBtn.innerHTML = icon('users', { size: 14 }) + '<span>Sims</span>'
+      simsBtn.addEventListener('click', () => toggleSimMenu(simsBtn))
+      btns.append(simsBtn)
+    }
+    btns.append(collapseBtn, closeBtn)
+    titleRow.append(title, btns)
+  } else {
+    collapseBtn.innerHTML = icon('x', { size: 15 })
+    collapseBtn.addEventListener('click', () => closePanel())
+    titleRow.append(title, collapseBtn)
+  }
 
   panelCountEl = document.createElement('div'); panelCountEl.className = 'ksl-count'
   panelStatusEl = document.createElement('div'); panelStatusEl.className = 'ksl-status'; panelStatusEl.hidden = true
@@ -849,6 +1215,8 @@ function deploy(
 
   // Escape closes the panel (when open).
   document.addEventListener('keydown', (e) => {
+    // Escape closes the Sims menu first, then the panel.
+    if (e.key === 'Escape' && simMenuEl) { closeSimMenu(); return }
     if (e.key === 'Escape' && panelOpen) closePanel()
   }, { signal: deployAbort.signal })
 
@@ -871,7 +1239,7 @@ function setReviewing(value: boolean): void {
 // and in the launcher pill while the run is in progress.
 
 function runStatusText(): string {
-  const sims = simEntries.size
+  const sims = runningIds.size || simEntries.size
   const who = sims === 1 ? 'Sim is' : 'Sims are'
   switch (runStatus) {
     case 'analysing': return `${sims === 1 ? 'Sim is' : `${sims} Sims are`} analysing this page…`
@@ -953,7 +1321,8 @@ function syncSurfaces(): void {
     } else if (reviewing && c.total === 0) {
       launcherTxtEl.innerHTML = 'Your Sims are reviewing…'
     } else if (c.total === 0) {
-      launcherTxtEl.innerHTML = 'Sims are watching this page'
+      const n = runningIds.size || simEntries.size
+      launcherTxtEl.innerHTML = `${n} Sim${n === 1 ? ' is' : 's are'} running on this page`
     } else {
       launcherTxtEl.innerHTML = `<b>${c.total}</b> finding${c.total === 1 ? '' : 's'} from your Sims`
     }
@@ -1285,6 +1654,9 @@ function renderFeedback(simId: string, simName: string, observations: LiveObserv
     return
   }
   if (!observations.length) return
+  // A Sim the user Stopped gives no new issues — not even from a review that was already in flight when it was stopped.
+  // (runningIds is empty only for older hosts that never set it; treat every registered Sim as running then.)
+  if (runningIds.size && !runningIds.has(simId)) return
 
   // Results are arriving — drop the "reviewing…" state even if setReviewing(false)
   // hasn't fired yet, so the UI never lies about state.
@@ -1322,6 +1694,14 @@ function undeploy(): void {
   runStatus = null
   runStartSeq = 0
   activeRuns = 0
+  runningIds = new Set()
+  onCloseHandler = null
+  simControls = null
+  simMenuEl = null
+  simMenuSims = []
+  simMenuSel.clear()
+  simMenuBusy = false
+  simMenuNote = ''
 
   // 2. Abort global listeners
   deployAbort?.abort(); deployAbort = null
@@ -1353,6 +1733,7 @@ function undeploy(): void {
 
 export const SimsLive: KlavitySimsAPI = {
   deploy,
+  updateSims,
   setReviewing,
   setRunStatus,
   renderFeedback,
