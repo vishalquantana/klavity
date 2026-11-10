@@ -34,10 +34,23 @@ beforeAll(async () => {
   await dbMod.setPersonaGlobal("sim_g1", PA, true)
 })
 
-test("a new Sim, and every Sim that existed before the column, is active by default", async () => {
+test("a NEW Sim starts Deactivated; editing a Sim never changes its Activated/Deactivated state", async () => {
   const all = await dbMod.listPersonas(PA)
   expect(all.length).toBe(3)
-  for (const p of all) expect(p.active).toBe(true)
+  for (const p of all) expect(p.active).toBe(false)   // the user turns on only the Sims they want, on the Sims tab
+  // Activate one, then edit it (upsert on the same id) → still active.
+  await dbMod.setPersonaActive("sim_a1", PA, true)
+  await dbMod.upsertPersona("sim_a1", PA, { ...mk("Alex"), summary: "edited" })
+  expect((await dbMod.listPersonas(PA)).find((p: any) => p.id === "sim_a1")?.active).toBe(true)
+  // The rest of this file works with active Sims.
+  for (const [id, p] of [["sim_a2", PA], ["sim_c1", PC], ["sim_g1", PA]] as const) await dbMod.setPersonaActive(id, p, true)
+})
+
+test("a Sim that existed before the active column (column default) stays active", async () => {
+  const now = Date.now()
+  await c.execute({ sql: "INSERT INTO personas (id,project_id,name,role,type,created_at,updated_at) VALUES (?,?,?,?,?,?,?)", args: ["sim_old", PC, "Old", "r", "client", now, now] })
+  expect((await dbMod.listPersonas(PC)).find((p: any) => p.id === "sim_old")?.active).toBe(true)
+  await c.execute({ sql: "DELETE FROM personas WHERE id=?", args: ["sim_old"] })
 })
 
 test("the migration is safe to run twice", async () => {

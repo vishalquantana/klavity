@@ -17,7 +17,7 @@ import { countFoundingAccounts, liveFeedbackId, deleteTicketsBulk, invalidateDas
 import { listDeletedTickets, restoreDeletedTicket, RETENTION_DAYS as DELETED_TICKETS_RETENTION_DAYS } from "./lib/deleted-tickets"
 import { projectAccessAndRow } from "./lib/db" // KLA-833: access + project row in one DB round-trip (hot /api/projects/:id/* block)
 import { setFeedbackExtraScreenshots } from "./lib/db"
-import { readSimDeploymentRows, statesFor, applySimAction, SIM_ACTIONS, type SimAction, type SimDeploymentState } from "./lib/sim-deployments"
+import { runningSimIds, runSims, stopSims, clearSimRuns, SIM_RUN_ACTIONS, type SimRunAction } from "./lib/sim-run-state"
 // KLA-838 (perf): batched helpers that collapse O(N-projects) per-request DB fan-out to a single query.
 import { listEnabledMonitoredUrlPatternsForProjects, countPersonasForAccount, insertTraitEvents, patternMatchesUrl } from "./lib/db"
 // #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
@@ -4547,12 +4547,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     return wjson({ sims })
   }
 
-  // ── /api/widget/sim-deployments — Select Sims management (isolated, additive). ─────────────
-  // GET  ?project=…               → every Sim with its deployment + execution status.
-  // POST { project, action, simIds } where action ∈ deploy|deactivate|pause|resume.
-  // Member-gated (session cookie or widget bearer) and project-scoped. State lives ONLY in the new
-  // sim_deployments table (lib/sim-deployments.ts) — no existing Sims/AutoSims table or endpoint is
-  // read-modified-written here. Incompatible ids are reported in `skipped`, never force-applied.
+  // ── /api/widget/sim-deployments — per-USER Run / Stop of Sims (lib/sim-run-state.ts). ─────────────
+  // GET  ?project=…                          → every Sim: { id, name, …, active, run: "running" | "stopped" } for the caller.
+  // POST { project, action, simIds }         action ∈ run | stop | stop_all (stop_all needs no simIds — the card's Close).
+  // Member-gated (session cookie or widget bearer) and project-scoped. Any member can run/stop THEIR OWN Sims; a Sim that is
+  // Deactivated on the Sims tab can't be run (reported in `skipped`). Activate / Deactivate stays on the Sims tab only.
   if (path === "/api/widget/sim-deployments" && (req.method === "GET" || req.method === "POST")) {
     // Perf: on a remote DB every sequential query is a full round trip, so this handler keeps them to a
     // minimum — access is ONE query (projectAccessWithRow, same decision as projectAccess) and the Sim list +
@@ -4572,59 +4571,52 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     pt.mark("access")
     if (!access) return sj({ ok: false, reason: "unauthorized", error: "No access to this project." }, 403)
     const projectId = requested
-    const [personas, rows] = await Promise.all([listPersonas(projectId), readSimDeploymentRows(db!, projectId)])
+    const [personas, running] = await Promise.all([listPersonas(projectId), runningSimIds(db!, projectId, me)])
     pt.mark("db")
-    const personaIds = personas.map((p) => p.id)
     const byId = new Map(personas.map((p) => [p.id, p]))
-    const describe = (states: Map<string, SimDeploymentState>) => personas.map((p) => {
-      const s = states.get(p.id)
+    // A Deactivated Sim is never "running", whatever an old row says (rows are also cleared on Deactivate).
+    const describe = (run: Set<string>) => personas.map((p) => {
+      const active = p.active !== false
       return {
         id: p.id, name: p.name, role: p.role || "",
         initials: p.initials || null, accent: p.accent || null, avatar: p.avatar || null,
-        deployment: s?.deployment ?? "not_deployed", execution: s?.execution ?? "not_running",
-        // Deactivated on the Sims tab (personas.active = 0): the modal shows it greyed out with no actions.
-        active: p.active !== false,
+        // Deactivated on the Sims tab (personas.active = 0): shown greyed out, can't be run from the widget.
+        active,
+        run: active && run.has(p.id) ? "running" : "stopped",
       }
     })
     if (req.method === "GET") {
-      return sj({ ok: true, projectId, sims: describe(statesFor(rows, personaIds)) })
+      return sj({ ok: true, projectId, sims: describe(running) })
     }
-    const action = String(body.action || "") as SimAction
-    if (!SIM_ACTIONS.includes(action)) return sj({ ok: false, error: "unknown action" }, 400)
+    const action = String(body.action || "") as SimRunAction
+    if (!SIM_RUN_ACTIONS.includes(action)) return sj({ ok: false, error: "unknown action" }, 400)
+    if (action === "stop_all") {
+      // The feedback card's Close: stop every Sim this user has running in this project.
+      const was = [...running].filter((id) => byId.has(id))
+      await stopSims(db!, projectId, me, null)
+      pt.mark("write")
+      return sj({ ok: true, action, applied: was, skipped: [], sims: describe(new Set()) })
+    }
     const simIds: string[] = Array.isArray(body.simIds) ? [...new Set<string>(body.simIds.map(String))] : []
     if (!simIds.length) return sj({ ok: false, error: "simIds required" }, 400)
     if (simIds.length > 200) return sj({ ok: false, error: "too many Sims" }, 400)
-    // Pause/Resume are per-Sim controls in the UI — refuse a bulk call rather than guess.
-    if ((action === "pause" || action === "resume") && simIds.length !== 1) return sj({ ok: false, error: `${action} takes exactly one Sim` }, 400)
     const unknown = simIds.filter((id) => !byId.has(id))
     if (unknown.length) return sj({ ok: false, error: "Some Sims are not in this project.", unknown }, 400)
-    // A Sim deactivated on the Sims tab can't be deployed / paused / resumed from here — it must be
-    // re-activated on the Sims tab first. Reported in `skipped`, never applied.
-    const inactive = simIds.filter((id) => byId.get(id)!.active === false)
-    const eligible = simIds.filter((id) => byId.get(id)!.active !== false)
-    const inactiveSkips = inactive.map((simId) => ({ simId, reason: "deactivated on the Sims tab — activate it there first" }))
-    if (!eligible.length) {
-      return sj({ ok: true, action, applied: [], skipped: inactiveSkips, sims: describe(statesFor(rows, personaIds)) })
-    }
-    // applySimAction reads the rows itself (fresh, right before the write) and returns the post-write rows,
-    // so the response needs no second read.
-    // Deactivate here = Deactivate on the Sims tab (one notion of "deactivated"): it also turns the Sim itself off
-    // (personas.active = 0), so the Sims tab shows it Inactive and it can only be re-activated there. Same rule as
-    // PATCH /api/personas/:id/active — project admins only.
-    if (action === "deactivate" && access !== "admin") {
-      return sj({ ok: false, error: "Only project admins can activate or deactivate a Sim." }, 403)
-    }
-    const result = await applySimAction(db!, projectId, eligible, action, me)
-    if (action === "deactivate" && result.applied.length) {
-      const now = Date.now()
-      for (const id of result.applied) {
-        await setPersonaActive(id, projectId, false)
-        await insertPersonaEdit({ personaId: id, projectId, field: "active", beforeVal: "true", afterVal: "false", actor: me, createdAt: now })
-        byId.get(id)!.active = false
-      }
+    const skipped: Array<{ simId: string; reason: string }> = []
+    let applied: string[]
+    if (action === "run") {
+      // Only an Activated Sim can run — Activate it on the Sims tab first. Reported in `skipped`, never applied.
+      for (const id of simIds) if (byId.get(id)!.active === false) skipped.push({ simId: id, reason: "deactivated on the Sims tab — activate it there first" })
+      applied = simIds.filter((id) => byId.get(id)!.active !== false && !running.has(id))
+      await runSims(db!, projectId, me, applied)
+      for (const id of applied) running.add(id)
+    } else {
+      applied = simIds.filter((id) => running.has(id))
+      await stopSims(db!, projectId, me, applied)
+      for (const id of applied) running.delete(id)
     }
     pt.mark("write")
-    return sj({ ok: true, action, applied: result.applied, skipped: [...result.skipped, ...inactiveSkips], sims: describe(statesFor(result.rows, personaIds)) })
+    return sj({ ok: true, action, applied, skipped, sims: describe(running) })
   }
 
   // ── /api/widget/known-check — anonymous, project-scoped, CORS-gated pre-submit "known issue"
@@ -7368,10 +7360,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         await setPersonaActive(pid, wid, body.active)
         await insertPersonaEdit({ personaId: pid, projectId: wid, field: "active", beforeVal: String(wasActive), afterVal: String(body.active), actor: me2, createdAt: Date.now() })
       }
-      // Deactivating here also takes the Sim out of Select Sims (deployed → deactivated), so the widget's Select Sims
-      // modal shows the same thing. A no-op when it was never deployed. Re-activating leaves it "Not active" there,
-      // ready to be deployed again — it never silently starts running.
-      if (!body.active && db) await applySimAction(db, wid, [pid], "deactivate", me2).catch((e) => console.warn("sim deactivate sync:", e?.message || e))
+      // Deactivating stops the Sim for EVERY user (clears its per-user Run state), so it leaves every Sims feedback card. Re-activating
+      // shows it as stopped ("Run") — it never silently starts running.
+      if (!body.active && db) await clearSimRuns(db, wid, pid).catch((e) => console.warn("sim deactivate → stop:", e?.message || e))
       return wjson({ ok: true, id: pid, active: body.active })
     }
     const editsMatch = path.match(/^\/api\/personas\/([^/]+)\/edits$/)
@@ -7769,7 +7760,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // react to a project's pages even though they're listed in that project's UI (KLAVITYKLA-257).
       // WP-S2: a deactivated Sim never runs, even when the caller names it in simIds.
       const projectSims = await listPersonasForProject(projectId, { activeOnly: true })
-      const targetSims = reqSimIds.length ? projectSims.filter((p) => reqSimIds.includes(p.id)) : projectSims
+      let targetSims = reqSimIds.length ? projectSims.filter((p) => reqSimIds.includes(p.id)) : projectSims
+      // Widget (Sims feedback card) reviews run ONLY the Sims this user has set to Run (lib/sim-run-state.ts). A Sim the user Stopped —
+      // from the Sims tab, Select Sims, or the card's Close — never reviews again, even from a stale tab still holding the old list.
+      // Other callers (the browser extension) keep their existing behaviour.
+      if (body.runScope === "widget" && db) {
+        const running = await runningSimIds(db, projectId, meR)
+        targetSims = targetSims.filter((p) => running.has(p.id))
+      }
 
       const seenKeys = targetSims.map((s) => reviewDedupeKey(s.id, urlPath || "", domSig))
       const allSeen = targetSims.length > 0 && seenKeys.every((k) => reviewSeen(k))
