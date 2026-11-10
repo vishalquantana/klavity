@@ -17813,6 +17813,13 @@
     .sr-toggle .tkt-vbtn { border: 0; background: transparent; color: var(--paper-dim); font: 500 12.5px var(--body); padding: 8px 16px; border-radius: 8px; box-shadow: none; }
     .sr-toggle .tkt-vbtn.active { background: var(--ink-2); color: var(--indigo); box-shadow: 0 0 0 1px var(--indigo); }
     .sr-sim { justify-self: end; }
+    /* KD-395: search box in the header, left of the Sim picker (same pill look). */
+    .sr-right { justify-self: end; display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .sr-search { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--ink-2); border-radius: 999px; padding: 4px 12px; color: var(--paper-dim); min-width: 0; }
+    .sr-search:focus-within { border-color: var(--indigo); }
+    .sr-search input { border: 0; outline: none; background: transparent; color: var(--paper); font: 500 13px var(--body); width: 170px; min-width: 0; padding: 2px 0; }
+    .sr-search input::-webkit-search-cancel-button { cursor: pointer; }
+    @media (max-width: 700px) { .sr-right { flex-wrap: wrap; justify-content: flex-end; } .sr-search input { width: 120px; } }
     .sr-sim-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--ink-2); border-radius: 999px; padding: 4px 10px 4px 12px; font: 500 13px var(--body); color: var(--paper-dim); }
     .sr-sim-pill select { border: 0; background: transparent; color: var(--paper); font: 600 13px var(--body); outline: none; cursor: pointer; max-width: 200px; }
 
@@ -18842,7 +18849,10 @@
             <div class="tkt-view-toggle sr-toggle"><button class="tkt-vbtn" id="tgListBtn" type="button" title="List view">&#9776;
                 List</button><button class="tkt-vbtn active" id="tgBoardBtn" type="button" title="Board view">&#8862;
                 Board</button></div>
-            <div class="sr-sim" id="triageSimHost"></div>
+            <div class="sr-right">
+              <label class="sr-search"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input id="tgSearch" type="search" placeholder="Search reports…" autocomplete="off" aria-label="Search Sim reports" /></label>
+              <div class="sr-sim" id="triageSimHost"></div>
+            </div>
           </div>
           <div class="tg-filters" id="triageFilters"></div>
           <div id="triageList">
@@ -21522,7 +21532,8 @@
           const obs = (t.observation || "").toLowerCase()
           const quote = (t.sourceQuote || "").toLowerCase()
           const seq = (t.seqNum ? String(t.seqNum) : "")
-          if (!title.includes(q) && !obs.includes(q) && !quote.includes(q) && !seq.includes(q)) return false
+          const simNm = (t.simName || "").toLowerCase(), pth = (t.urlPath || "").toLowerCase()
+          if (!title.includes(q) && !obs.includes(q) && !quote.includes(q) && !seq.includes(q) && !simNm.includes(q) && !pth.includes(q)) return false
         }
         return true
       })
@@ -21786,8 +21797,23 @@
 
     // JTBD 3.10: render the whole New-reports view — the sentiment + Sim filter bar, then the rows that
     // pass both filters. Called on load and after every filter change so the two stay in lockstep.
+    // KD-395: the header search box (lives outside the re-rendered filter bar, so it keeps focus/value). Bound once.
+    let _tgSearchBound = false
+    function bindTgSearch() {
+      const inp = $("tgSearch"); if (!inp) return
+      if (!_tgSearchBound) {
+        _tgSearchBound = true
+        let t = null
+        inp.addEventListener("input", () => {
+          clearTimeout(t)
+          t = setTimeout(() => { _triageSearch = inp.value; _tgSelected.clear(); renderTriageItems(tgVisibleItems()) }, 150)
+        })
+      }
+      if (inp.value !== _triageSearch) inp.value = _triageSearch   // "Clear filters" resets _triageSearch → mirror it here
+    }
     function renderTriageView() {
       bindTgViewToggle()
+      bindTgSearch()
       renderTriageFilters()
       renderTriageItems(tgVisibleItems())
     }
