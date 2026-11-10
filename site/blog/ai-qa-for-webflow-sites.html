@@ -1,0 +1,190 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI QA for Webflow Sites: What to Test Before Handoff · Klavity</title>
+<meta name="description" content="AI QA for Webflow sites runs automated checks against the published site, not the Designer, catching breakpoint collapses, hidden sections and dead forms.">
+<link rel="canonical" href="https://klavity.in/blog/ai-qa-for-webflow-sites">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI QA for Webflow Sites: What to Test Before Handoff"><meta property="og:description" content="AI QA for Webflow sites runs automated checks against the published site, not the Designer, catching breakpoint collapses, hidden sections and dead forms.">
+<meta property="og:url" content="https://klavity.in/blog/ai-qa-for-webflow-sites"><meta property="og:image" content="https://klavity.in/blog/ai-qa-for-webflow-sites.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI QA for Webflow Sites: What to Test Before Handoff"><meta name="twitter:description" content="AI QA for Webflow sites runs automated checks against the published site, not the Designer, catching breakpoint collapses, hidden sections and dead forms."><meta name="twitter:image" content="https://klavity.in/blog/ai-qa-for-webflow-sites.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI QA for Webflow Sites: What to Test Before Handoff","description":"AI QA for Webflow sites runs automated checks against the published site, not the Designer, catching breakpoint collapses, hidden sections and dead forms.","datePublished":"2026-11-10","dateModified":"2026-11-10","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-qa-for-webflow-sites.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-qa-for-webflow-sites","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI QA for Webflow Sites: What to Test Before Handoff","item":"https://klavity.in/blog/ai-qa-for-webflow-sites"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-qa-for-webflow-sites"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Why test a Webflow site after publishing instead of in the Designer?","acceptedAnswer":{"@type":"Answer","text":"Custom code embeds and site-wide scripts do not execute on the Designer canvas, and native Webflow forms do not submit from it. Interactions, third-party widgets and form delivery can only be verified on a published site, so QA has to run against the webflow.io staging domain or the live domain."}},{"@type":"Question","name":"Which Webflow breakpoint breaks most often?","acceptedAnswer":{"@type":"Answer","text":"Mobile portrait, because Webflow's cascade runs downward from the base desktop breakpoint. A style set at base rewrites tablet and both mobile views, while a fix made at mobile portrait applies only there. Layouts therefore collapse at the smallest viewport first, and that is the one clients look at."}},{"@type":"Question","name":"Do I still need QA if the client edits the site in the Webflow Editor?","acceptedAnswer":{"@type":"Answer","text":"More so. The Editor prevents structural changes but not content that is longer, shorter or heavier than what you designed around, which breaks layouts you already signed off on. Continuous checks after handoff are what keep a launch-day QA pass meaningful."}},{"@type":"Question","name":"Can AI QA cover every CMS page on a Webflow site?","acceptedAnswer":{"@type":"Answer","text":"Yes. A Webflow site with a large collection can have hundreds of published URLs, and a crawler enumerates them all rather than sampling. That is where missing alt text from CMS image fields, broken rich-text embeds and unconfigured empty states usually hide."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-11-10</div>
+    <h1>AI QA for Webflow Sites: What to Test Before Handoff</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI QA across Webflow breakpoints: desktop, tablet and mobile views checked after publishing">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="40" y="36" width="104" height="10" rx="5" fill="#6366f1" opacity="0.55"/>
+
+  <rect x="40" y="96" width="300" height="196" rx="10" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="40" y="96" width="300" height="196" rx="10" fill="none" stroke="#6366f1" stroke-width="1.6" opacity="0.65"/>
+  <line x1="40" y1="124" x2="340" y2="124" stroke="#6366f1" stroke-width="1.2" opacity="0.5"/>
+  <circle cx="56" cy="110" r="3.5" fill="#f87171" opacity="0.8"/>
+  <circle cx="68" cy="110" r="3.5" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="80" cy="110" r="3.5" fill="#4ade80" opacity="0.7"/>
+  <rect x="58" y="142" width="128" height="40" rx="5" fill="#6366f1" opacity="0.4"/>
+  <rect x="200" y="142" width="122" height="40" rx="5" fill="#f5f0e8" opacity="0.1"/>
+  <rect x="58" y="198" width="80" height="62" rx="5" fill="#f5f0e8" opacity="0.1"/>
+  <rect x="148" y="198" width="174" height="62" rx="5" fill="#f5f0e8" opacity="0.1"/>
+
+  <rect x="384" y="118" width="150" height="152" rx="9" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="384" y="118" width="150" height="152" rx="9" fill="none" stroke="#6366f1" stroke-width="1.6" opacity="0.5"/>
+  <rect x="400" y="140" width="118" height="30" rx="4" fill="#6366f1" opacity="0.32"/>
+  <rect x="400" y="182" width="54" height="48" rx="4" fill="#f5f0e8" opacity="0.1"/>
+  <rect x="464" y="182" width="54" height="48" rx="4" fill="#f5f0e8" opacity="0.1"/>
+
+  <rect x="578" y="106" width="92" height="176" rx="11" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="578" y="106" width="92" height="176" rx="11" fill="none" stroke="#f87171" stroke-width="1.8" opacity="0.85"/>
+  <rect x="594" y="128" width="60" height="26" rx="4" fill="#6366f1" opacity="0.3"/>
+  <rect x="594" y="166" width="90" height="34" rx="4" fill="#f87171" opacity="0.28"/>
+  <rect x="594" y="212" width="60" height="18" rx="4" fill="#f5f0e8" opacity="0.08"/>
+  <circle cx="690" cy="183" r="17" fill="#f87171" opacity="0.9"/>
+  <line x1="690" y1="176" x2="690" y2="190" stroke="#1e1b2e" stroke-width="2.6" stroke-linecap="round"/>
+
+  <polyline points="348,194 374,194" stroke="#6366f1" stroke-width="2" opacity="0.7" fill="none"/>
+  <polyline points="366,188 374,194 366,200" stroke="#6366f1" stroke-width="2" opacity="0.7" fill="none"/>
+  <polyline points="542,194 568,194" stroke="#6366f1" stroke-width="2" opacity="0.7" fill="none"/>
+  <polyline points="560,188 568,194 560,200" stroke="#6366f1" stroke-width="2" opacity="0.7" fill="none"/>
+
+  <rect x="40" y="330" width="630" height="52" rx="9" fill="#6366f1" opacity="0.1"/>
+  <circle cx="76" cy="356" r="11" fill="#4ade80" opacity="0.85"/>
+  <polyline points="71,356 75,360 82,352" stroke="#1e1b2e" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <rect x="98" y="351" width="96" height="9" rx="4.5" fill="#f5f0e8" opacity="0.2"/>
+  <circle cx="246" cy="356" r="11" fill="#4ade80" opacity="0.85"/>
+  <polyline points="241,356 245,360 252,352" stroke="#1e1b2e" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <rect x="268" y="351" width="112" height="9" rx="4.5" fill="#f5f0e8" opacity="0.2"/>
+  <circle cx="432" cy="356" r="11" fill="#f87171" opacity="0.9"/>
+  <line x1="427" y1="351" x2="437" y2="361" stroke="#1e1b2e" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="437" y1="351" x2="427" y2="361" stroke="#1e1b2e" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="454" y="351" width="130" height="9" rx="4.5" fill="#f87171" opacity="0.35"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI QA for Webflow sites means testing the published site rather than the Designer canvas, because custom code, forms and interactions behave differently once published. The highest-yield pass is: publish to the webflow.io staging domain, crawl every URL including CMS pages at each breakpoint, and submit every form to confirm both the success state and the email notification. Those three checks catch most of what clients report in the first week.</div>
+    <div class="prose"><p><strong>AI QA for Webflow sites</strong> means running automated, AI-driven checks against your <em>published</em> Webflow site — not the Designer canvas — to catch the failures Webflow's visual workflow makes easy to ship: a layout that only collapses at the 478px breakpoint, a scroll interaction that leaves a section stuck at zero opacity, a CMS collection list that renders empty cards, or a form that quietly stops delivering submissions. Because Webflow publishes static, CDN-hosted pages, AI QA tools can crawl every published URL, exercise each breakpoint, and replay real user journeys without you adding a test harness to the project. The practical workflow is simple: publish to the <code>webflow.io</code> staging domain, run an AI pass across breakpoints and key flows, fix what it flags, then publish to the client's domain.</p>
+
+<h2>Why do Webflow sites break in ways hand-coded sites don't?</h2>
+<p>Webflow removes the build step, so the usual safety net disappears with it. There is no pull request to review, no unit test, no CI pipeline that fails loudly. The site goes from Designer to live CDN in one click, and the only gate between a broken state and a client's homepage is whoever remembered to look.</p>
+<p>The breakage pattern is also specific to the tool. Three mechanics cause most of it:</p>
+<ul>
+<li><strong>The breakpoint cascade is directional.</strong> Styles set at the base (desktop) breakpoint inherit downward to tablet, mobile landscape and mobile portrait. Styles set at a smaller breakpoint apply only there and below. The two larger breakpoints Webflow offers above base cascade upward instead. So a padding fix made while viewing mobile portrait does nothing on tablet, and a change at base silently rewrites all three smaller views.</li>
+<li><strong>Interactions start elements hidden.</strong> Most scroll-into-view animations work by setting an initial state of <code>opacity: 0</code> and animating up. If that trigger never fires — the element is above the fold on a short viewport, a JS error stops the script, or the visitor has reduced-motion preferences — the content stays invisible. The page looks finished in the Designer and blank in production.</li>
+<li><strong>Components propagate.</strong> A change inside a component instance updates every instance across the site. That is the feature, and it is also how a navbar tweak made for one landing page reaches forty CMS-generated pages nobody re-checked.</li>
+</ul>
+
+<h2>What should AI QA for Webflow sites actually check?</h2>
+<p>Split the checks into things a crawler can verify cheaply and things that need a simulated user. Both matter, and Webflow sites fail at both ends.</p>
+<h3>Crawl-level checks across every published URL</h3>
+<ul>
+<li><strong>CMS pages, not just static ones.</strong> A Webflow site with three static pages and a 200-item blog collection has 203 URLs. Agency QA usually covers the three. Broken rich-text embeds, missing alt text from CMS image fields, and empty conditional sections live in the other 200.</li>
+<li><strong>Console errors on the published site.</strong> Custom code embeds and site-wide head/footer scripts do not execute on the Designer canvas — only in Preview and on the published site. A tracking snippet or third-party widget that throws can take your interactions down with it, and you will never see it while designing.</li>
+<li><strong>Redirects after a restructure.</strong> Renaming a page slug or reorganising a CMS collection changes URLs. Webflow does not backfill redirects; they have to be added in site settings. Without them, every link the client has already shared returns the 404 page.</li>
+<li><strong>Image loading strategy on the hero.</strong> Webflow applies lazy loading to images by default. For the largest image above the fold that delays the paint the client's PageSpeed report measures, so the hero should be switched to eager loading.</li>
+</ul>
+<h3>Journey-level checks that need a simulated user</h3>
+<ul>
+<li><strong>Form submission end to end.</strong> Native Webflow forms do not submit from the Designer. You have to test on the published site, confirm the success state appears, deliberately force a failure to confirm the error state appears, and verify the notification actually arrives at the address configured in site settings. A form that renders perfectly and delivers nowhere is the single most common Webflow handoff bug.</li>
+<li><strong>Empty and single-item CMS states.</strong> Collection lists need an explicit empty state. A filtered list with no matching items renders as a gap unless one is configured, and a one-item list often exposes grid styling that was only ever checked with six placeholder cards.</li>
+<li><strong>Interaction completion, not just interaction firing.</strong> Checking that content is visible and readable after scrolling is a different assertion from checking that an animation ran.</li>
+<li><strong>Ecommerce and gated flows.</strong> Cart, checkout and password-protected pages behave differently on the published domain than in Preview.</li>
+</ul>
+
+<h2>How does AI QA compare to a manual Webflow QA pass?</h2>
+<table>
+<thead><tr><th>Check</th><th>Manual pass</th><th>AI QA pass</th></tr></thead>
+<tbody>
+<tr><td>Breakpoint coverage</td><td>Designer breakpoint toggles, usually on one page</td><td>Every published URL rendered at each viewport, diffed against the last good publish</td></tr>
+<tr><td>CMS item coverage</td><td>A couple of representative items</td><td>Full collection crawl, including empty and single-item states</td></tr>
+<tr><td>Form delivery</td><td>Often skipped or tested once pre-launch</td><td>Submitted on every run, success and error states both asserted</td></tr>
+<tr><td>Hidden-content bugs</td><td>Only found if someone scrolls that exact section</td><td>Post-scroll visibility asserted per section</td></tr>
+<tr><td>Regression after re-publish</td><td>Relies on memory of what changed</td><td>Automatic re-run; component-wide changes caught across all instances</td></tr>
+<tr><td>Evidence for the fix</td><td>A screenshot pasted into Slack</td><td>Screenshot, viewport, URL, console log and repro steps attached to the ticket</td></tr>
+</tbody>
+</table>
+<p>The honest limitation: AI QA will not tell you whether the design is good, whether the copy matches the brief, or whether the client will like the hero. It tells you whether what you built still works everywhere it is supposed to. For a broader view of where automated checks fit against human judgement, see our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>What does a repeatable Webflow QA pass before client handoff look like?</h2>
+<ol>
+<li><strong>Publish to staging only.</strong> Push to the <code>webflow.io</code> subdomain first. Webflow automatically marks those subdomains noindex, so you can test a real published site without risking search engines picking up the staging copy.</li>
+<li><strong>Crawl every URL, not the sitemap you remember.</strong> Let the crawler enumerate CMS pages. Capture console errors and HTTP status per URL.</li>
+<li><strong>Render each page at all breakpoints.</strong> Compare against the previous publish rather than eyeballing. Breakpoint regressions are the highest-volume Webflow defect class and the easiest to automate away.</li>
+<li><strong>Run the three or four flows the client will actually try.</strong> Contact form, newsletter signup, a CMS detail page, checkout if it exists. These are the flows that generate the "the site is broken" email.</li>
+<li><strong>Fix, re-publish to staging, re-run.</strong> Only then publish to the custom domain.</li>
+<li><strong>Keep the pass running after launch.</strong> Clients edit content in the Editor after handoff. A long title, an oversized image or a pasted rich-text block breaks layouts you already signed off on, and you want to find that before they do.</li>
+</ol>
+<p>Klavity covers these three layers directly: <a href="/snap">Snap</a> turns a right-click into a bug report with the screenshot, console log, viewport and URL already attached — useful when the client is the one reporting. <a href="/sims">Sims</a> runs AI personas through the flows above to find what a scripted check would not think to try. <a href="/autosim">AutoSim</a> keeps the resulting E2E tests alive across re-publishes, which matters on Webflow because class and element changes break brittle selectors constantly.</p>
+
+<h2>Does this change for a client who edits the site themselves?</h2>
+<p>Yes, and it is the part agencies most often get wrong. The Webflow Editor gives clients the ability to change content without touching structure, which protects the layout but not the design. Content that is longer, shorter or heavier than what you designed around still breaks pages. If you hand over an editable site, hand over continuous QA with it — otherwise your QA pass only certifies the version of the site that existed on launch day. The same reasoning applies to any platform with a client-facing editor; our <a href="/blog/ai-qa-for-wordpress-sites">AI QA guide for WordPress sites</a> walks the equivalent problem, and the <a href="/blog/pre-launch-qa-checklist-for-web-agencies">pre-launch QA checklist for web agencies</a> covers the handoff steps that are not platform-specific.</p>
+
+<h2>Where should an agency start?</h2>
+<p>Start with the single highest-yield check: publish to staging, crawl every URL at mobile portrait, and submit every form. That combination catches the breakpoint collapses, the invisible interaction sections and the dead forms — which in practice is most of what clients find in the first week. Automate that before you automate anything else, then widen coverage from there.</p>
+<p><a href="/onboarding">Scan your next client site free</a> — point Klavity at a Webflow staging URL and see what it finds before the client does.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Test the published site, never the Designer canvas</li><li>Crawl every CMS URL, not just the static pages</li><li>Submit every form and confirm the notification arrives</li><li>Keep QA running after handoff, since clients edit content</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Why test a Webflow site after publishing instead of in the Designer?</summary><p>Custom code embeds and site-wide scripts do not execute on the Designer canvas, and native Webflow forms do not submit from it. Interactions, third-party widgets and form delivery can only be verified on a published site, so QA has to run against the webflow.io staging domain or the live domain.</p></details><details><summary>Which Webflow breakpoint breaks most often?</summary><p>Mobile portrait, because Webflow's cascade runs downward from the base desktop breakpoint. A style set at base rewrites tablet and both mobile views, while a fix made at mobile portrait applies only there. Layouts therefore collapse at the smallest viewport first, and that is the one clients look at.</p></details><details><summary>Do I still need QA if the client edits the site in the Webflow Editor?</summary><p>More so. The Editor prevents structural changes but not content that is longer, shorter or heavier than what you designed around, which breaks layouts you already signed off on. Continuous checks after handoff are what keep a launch-day QA pass meaningful.</p></details><details><summary>Can AI QA cover every CMS page on a Webflow site?</summary><p>Yes. A Webflow site with a large collection can have hundreds of published URLs, and a crawler enumerates them all rather than sampling. That is where missing alt text from CMS image fields, broken rich-text embeds and unconfigured empty states usually hide.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

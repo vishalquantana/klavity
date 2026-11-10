@@ -1034,5 +1034,12 @@
     "excerpt": "Hand off a vibe-coded app with three artifacts: a feature inventory, a verified run book, and a triaged bug list with reproducible evidence.",
     "category": "Guides",
     "date": "2026-11-09"
+  },
+  {
+    "slug": "ai-qa-for-webflow-sites",
+    "title": "AI QA for Webflow Sites: What to Test Before Handoff",
+    "excerpt": "AI QA for Webflow sites runs automated checks against the published site, not the Designer, catching breakpoint collapses, hidden sections and dead forms.",
+    "category": "Guides",
+    "date": "2026-11-10"
   }
 ]
