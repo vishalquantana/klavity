@@ -6233,43 +6233,64 @@
       transform: scale(.96)
     }
 
+    /* KD-2864: three clearly separated steps — each its own tile (number, bold title, one readable sentence). */
     .sim-live-steps {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 10px;
-      margin-top: 10px
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      margin: 12px 0 0;
+      padding: 0;
+      list-style: none
     }
 
     .sim-live-step {
       display: flex;
       align-items: flex-start;
-      gap: 12px
+      gap: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px
     }
 
     .sim-live-n {
-      width: 22px;
-      height: 22px;
+      width: 26px;
+      height: 26px;
       border-radius: 50%;
       background: var(--indigo);
       color: #fff;
       font-family: var(--mono);
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 700;
       display: grid;
       place-items: center;
-      flex-shrink: 0;
-      margin-top: 1px
+      flex-shrink: 0
+    }
+
+    .sim-live-body {
+      min-width: 0
     }
 
     .sim-live-step b {
       display: block;
-      font-size: 12.5px;
+      font-size: 13.5px;
       font-weight: 600;
-      margin-bottom: 2px
+      margin-bottom: 4px
     }
 
     .sim-live-step .muted {
-      font-size: 11.5px
+      font-size: 12.5px;
+      line-height: 1.5
+    }
+
+    .sim-live-step .muted + .muted {
+      margin-top: 6px
+    }
+
+    .sim-live-step b.sim-live-inl {
+      display: inline;
+      font-size: inherit;
+      margin: 0;
+      color: var(--paper-dim)
     }
 
     .sim-live-pill {
@@ -6284,6 +6305,14 @@
       font-size: 11px;
       color: var(--paper-faint);
       margin-top: 6px
+    }
+
+    /* the menu names inside a step sentence: inline chips, not a block under the text */
+    .sim-live-step .muted .sim-live-pill {
+      margin-top: 0;
+      padding: 1px 7px;
+      color: var(--paper-dim);
+      vertical-align: baseline
     }
 
     .sf-row {
@@ -19228,40 +19257,25 @@
                   <path d="M9.5 18h5" />
                   <path d="m8 22 4-11 4 11" />
                 </svg> Sims — live on your product</h2>
-              <p class="muted">Your Sims can react to the exact page you're viewing, on demand. Use the extension to ask
-                them for a live review; observations land above and in Sim Reports.</p>
-              <div class="sim-live-steps">
-                <div class="sim-live-step"><span class="sim-live-n">1</span>
-                  <div><b>Browse</b>
-                    <div class="muted">Open the product page.</div>
+              <p class="muted">Have your Sims review any page of your product, live. Three steps:</p>
+              <ol class="sim-live-steps">
+                <li class="sim-live-step"><span class="sim-live-n" aria-hidden="true">1</span>
+                  <div class="sim-live-body"><b>Open your product</b>
+                    <div class="muted">Go to any page of your product where the Klavity widget or extension is installed.</div>
                   </div>
-                </div>
-                <div class="sim-live-step"><span class="sim-live-n">2</span>
-                  <div><b>Trigger</b>
-                    <div class="muted">Right-click or open the extension.</div>
-                    <div class="sim-live-pill"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11"
-                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
-                        stroke-linejoin="round" aria-hidden="true">
-                        <path d="m10 16 1.5 1.5" />
-                        <path d="m14 8-1.5-1.5" />
-                        <path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993" />
-                        <path d="m16.5 10.5 1 1" />
-                        <path d="m17 6-2.891-2.891" />
-                        <path d="M2 15c6.667-6 13.333 0 20-6" />
-                        <path d="m20 9 .891.891" />
-                        <path d="M3.109 14.109 4 15" />
-                        <path d="m6.5 12.5 1 1" />
-                        <path d="m7 18 2.891 2.891" />
-                        <path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993" />
-                      </svg> Ask Sims to review this</div>
+                </li>
+                <li class="sim-live-step"><span class="sim-live-n" aria-hidden="true">2</span>
+                  <div class="sim-live-body"><b>Run your Sims</b>
+                    <div class="muted">Right-click the page and choose <span class="sim-live-pill">Run all Sims</span> or <span class="sim-live-pill">Select Sims…</span> to pick which ones.</div>
+                    <div class="muted">Using the extension? Choose <span class="sim-live-pill">Analyze this page</span>.</div>
                   </div>
-                </div>
-                <div class="sim-live-step"><span class="sim-live-n">3</span>
-                  <div><b>Review</b>
-                    <div class="muted">Read observations and keep what matters.</div>
+                </li>
+                <li class="sim-live-step"><span class="sim-live-n" aria-hidden="true">3</span>
+                  <div class="sim-live-body"><b>Read the results</b>
+                    <div class="muted">Each Sim's observations appear on the page, under <b class="sim-live-inl">Your Sims</b> above, and in <b class="sim-live-inl">Sim Reports</b>. Keep what matters, dismiss the rest.</div>
                   </div>
-                </div>
-              </div>
+                </li>
+              </ol>
             </div>
             <button class="sim-live-dismiss" id="simLiveDismiss" type="button"
               aria-label="Dismiss live Sims explainer"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="16"
