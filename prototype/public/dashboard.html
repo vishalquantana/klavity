@@ -14279,6 +14279,11 @@
       display: none
     }
 
+    /* KD-2862: manual button on the popup — sits in the popup's own flow, under the message. */
+    .sm-created-close {
+      margin-top: 18px
+    }
+
     .sm-created-ic {
       color: #20b56a;
       margin-bottom: 6px
@@ -35779,7 +35784,7 @@
           areas on any page.</p>
       </div>
       <div class="sm-out" id="smOut"></div>
-      <!-- Figma design: after Create/Add the popup becomes a short "Sim created!" view, then closes by itself. -->
+      <!-- Figma design: after Create/Add the popup becomes a "Sim created!" view that stays until the user closes it. -->
       <div class="sm-created" id="smCreated" role="status" aria-live="polite" hidden>
         <svg xmlns="http://www.w3.org/2000/svg" class="sm-created-ic" width="22" height="22" viewBox="0 0 24 24" fill="none"
           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -35788,6 +35793,7 @@
         <h2 class="sm-created-t" id="smCreatedT">Sim created!</h2>
         <div class="sm-created-n" id="smCreatedN"></div>
         <div class="sm-created-s" id="smCreatedS">It will appear in your Sims list shortly.</div>
+        <button type="button" class="btn btn-indigo btn-sm sm-created-close" id="smCreatedClose">View Sims</button>
       </div>
       <!-- Post-add success panel: shown after at least one Sim is saved; guides user to activate their Sims -->
       <div class="sm-success" id="smSuccess" role="status" aria-live="polite">
@@ -36135,12 +36141,11 @@
             // Pretty host for the run-now prompt copy ("…on acme.com?"). Never throws on junk input.
             function runNowHost(u) { try { return new URL(/^https?:\/\//i.test(u) ? u : "https://" + u).hostname.replace(/^www\./, ""); } catch (e) { return ""; } }
             // Figma design: after adding, the popup becomes a short "Sim created!" view (check, name, "It will appear in your Sims
-            // list shortly.") and closes by itself; close() reloads the list so the new Sim is there. If other suggested Sims are
+            // list shortly.") and stays until closed (View Sims / ✕ / Esc); close() reloads the list so the new Sim is there. If other suggested Sims are
             // still waiting (From your site / From a call) we only toast, so they can be added or skipped, and show the view last.
             // (The old "now put them to work" panel markup further down is no longer shown.)
-            let createdTimer = null;
+            // KD-2862: no auto-close — the "Sim created!" popup stays until the user closes it (View Sims / ✕ / Esc).
             function clearCreatedView() {
-              if (createdTimer) { clearTimeout(createdTimer); createdTimer = null; }
               ov.classList.remove("sm-modal-created"); $("smCreated").hidden = true;
             }
             function showSuccessPanel(addedName, addedCount, merged, simId) {
@@ -36157,7 +36162,7 @@
               $("smCreatedS").textContent = dup ? "Merged into your existing Sim." : many ? "They will appear in your Sims list shortly." : "It will appear in your Sims list shortly.";
               clearCreatedView();
               $("smCreated").hidden = false; ov.classList.add("sm-modal-created");
-              createdTimer = setTimeout(function () { createdTimer = null; if (ov.classList.contains("sm-modal-created")) close(); }, 2200);
+              try { $("smCreatedClose").focus(); } catch (e) { }
             }
             function hideSuccessPanel() {
               successEl.classList.remove("show");
@@ -36613,6 +36618,7 @@
         return e.target === ov || !e.target.closest(".sm-modal");
       }
             $("simClose").onclick = function () { requestClose(); };
+            $("smCreatedClose").onclick = function () { close(); };   // KD-2862: manual "View Sims" button on the "Sim created!" popup (closing lands on the Sims list)
       // KD-1012: a click outside the Add a Sim modal never closes it (any step, including "Sim is ready") —
       // it only closes via the 'X' icon or an explicit Cancel/close action inside the modal.
       ["mousedown", "pointerdown", "click"].forEach((type) => ov.addEventListener(type, (e) => {
@@ -36621,6 +36627,7 @@
             document.addEventListener("keydown", (e) => {
               if (e.key !== "Escape" || !ov.classList.contains("show")) return;
               if (discardOpen()) { hideDiscard(); return; }   // Esc on the prompt = keep editing
+        if (ov.classList.contains("sm-modal-created")) { close(); return; }   // KD-2862: Esc dismisses the "Sim created!" popup
         if (simSuccessShown()) return;
               requestClose();
             });

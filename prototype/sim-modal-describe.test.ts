@@ -89,13 +89,12 @@ test("Extract Sims with nothing loaded says what to do (the hidden paste box can
   expect(g).toContain("Drop or browse a transcript file, or paste the call.")
 })
 
-test("Adding a Sim shows the design's 'Sim created!' popup view, then closes itself (reloading the list); the old 'put them to work' panel is never shown", () => {
+test("Adding a Sim shows the design's 'Sim created!' popup view, which stays until closed (closing reloads the list); the old 'put them to work' panel is never shown", () => {
   expect(DASH).toContain('id="smCreatedT">Sim created!</h2>')
   expect(DASH).toContain("It will appear in your Sims list shortly.")
   const f = block(DASH, "function showSuccessPanel(addedName, addedCount, merged, simId)", 1800)
   expect(f).toContain('ov.classList.add("sm-modal-created")')
-  expect(f).toContain("createdTimer = setTimeout(")
-  expect(f).toContain("close()")
+  expect(f).not.toContain("setTimeout(")                            // KD-2862: no auto-close
   expect(f).toContain('out.querySelector(".sm-sim:not(.added)")')   // suggestions still waiting → toast only, popup view last
   expect(f).not.toContain("successEl.classList.add")                // the old panel is never shown
   expect(f).not.toContain("put them to work")
@@ -110,16 +109,16 @@ function runShowSuccess(source: string, unaddedCards: boolean, args: [string | n
   const start = DASH.indexOf("function showSuccessPanel(addedName, addedCount, merged, simId)")
   const end = DASH.indexOf("function hideSuccessPanel()", start)
   const body = DASH.slice(start, end)
-  const els: Record<string, any> = { smCreated: { hidden: true }, smCreatedT: {}, smCreatedN: {}, smCreatedS: {} }
+  const els: Record<string, any> = { smCreated: { hidden: true }, smCreatedT: {}, smCreatedN: {}, smCreatedS: {}, smCreatedClose: { focus: () => { } } }
   const cls = new Set<string>(); const toasts: string[] = []; let closed = 0
   const ov = { classList: { add: (c: string) => cls.add(c), remove: (c: string) => cls.delete(c), contains: (c: string) => cls.has(c) } }
   const out = { querySelector: (sel: string) => (sel === ".sm-sim:not(.added)" && unaddedCards ? {} : null) }
   const timers: Array<() => void> = []
-  new Function("$", "ov", "out", "klavToast", "esc", "lastSimSource", "PANE_TO_SOURCE", "close", "clearCreatedView", "setTimeout", "createdTimerBox",
+  new Function("$", "ov", "out", "klavToast", "esc", "lastSimSource", "PANE_TO_SOURCE", "close", "clearCreatedView", "setTimeout", "createdTimerBox", "SIM_CREATED_MS",
     "var createdTimer = null;" + body.replace(/createdTimer = setTimeout/, "createdTimer = setTimeout") + "; showSuccessPanel.apply(null, " + JSON.stringify(args) + ")")(
     (id: string) => els[id], ov, out, (m: string) => toasts.push(m), (s: string) => s, source,
     { describe: "describe", site: "from-site", call: "transcript", preset: "preset" }, () => { closed++ }, () => cls.delete("sm-modal-created"),
-    (fn: () => void) => { timers.push(fn); return 1 }, {})
+    (fn: () => void) => { timers.push(fn); return 1 }, {}, 5000)
   return { created: cls.has("sm-modal-created"), toasts, title: els.smCreatedT.textContent, name: els.smCreatedN.textContent, runTimer: () => timers.forEach((f) => f()), closed: () => closed }
 }
 test("a preset Sim add shows the 'Sim created!' popup and closes, even while other presets are still unadded", () => {
@@ -128,7 +127,7 @@ test("a preset Sim add shows the 'Sim created!' popup and closes, even while oth
   expect(r.title).toBe("Sim created!")
   expect(r.name).toBe("QA Reviewer")
   expect(r.toasts.length).toBe(0)
-  r.runTimer(); expect(r.closed()).toBe(1)
+  r.runTimer(); expect(r.closed()).toBe(0)                           // KD-2862: nothing was scheduled, so nothing closes by itself
 })
 test("From your site / From a call with suggestions still waiting keep the toast-only behaviour", () => {
   for (const src of ["from-site", "transcript"]) {
