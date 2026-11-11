@@ -21215,6 +21215,7 @@
       // #532: overlay locally-edited fields the fresh payload may not yet reflect (belt-and-suspenders
       // behind the __klavMutating guard) so a lagging poll read can never clobber a just-saved value.
       mergeLocalEdits(data, fetchStart)
+      mergeLocalSimEdits(data, fetchStart)   // KD-2861: a poll that began before a Sim (de)activate can't revert it
       _dashAppliedSeq = seq
       _dashLastAppliedRequestAt = fetchStart   // request ISSUE time (taken just before the fetch), not completion time
       dashNoteNetworkApplied()
@@ -21266,6 +21267,38 @@
           const t = data.tickets.find(x => String(x.id) === id)
           if (t) Object.assign(t, edit.fields)
         }
+      } catch (e) { }
+      return data
+    }
+    // KD-2861: the same protection for a Sim's active flag. Deactivate / Activate on the Sims tab flips the card at
+    // once, but two reads can still land AFTER it carrying the old value — a Sims-tab status load that started
+    // before the change, and the dashboard poll — and repainted the Sim as Active for ~10s. An edit is protected
+    // while its request is pending, and against any read that began before it was confirmed (60s window).
+    window.__klavSimEdits = window.__klavSimEdits || {}
+    function recordSimEdit(simId, active) {
+      try { window.__klavSimEdits[String(simId)] = { active: !!active, ts: Date.now(), pending: true } } catch (e) { }
+    }
+    function confirmSimEdit(simId) {
+      try { const ed = window.__klavSimEdits[String(simId)]; if (ed) { ed.pending = false; ed.ts = Date.now() } } catch (e) { }
+    }
+    function clearSimEdit(simId) {
+      try { delete window.__klavSimEdits[String(simId)] } catch (e) { }
+    }
+    // The local edit that a read which began at `fetchStart` must not overwrite, or null. fetchStart null/undefined
+    // = a read made after the change (e.g. the response to our own request): only a pending edit protects.
+    function simEditGuarding(simId, fetchStart) {
+      try {
+        const ed = window.__klavSimEdits[String(simId)]
+        if (!ed) return null
+        if (!ed.pending && Date.now() - ed.ts > 60000) { delete window.__klavSimEdits[String(simId)]; return null }
+        if (ed.pending) return ed
+        return (typeof fetchStart === "number" && ed.ts >= fetchStart) ? ed : null
+      } catch (e) { return null }
+    }
+    function mergeLocalSimEdits(data, fetchStart) {
+      try {
+        if (!data || !Array.isArray(data.sims)) return data
+        for (const s of data.sims) { const ed = simEditGuarding(s.id, fetchStart); if (ed) s.active = ed.active }
       } catch (e) { }
       return data
     }
@@ -24711,10 +24744,11 @@
             if (_simExec.pid === pid && Date.now() - _simExec.at < 15000) return // fresh enough; later renders re-read it
             _simExec.loading = true
             try {
+              const startedAt = Date.now()   // KD-2861: a read that began before a local (de)activate must not overwrite it
               const res = await fetch("/api/widget/sim-deployments?project=" + encodeURIComponent(pid), { credentials: "include" })
               const data = await res.json().catch(function () { return {} })
               if (!res.ok || !data.ok) return
-              simExecStore(pid, data.sims)
+              simExecStore(pid, data.sims, startedAt)
               renderSimsFeed()
             } catch (e) { /* best-effort: the cards keep showing Run until the state loads */ }
             finally { _simExec.loading = false }
@@ -24727,13 +24761,18 @@
             if (typeof state !== "undefined" && state && state.sims && state.sims.length) loadSimExecStates(curProjId())
           })
 
-          function simExecStore(pid, sims) {
+          function simExecStore(pid, sims, fetchStart) {
             const states = {}
-            ;(sims || []).forEach(function (s) { states[s.id] = { run: s.run === "running" ? "running" : "stopped" } })
+            ;(sims || []).forEach(function (s) {
+              states[s.id] = { run: s.run === "running" ? "running" : "stopped" }
+              const ed = simEditGuarding(s.id, fetchStart)
+              if (ed && !ed.active) states[s.id] = { run: "stopped" }
+            })
             // Keep the cards' Activated/Deactivated in step with the server (e.g. changed in another tab).
             if (typeof state !== "undefined" && state && state.sims) {
               ;(sims || []).forEach(function (s) {
                 if (typeof s.active !== "boolean") return
+                if (simEditGuarding(s.id, fetchStart)) return   // KD-2861: our own newer (de)activate wins over an older read
                 const local = state.sims.find(function (x) { return x.id === s.id })
                 if (local) local.active = s.active
               })
@@ -24775,6 +24814,25 @@
             }
           }
 
+          // KD-2861: show the new Active/Inactive state the moment the user confirms (no wait for the request). Returns the
+          // function that puts the old state back — with a message — if the request fails.
+          function applySimActiveOptimistic(sim, makeActive) {
+            const simId = sim.id
+            const prevActive = sim.active !== false
+            const prevRun = _simExec && _simExec.states ? _simExec.states[simId] : undefined
+            recordSimEdit(simId, makeActive)
+            sim.active = !!makeActive
+            if (_simExec && _simExec.states) _simExec.states[simId] = { run: "stopped" }   // deactivating stops it; re-activating shows "Run"
+            renderSimsFeed()
+            return function (msg) {
+              clearSimEdit(simId)
+              sim.active = prevActive
+              if (_simExec && _simExec.states) { if (prevRun === undefined) delete _simExec.states[simId]; else _simExec.states[simId] = prevRun }
+              renderSimsFeed()
+              klavToast(msg, true)
+            }
+          }
+
           // WP-S2: activate / deactivate a Sim. An inactive Sim keeps its history but no review, schedule or widget uses it.
           async function toggleSimActive(simId, makeActive, btn) {
             const pid = curProjId()
@@ -24790,23 +24848,28 @@
               if (!ok) return
             }
             if (btn) btn.disabled = true
+            const revertToggle = applySimActiveOptimistic(sim, makeActive)   // KD-2861: card flips now; a failure puts it back
+            window.__klavMutating = (window.__klavMutating || 0) + 1   // keep the liveness poll out of the way while it's in flight
             try {
               const res = await fetch("/api/personas/" + encodeURIComponent(simId) + "/active?project=" + encodeURIComponent(pid), {
                 method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include",
                 body: JSON.stringify({ active: !!makeActive }),
               })
               const data = await res.json().catch(function () { return {} })
-              if (!res.ok) { klavToast(esc(data.error || "Could not update the Sim. Please try again."), true); return }
-              sim.active = !!makeActive
-              // Deactivating stops it (server clears its Run state) — reflect that now; re-activating shows "Run".
+              if (!res.ok) { revertToggle(esc(data.error || "Could not update the Sim. Please try again.")); return }
+              confirmSimEdit(simId)   // from here only reads that began after this moment are trusted over the local value
+              // Deactivating stops it (server clears its Run state); re-activating shows "Run" — never silently running.
               if (_simExec && _simExec.states) _simExec.states[simId] = { run: "stopped" }
+              // Keep the cached dashboard snapshot in step so a repaint from it can't show the old state.
+              try { if (typeof swrWrite === "function" && state && state.active && state.active.id) swrWrite(dashCacheKey(state.active.id), state) } catch (e) { }
               renderSimsFeed()
               // Tell the widget on this page so a deactivated Sim stops (and a re-activated one returns) right away.
               try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-changed")) } catch (e) { }
               klavToast(esc(sim.name) + (makeActive ? " is active again." : " is deactivated."))
             } catch (e) {
-              klavToast("Could not update the Sim. Check your connection and try again.", true)
+              revertToggle("Could not update the Sim. Check your connection and try again.")
             } finally {
+              window.__klavMutating = Math.max(0, (window.__klavMutating || 1) - 1)
               if (btn) btn.disabled = false
             }
           }
