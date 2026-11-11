@@ -15,6 +15,7 @@ import { withWalkSlot, withAuthorSlot, CHROMIUM_PROD_ARGS, setCurrentAuthorSessi
 import { startLiveWatchRun, publishLiveWatchFrame, endLiveWatchRun } from "./trails-live-watch"
 import { acquireBrowser, type BrowserHandle } from "./trails-browser-page"
 import { db, projectById, touchAuthorHeartbeat } from "./db"
+import { stampTrailFromAuthorSession } from "./autosim-projects"
 import { projectEntitlement } from "./entitlement"
 import { uploadScreenshotMeta } from "./s3"
 import type { AuthorModel, AuthorAction, ObjectiveVerifier, ObjectiveVerificationResult } from "./trails-author-model"
@@ -101,7 +102,7 @@ function analysisCheckpointDescription(objective: string): string {
     : "Analysis objective completed"
 }
 
-export interface AuthorRequest { name: string; objective: string; baseUrl: string; viewport?: TrailViewport | string | null; testAccountName?: string; createdBy?: string; /** KLAVITYKLA-149: id of the Sim persona picked as the Trail's judge/reviewer in the wizard's "Who reviews it?" step. */ judgePersonaId?: string | null; /** File-upload fixtures available to `upload` steps: attachment NAME → storage ref. */ attachments?: AttachmentManifest | null; /** KLAVITYKLA-461: source Sim this AutoSim was converted from, stamped onto the crystallized Trail. */ sourceSimId?: string | null; /** KLAVITYKLA-461: recurring schedule (5-field cron) + IANA tz chosen at Convert-to-AutoSim time. */ schedule?: string | null; scheduleTz?: string | null }
+export interface AuthorRequest { name: string; objective: string; baseUrl: string; viewport?: TrailViewport | string | null; testAccountName?: string; createdBy?: string; /** KLAVITYKLA-149: id of the Sim persona picked as the Trail's judge/reviewer in the wizard's "Who reviews it?" step. */ judgePersonaId?: string | null; /** File-upload fixtures available to `upload` steps: attachment NAME → storage ref. */ attachments?: AttachmentManifest | null; /** KLAVITYKLA-461: source Sim this AutoSim was converted from, stamped onto the crystallized Trail. */ sourceSimId?: string | null; /** KLAVITYKLA-461: recurring schedule (5-field cron) + IANA tz chosen at Convert-to-AutoSim time. */ schedule?: string | null; scheduleTz?: string | null; /** KD-2255: AutoSim test case the crystallized Trail is filed under (validated by the route). */ testCaseId?: string | null }
 export interface AuthorStepLog { idx: number; op: string; selector: string | null; value: string | null; url: string; rationale: string; ok: boolean; error?: string; screenshotKey?: string; krefSnapshot?: string }
 export interface AuthorOutcome {
   status: "crystallized" | "stalled" | "failed" | "needs_auth"
@@ -1306,9 +1307,10 @@ export async function createAuthorSession(projectId: string, req: AuthorRequest,
   const id = idOverride ?? "auth_" + crypto.randomUUID()
   const now = Date.now()
   await db!.execute({
-    sql: `INSERT INTO author_sessions (id,project_id,name,objective,base_url,test_account,status,created_by,resumed_from,created_at,updated_at,objective_verified,judge_persona_id)
-          VALUES (?,?,?,?,?,?,'running',?,?,?,?,0,?)`,
-    args: [id, projectId, req.name, req.objective, req.baseUrl, req.testAccountName ?? null, req.createdBy ?? null, resumedFrom ?? null, now, now, req.judgePersonaId ?? null],
+    // KD-2255: test_case_id — explicit on a fresh drive; a resumed session inherits its parent's.
+    sql: `INSERT INTO author_sessions (id,project_id,name,objective,base_url,test_account,status,created_by,resumed_from,created_at,updated_at,objective_verified,judge_persona_id,test_case_id)
+          VALUES (?,?,?,?,?,?,'running',?,?,?,?,0,?,COALESCE(?, (SELECT test_case_id FROM author_sessions WHERE project_id=? AND id=?)))`,
+    args: [id, projectId, req.name, req.objective, req.baseUrl, req.testAccountName ?? null, req.createdBy ?? null, resumedFrom ?? null, now, now, req.judgePersonaId ?? null, req.testCaseId ?? null, projectId, resumedFrom ?? null],
   })
   return id
 }
@@ -1328,6 +1330,9 @@ export async function updateAuthorSession(projectId: string, id: string, patch: 
   if (patch.redCause !== undefined) { sets.push("red_cause_json=?"); args.push(patch.redCause === null ? null : JSON.stringify(patch.redCause)) }
   args.push(projectId, id)
   await db!.execute({ sql: `UPDATE author_sessions SET ${sets.join(",")} WHERE project_id=? AND id=?`, args })
+  // KD-2255: a SUCCESSFULLY crystallized Trail is filed under the session's test case (replacing that
+  // test case's previous AutoSim). Stalled partial drafts are not filed — the working AutoSim stays.
+  if (patch.trailId && patch.status === "crystallized") await stampTrailFromAuthorSession(projectId, id, patch.trailId).catch((e) => console.warn("[author] test-case stamp skipped:", String(e)))
 }
 
 function rowToAuthorSession(row: any): AuthorSession {

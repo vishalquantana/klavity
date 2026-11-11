@@ -738,6 +738,30 @@ export async function applySchema(c: Client) {
        created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
        UNIQUE(project_id, name))`,
     `CREATE INDEX IF NOT EXISTS test_acc_proj_idx ON test_accounts (project_id)`,
+    // ── AutoSim Projects (KD-2255): organisational hierarchy INSIDE a Klavity project:
+    //    autosim_project → test_case_group (optional) → test_case → trails (= AutoSims).
+    //    Every row carries the Klavity project_id so all reads/writes stay tenant-scoped. No SQL FKs
+    //    (libsql has foreign_keys off); deletion rules live in lib/autosim-projects.ts and never
+    //    delete a Trail or a Test Account — they only unlink. ──
+    `CREATE TABLE IF NOT EXISTS autosim_projects (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL,
+       description TEXT NOT NULL DEFAULT '',
+       created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+       UNIQUE(project_id, name))`,
+    `CREATE TABLE IF NOT EXISTS autosim_test_case_groups (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, autosim_project_id TEXT NOT NULL,
+       name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+       UNIQUE(autosim_project_id, name))`,
+    `CREATE TABLE IF NOT EXISTS autosim_test_cases (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, autosim_project_id TEXT NOT NULL,
+       group_id TEXT, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+       status TEXT NOT NULL DEFAULT 'active',
+       test_account_id TEXT,                 -- NULL = run without credentials; else the login to use
+       start_url TEXT,                       -- where its AutoSims start (prefills the wizard)
+       created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS atc_group_ap_idx ON autosim_test_case_groups (project_id, autosim_project_id)`,
+    `CREATE INDEX IF NOT EXISTS atc_case_ap_idx ON autosim_test_cases (project_id, autosim_project_id)`,
     // ── AutoSim auth setup (AT3): short-lived write-only setup token + encrypted login config. ──
     `CREATE TABLE IF NOT EXISTS autosim_auth_setup_tokens (
        id TEXT PRIMARY KEY,
@@ -1122,6 +1146,8 @@ export async function applySchema(c: Client) {
     // Phase-1 QA evidence integrity: feedback_occurrences.evidence_json records whether each repeat sighting's screenshot was
     // actually captured. Preloaded so an established DB issues zero ALTERs on reboot.
     "feedback_occurrences",
+    // KD-2255: test_accounts gains autosim_project_id; autosim_test_cases gains test_account_id/start_url.
+    "test_accounts", "autosim_test_cases",
   ]
   const _cols = await loadTableColumns(c, ALTERED_TABLES)
   const needCol = (table: string, col: string) => !(_cols.get(table)?.has(col) ?? false)
@@ -1449,6 +1475,23 @@ export async function applySchema(c: Client) {
   // Additive, nullable — most trails are authored directly and never carry a source Sim.
   if (needCol("trails", "source_sim_id")) await c.execute("ALTER TABLE trails ADD COLUMN source_sim_id TEXT").catch((e: any) =>
     console.warn("trails.source_sim_id ALTER skipped:", e?.message || e))
+  // KD-2255: AutoSim Projects hierarchy links. All nullable → existing Trails / Test Accounts /
+  // author sessions are untouched ("Unassigned" / shared-across-projects) until a user assigns them.
+  if (needCol("trails", "autosim_project_id")) await c.execute("ALTER TABLE trails ADD COLUMN autosim_project_id TEXT").catch((e: any) =>
+    console.warn("trails.autosim_project_id ALTER skipped:", e?.message || e))
+  if (needCol("trails", "test_case_id")) await c.execute("ALTER TABLE trails ADD COLUMN test_case_id TEXT").catch((e: any) =>
+    console.warn("trails.test_case_id ALTER skipped:", e?.message || e))
+  if (needCol("author_sessions", "test_case_id")) await c.execute("ALTER TABLE author_sessions ADD COLUMN test_case_id TEXT").catch((e: any) =>
+    console.warn("author_sessions.test_case_id ALTER skipped:", e?.message || e))
+  // autosim_test_cases shipped to local dev DBs before these two columns existed.
+  if (needCol("autosim_test_cases", "test_account_id")) await c.execute("ALTER TABLE autosim_test_cases ADD COLUMN test_account_id TEXT").catch((e: any) =>
+    console.warn("autosim_test_cases.test_account_id ALTER skipped:", e?.message || e))
+  if (needCol("autosim_test_cases", "start_url")) await c.execute("ALTER TABLE autosim_test_cases ADD COLUMN start_url TEXT").catch((e: any) =>
+    console.warn("autosim_test_cases.start_url ALTER skipped:", e?.message || e))
+  if (needCol("test_accounts", "autosim_project_id")) await c.execute("ALTER TABLE test_accounts ADD COLUMN autosim_project_id TEXT").catch((e: any) =>
+    console.warn("test_accounts.autosim_project_id ALTER skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS trail_tc_idx ON trails(project_id, test_case_id)").catch((e: any) =>
+    console.warn("trail_tc_idx skipped:", e?.message || e))
   // KLA-73: walk_judgments — one row per (run, persona) judgment session.
   await c.execute(`CREATE TABLE IF NOT EXISTS walk_judgments (
     id TEXT PRIMARY KEY,
