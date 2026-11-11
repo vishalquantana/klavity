@@ -10746,6 +10746,38 @@
       color: var(--indigo)
     }
 
+    /* KD-2863: Active / Inactive tabs on the Sims page — the existing .t3-tabs look, with a little room around it. */
+    .sims-tabs {
+      margin: 2px 0 12px
+    }
+
+    /* The tab counts use the same pill as the "Your Sims" count in the card header (grey rounded badge, mono 11px bold). */
+    .sims-tabs .t3-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px
+    }
+
+    .sims-tabs .t3-tabc {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--paper-dim);
+      background: var(--ink-3);
+      padding: 2px 9px;
+      border-radius: 20px;
+      font-variant-numeric: tabular-nums
+    }
+
+    .sims-tabs .t3-tab.on .t3-tabc {
+      color: var(--paper-dim)   /* same colour on the selected tab (the base tab style would turn it indigo) */
+    }
+
+    .sims-tab-empty {
+      padding: 18px 4px;
+      font-size: 13px;
+      color: var(--paper-faint)
+    }
+
     .t3-tabpanel {
       animation: t3TabIn .16s ease
     }
@@ -24630,6 +24662,48 @@
               }).catch(function () { $("caGo").disabled = false; $("caMsg").style.color = "var(--rose)"; $("caMsg").textContent = "Network error. Try again."; });
           }
 
+          // ── KD-2863: Active / Inactive tabs ───────────────────────────────────────────────────
+          // A Sim is "inactive" when deactivated on this page (personas.active = false). The tab the user picks is remembered for the
+          // session; until they pick one, the page opens on Active — or on Inactive when no Sim is active (so it is never an empty page).
+          var _simsTabPref = null
+          try { const t = sessionStorage.getItem("klav:simsTab"); if (t === "active" || t === "inactive") _simsTabPref = t } catch (e) { }
+          function simsSplit(sims) {
+            const a = [], i = []
+            ;(sims || []).forEach(function (s) { (s.active !== false ? a : i).push(s) })
+            return { active: a, inactive: i }
+          }
+          function simsTabResolve(pref, nActive, nInactive) {
+            if (pref === "active" || pref === "inactive") return pref
+            return nActive === 0 && nInactive > 0 ? "inactive" : "active"
+          }
+          function simsTabsHtml(tab, nActive, nInactive) {
+            const t = function (id, label, n) {
+              const on = tab === id
+              return '<button type="button" class="t3-tab' + (on ? " on" : "") + '" role="tab" id="simsTab-' + id + '" aria-selected="' + (on ? "true" : "false") + '" tabindex="' + (on ? "0" : "-1") + '" data-sims-tab="' + id + '" onclick="setSimsTab(\'' + id + '\')" onkeydown="simsTabKey(event)">' + label + ' <span class="t3-tabc">' + n + '</span></button>'
+            }
+            return '<div class="t3-tabs sims-tabs" role="tablist" aria-label="Sims">' + t("active", "Active", nActive) + t("inactive", "Inactive", nInactive) + '</div>'
+          }
+          function simsTabEmptyHtml(tab) {
+            return '<div class="sims-tab-empty" role="status">' + (tab === "active"
+              ? "No active Sims — activate one from the Inactive tab."
+              : "No inactive Sims.") + '</div>'
+          }
+          function setSimsTab(tab) {
+            if (tab !== "active" && tab !== "inactive") return
+            _simsTabPref = tab
+            try { sessionStorage.setItem("klav:simsTab", tab) } catch (e) { }
+            renderSimsFeed()
+            const b = $("simsFeed") && $("simsFeed").querySelector('[data-sims-tab="' + tab + '"]')
+            if (b && document.activeElement !== b && document.activeElement && document.activeElement.closest && document.activeElement.closest("#simsFeed")) b.focus()
+          }
+          function simsTabKey(e) {
+            if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
+            e.preventDefault()
+            const cur = e.currentTarget && e.currentTarget.getAttribute("data-sims-tab")
+            setSimsTab(cur === "active" ? "inactive" : "active")
+            const b = $("simsFeed") && $("simsFeed").querySelector('[aria-selected="true"]'); if (b) b.focus()
+          }
+
           function renderSimsFeed() {
             const sims = state.sims || []
             const el = $("simsFeed")
@@ -24671,7 +24745,10 @@
               }
             }
             const pid = curProjId()
-            el.innerHTML = sims.map(sim => {
+            const split = simsSplit(sims)
+            const tab = simsTabResolve(_simsTabPref, split.active.length, split.inactive.length)
+            const shown = split[tab]
+            el.innerHTML = simsTabsHtml(tab, split.active.length, split.inactive.length) + (shown.length ? '<div role="tabpanel" aria-labelledby="simsTab-' + tab + '">' + shown.map(sim => {
               const href = pid
                 ? "/sim/" + encodeURIComponent(sim.id) + "?project=" + encodeURIComponent(pid)
                 : "/sim/" + encodeURIComponent(sim.id)
@@ -24720,7 +24797,7 @@
       </div>
       ${obHtml}
     </div>`
-            }).join("")
+            }).join("") + '</div>' : simsTabEmptyHtml(tab))
             if (typeof supPickRefresh === "function") supPickRefresh() // the Run Sims picker only offers active Sims
             loadSimExecStates(pid)
           }
