@@ -1041,5 +1041,12 @@
     "excerpt": "AI QA for Webflow sites runs automated checks against the published site, not the Designer, catching breakpoint collapses, hidden sections and dead forms.",
     "category": "Guides",
     "date": "2026-11-10"
+  },
+  {
+    "slug": "figma-make-testing",
+    "title": "Figma Make Testing: How to QA Your Prompt-Built App",
+    "excerpt": "Figma Make testing starts below the UI: auth and data boundaries, server-side validation, and failure states — before you share the link.",
+    "category": "Guides",
+    "date": "2026-11-11"
   }
 ]

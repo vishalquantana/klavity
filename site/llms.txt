@@ -3,6 +3,7 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
+- [Figma Make Testing: How to QA Your Prompt-Built App](https://klavity.in/blog/figma-make-testing) — Figma Make testing starts below the UI: auth and data boundaries, server-side validation, and failure states — before you share the link.
 - [AI QA for Webflow Sites: What to Test Before Handoff](https://klavity.in/blog/ai-qa-for-webflow-sites) — AI QA for Webflow sites runs automated checks against the published site, not the Designer, catching breakpoint collapses, hidden sections and dead forms.
 - [How to Hand Off a Vibe-Coded App to Developers: 8 Steps](https://klavity.in/blog/vibe-coded-app-handoff-to-developers) — Hand off a vibe-coded app with three artifacts: a feature inventory, a verified run book, and a triaged bug list with reproducible evidence.
 - [AI QA for Shopify Stores: What to Test Before Launch](https://klavity.in/blog/ai-qa-for-shopify-stores) — AI QA for Shopify stores tests the revenue path as a matrix of product and cart states — variants, discounts, and the handoff into checkout.

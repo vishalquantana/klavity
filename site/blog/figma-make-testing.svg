@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="A prompt panel generates a browser app, which is then checked by a QA pass that finds passing states and one bug, with a re-prompt loop feeding back">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="40" y="96" width="166" height="206" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.55" stroke-width="1.5"/>
+  <rect x="60" y="120" width="104" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.34"/>
+  <rect x="60" y="140" width="126" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="60" y="160" width="84" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="60" y="196" width="126" height="9" rx="4.5" fill="#6366f1" fill-opacity="0.75"/>
+  <rect x="60" y="216" width="98" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.18"/>
+  <rect x="60" y="256" width="84" height="26" rx="8" fill="#6366f1"/>
+  <polyline points="222,199 266,199" stroke="#6366f1" stroke-width="2.5" fill="none"/>
+  <path d="M266 192 L280 199 L266 206 Z" fill="#6366f1"/>
+  <rect x="296" y="78" width="258" height="242" rx="12" fill="#f5f0e8" fill-opacity="0.04" stroke="#f5f0e8" stroke-opacity="0.28" stroke-width="1.5"/>
+  <line x1="296" y1="112" x2="554" y2="112" stroke="#f5f0e8" stroke-opacity="0.28" stroke-width="1.5"/>
+  <circle cx="314" cy="95" r="4.5" fill="#f87171" fill-opacity="0.8"/>
+  <circle cx="330" cy="95" r="4.5" fill="#f5f0e8" fill-opacity="0.3"/>
+  <circle cx="346" cy="95" r="4.5" fill="#f5f0e8" fill-opacity="0.3"/>
+  <rect x="318" y="134" width="214" height="52" rx="8" fill="#6366f1" fill-opacity="0.28" stroke="#6366f1" stroke-opacity="0.7" stroke-width="1.5"/>
+  <rect x="318" y="202" width="100" height="44" rx="8" fill="#f5f0e8" fill-opacity="0.08" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="1.5"/>
+  <rect x="432" y="202" width="100" height="44" rx="8" fill="#f5f0e8" fill-opacity="0.08" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="1.5"/>
+  <rect x="318" y="262" width="150" height="34" rx="8" fill="#f5f0e8" fill-opacity="0.06" stroke="#f5f0e8" stroke-opacity="0.18" stroke-width="1.5"/>
+  <rect x="482" y="262" width="50" height="34" rx="8" fill="#6366f1" fill-opacity="0.9"/>
+  <polyline points="570,199 610,199" stroke="#f5f0e8" stroke-opacity="0.45" stroke-width="2.5" fill="none"/>
+  <path d="M610 192 L624 199 L610 206 Z" fill="#f5f0e8" fill-opacity="0.45"/>
+  <circle cx="676" cy="118" r="17" fill="#4ade80" fill-opacity="0.16" stroke="#4ade80" stroke-width="2"/>
+  <polyline points="668,118 674,125 685,112" stroke="#4ade80" stroke-width="2.6" fill="none"/>
+  <circle cx="676" cy="176" r="17" fill="#4ade80" fill-opacity="0.16" stroke="#4ade80" stroke-width="2"/>
+  <polyline points="668,176 674,183 685,170" stroke="#4ade80" stroke-width="2.6" fill="none"/>
+  <circle cx="676" cy="234" r="17" fill="#f87171" fill-opacity="0.18" stroke="#f87171" stroke-width="2"/>
+  <line x1="669" y1="227" x2="683" y2="241" stroke="#f87171" stroke-width="2.6"/>
+  <line x1="683" y1="227" x2="669" y2="241" stroke="#f87171" stroke-width="2.6"/>
+  <circle cx="676" cy="292" r="17" fill="#4ade80" fill-opacity="0.16" stroke="#4ade80" stroke-width="2"/>
+  <polyline points="668,292 674,299 685,286" stroke="#4ade80" stroke-width="2.6" fill="none"/>
+  <path d="M676 262 C676 352 420 366 136 366 L136 326" stroke="#f87171" stroke-opacity="0.65" stroke-width="2" stroke-dasharray="7 6" fill="none"/>
+  <path d="M129 326 L136 312 L143 326 Z" fill="#f87171" fill-opacity="0.65"/>
+</svg>

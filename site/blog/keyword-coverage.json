@@ -52,7 +52,8 @@
     "claude code testing": "claude-code-testing",
     "vibe coding best practices": "vibe-coding-best-practices",
     "what is spec-driven development": "what-is-spec-driven-development",
-    "how to hand off a vibe-coded app to developers": "vibe-coded-app-handoff-to-developers"
+    "how to hand off a vibe-coded app to developers": "vibe-coded-app-handoff-to-developers",
+    "figma make testing": "figma-make-testing"
   },
   "tier-c": {
     "marker.io alternative": "marker-io-alternative",

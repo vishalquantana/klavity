@@ -1,0 +1,195 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Figma Make Testing: How to QA Your Prompt-Built App · Klavity</title>
+<meta name="description" content="Figma Make testing starts below the UI: auth and data boundaries, server-side validation, and failure states — before you share the link.">
+<link rel="canonical" href="https://klavity.in/blog/figma-make-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Figma Make Testing: How to QA Your Prompt-Built App"><meta property="og:description" content="Figma Make testing starts below the UI: auth and data boundaries, server-side validation, and failure states — before you share the link.">
+<meta property="og:url" content="https://klavity.in/blog/figma-make-testing"><meta property="og:image" content="https://klavity.in/blog/figma-make-testing.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Figma Make Testing: How to QA Your Prompt-Built App"><meta name="twitter:description" content="Figma Make testing starts below the UI: auth and data boundaries, server-side validation, and failure states — before you share the link."><meta name="twitter:image" content="https://klavity.in/blog/figma-make-testing.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Figma Make Testing: How to QA Your Prompt-Built App","description":"Figma Make testing starts below the UI: auth and data boundaries, server-side validation, and failure states — before you share the link.","datePublished":"2026-11-11","dateModified":"2026-11-11","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/figma-make-testing.svg"}},"mainEntityOfPage":"https://klavity.in/blog/figma-make-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Figma Make Testing: How to QA Your Prompt-Built App","item":"https://klavity.in/blog/figma-make-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/figma-make-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Does a Figma Make app need real testing, or is design review enough?","acceptedAnswer":{"@type":"Answer","text":"Design review judges the screen you were shown; QA judges the states you were not shown. Figma Make publishes working code behind a shareable link, so once that link exists people can submit empty forms, open it signed out, and reload mid-submit. Those paths need checking explicitly."}},{"@type":"Question","name":"What should I test first in a Figma Make app?","acceptedAnswer":{"@type":"Answer","text":"Auth and data boundaries first: open the published link signed out and see what is reachable, then sign in as two accounts and try to cross between them. Next, server-side validation, then destructive actions, then failure and empty states, then mobile at a real 375px width."}},{"@type":"Question","name":"Why do bugs come back after I fix them in Figma Make?","acceptedAnswer":{"@type":"Answer","text":"Iterating by prompt means later instructions can rewrite code that carried an earlier fix, with no diff you were watching. Manual verification does not survive regeneration, so put an automated end-to-end check on the flows you cannot afford to break."}},{"@type":"Question","name":"When should I move a Figma Make project into a real codebase?","acceptedAnswer":{"@type":"Answer","text":"When the same bug returns twice, when you need a change you cannot describe precisely in a prompt, when real money or customer data is involved, or when you need a staging environment to test in before publishing."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-11-11</div>
+    <h1>Figma Make Testing: How to QA Your Prompt-Built App</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="A prompt panel generates a browser app, which is then checked by a QA pass that finds passing states and one bug, with a re-prompt loop feeding back">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="40" y="96" width="166" height="206" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.55" stroke-width="1.5"/>
+  <rect x="60" y="120" width="104" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.34"/>
+  <rect x="60" y="140" width="126" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="60" y="160" width="84" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="60" y="196" width="126" height="9" rx="4.5" fill="#6366f1" fill-opacity="0.75"/>
+  <rect x="60" y="216" width="98" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.18"/>
+  <rect x="60" y="256" width="84" height="26" rx="8" fill="#6366f1"/>
+  <polyline points="222,199 266,199" stroke="#6366f1" stroke-width="2.5" fill="none"/>
+  <path d="M266 192 L280 199 L266 206 Z" fill="#6366f1"/>
+  <rect x="296" y="78" width="258" height="242" rx="12" fill="#f5f0e8" fill-opacity="0.04" stroke="#f5f0e8" stroke-opacity="0.28" stroke-width="1.5"/>
+  <line x1="296" y1="112" x2="554" y2="112" stroke="#f5f0e8" stroke-opacity="0.28" stroke-width="1.5"/>
+  <circle cx="314" cy="95" r="4.5" fill="#f87171" fill-opacity="0.8"/>
+  <circle cx="330" cy="95" r="4.5" fill="#f5f0e8" fill-opacity="0.3"/>
+  <circle cx="346" cy="95" r="4.5" fill="#f5f0e8" fill-opacity="0.3"/>
+  <rect x="318" y="134" width="214" height="52" rx="8" fill="#6366f1" fill-opacity="0.28" stroke="#6366f1" stroke-opacity="0.7" stroke-width="1.5"/>
+  <rect x="318" y="202" width="100" height="44" rx="8" fill="#f5f0e8" fill-opacity="0.08" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="1.5"/>
+  <rect x="432" y="202" width="100" height="44" rx="8" fill="#f5f0e8" fill-opacity="0.08" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="1.5"/>
+  <rect x="318" y="262" width="150" height="34" rx="8" fill="#f5f0e8" fill-opacity="0.06" stroke="#f5f0e8" stroke-opacity="0.18" stroke-width="1.5"/>
+  <rect x="482" y="262" width="50" height="34" rx="8" fill="#6366f1" fill-opacity="0.9"/>
+  <polyline points="570,199 610,199" stroke="#f5f0e8" stroke-opacity="0.45" stroke-width="2.5" fill="none"/>
+  <path d="M610 192 L624 199 L610 206 Z" fill="#f5f0e8" fill-opacity="0.45"/>
+  <circle cx="676" cy="118" r="17" fill="#4ade80" fill-opacity="0.16" stroke="#4ade80" stroke-width="2"/>
+  <polyline points="668,118 674,125 685,112" stroke="#4ade80" stroke-width="2.6" fill="none"/>
+  <circle cx="676" cy="176" r="17" fill="#4ade80" fill-opacity="0.16" stroke="#4ade80" stroke-width="2"/>
+  <polyline points="668,176 674,183 685,170" stroke="#4ade80" stroke-width="2.6" fill="none"/>
+  <circle cx="676" cy="234" r="17" fill="#f87171" fill-opacity="0.18" stroke="#f87171" stroke-width="2"/>
+  <line x1="669" y1="227" x2="683" y2="241" stroke="#f87171" stroke-width="2.6"/>
+  <line x1="683" y1="227" x2="669" y2="241" stroke="#f87171" stroke-width="2.6"/>
+  <circle cx="676" cy="292" r="17" fill="#4ade80" fill-opacity="0.16" stroke="#4ade80" stroke-width="2"/>
+  <polyline points="668,292 674,299 685,286" stroke="#4ade80" stroke-width="2.6" fill="none"/>
+  <path d="M676 262 C676 352 420 366 136 366 L136 326" stroke="#f87171" stroke-opacity="0.65" stroke-width="2" stroke-dasharray="7 6" fill="none"/>
+  <path d="M129 326 L136 312 L143 326 Z" fill="#f87171" fill-opacity="0.65"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Figma Make produces working code, not a clickable mock, so test the layers a prompt never described: auth and data boundaries, server-side validation, and what happens when a request fails. Test in order of blast radius, not in screen order. And because re-prompting can rewrite the code that carried an earlier fix, a fix is only as durable as the automated check guarding it.</div>
+    <div class="prose"><p><strong>Figma Make testing</strong> means verifying the app behind the prototype, not the pixels in front of it. Start with the layers a prompt cannot see: auth and data boundaries, validation that runs on the server rather than in the browser, and what the app does when something fails — empty results, an expired session, a double-tapped submit button. Then walk the two or three flows that actually earn money or sign-ups, on a real phone, with deliberately bad input. A Figma Make app looks finished long before it behaves correctly, because the tool is optimising for a screen that renders. The gap between "it renders" and "it holds up" is where every bug your users find already lives.</p>
+
+<h2>Why is Figma Make testing different from design review?</h2>
+<p>Figma Make turns a prompt — or an existing Figma frame — into a running web app you keep shaping by chatting with it, and gives you a link you can publish and share. The output is working code, not a clickable mock. That single fact changes your obligations: the moment a published link exists, someone can type into your forms, paste an emoji into a name field, open it on a cracked Android phone, and hit refresh halfway through a submit.</p>
+<p>Design review and QA ask different questions, and teams get into trouble when they do the first and assume it covered the second.</p>
+<table>
+  <thead><tr><th>Question</th><th>Design review</th><th>QA pass</th></tr></thead>
+  <tbody>
+    <tr><td>What is being judged</td><td>The screen you were shown</td><td>The states you were not shown</td></tr>
+    <tr><td>Typical input</td><td>Realistic placeholder content</td><td>Empty, enormous, duplicated, malicious</td></tr>
+    <tr><td>Who is assumed</td><td>One signed-in, well-behaved user</td><td>A logged-out visitor, a second tenant, a bot</td></tr>
+    <tr><td>Definition of done</td><td>It looks right</td><td>It fails safely and recovers</td></tr>
+  </tbody>
+</table>
+<p>This is the same discipline we lay out in the <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a> — the difference with prompt-built apps is only how quickly you reach the point of needing it.</p>
+
+<h2>What should you test first in a Figma Make app?</h2>
+<p>Test in order of blast radius, not in the order the screens appear. If you only get through the first three, you have still removed the failures that are expensive to discover later.</p>
+<ol>
+  <li><strong>Auth and data boundaries.</strong> Open the published link in a private window while signed out. Can you reach a page or an API response that should require a login? If the app stores records per user or per client, sign in as a second account and confirm you cannot see or edit the first one's data. Permissive read access is the single most consequential defect class in generated apps, and it is invisible from the UI.</li>
+  <li><strong>Server-side validation.</strong> Browser-side checks are a convenience, not a control. Submit a form with the required attributes stripped, or with values no front end would send — a negative quantity, a 500-character name, a malformed email. If it saves, the rule only ever existed in the markup.</li>
+  <li><strong>Destructive and irreversible actions.</strong> Delete, cancel, refund, send. Confirm each one is intentional, scoped to the right record, and idempotent — click submit twice, fast, and check you did not create two of something or charge twice.</li>
+  <li><strong>Failure and empty states.</strong> Throttle the network to a slow connection and reload. A generated app frequently treats an error as nothing-to-show, so a broken request renders as a tidy empty list and no one notices for a week.</li>
+  <li><strong>Mobile at real widths.</strong> Not the canvas preview — an actual device or an emulated 375px viewport. Check sticky headers, keyboard overlap on inputs, tap targets, and anything in a modal.</li>
+  <li><strong>The one flow that matters end to end.</strong> Signup, checkout, or booking, completed for real, including the email or confirmation that is supposed to arrive afterwards.</li>
+</ol>
+
+<h2>Which bugs show up most often in prompt-built apps?</h2>
+<p>These patterns recur because of how the code gets written, not because any one tool is careless. A model generates what satisfies the request it was given; the request rarely mentions the second tenant or the failed network call.</p>
+<table>
+  <thead><tr><th>Bug class</th><th>Why prompt-built apps get it</th><th>Fastest way to catch it</th></tr></thead>
+  <tbody>
+    <tr><td>Client-only validation</td><td>The visible form was the specified artefact</td><td>Submit values the UI would never send</td></tr>
+    <tr><td>Over-permissive data access</td><td>Nothing in the prompt described who must <em>not</em> see a row</td><td>Two accounts, side by side, in two windows</td></tr>
+    <tr><td>Swallowed errors</td><td>Error handling was not asked for, so failures return quietly</td><td>Throttle or block a request and watch the console</td></tr>
+    <tr><td>Re-prompt regressions</td><td>A later instruction rewrites code that carried an earlier fix</td><td>An automated check on the flow you already fixed</td></tr>
+    <tr><td>Placeholder content shipped live</td><td>Sample copy was convincing enough to stop looking at</td><td>Search the published page for dummy names and lorem text</td></tr>
+  </tbody>
+</table>
+<p>The fourth row is the one specific to iterating by prompt, and it is worth dwelling on: <strong>in a prompt-driven tool, a fix is only as durable as the test that guards it.</strong> You can correct a bug on Monday, ask for an unrelated layout change on Thursday, and get the bug back — with no diff you were watching and no reason to re-check that screen. Manual verification does not survive regeneration. A check that runs on every version does.</p>
+
+<h2>How do you QA a Figma Make app without a QA team?</h2>
+<p>Most people shipping from Figma Make are a designer, a founder, or a one-person agency — there is no QA function to hand this to. The workable substitute is three passes, each cheap enough to actually repeat.</p>
+<h3>1. A persona pass, before you share the link</h3>
+<p>Have the app walked by users who are not you: someone signed out, someone on a phone, someone who abandons a form halfway and comes back. This is what <a href="/sims">Sims</a> automates — AI personas that exercise your flows the way awkward real people do, rather than the way the builder demonstrates them.</p>
+<h3>2. A capture pass, for everything a reviewer finds</h3>
+<p>When a client or a friend reports "the booking thing broke", you need the console errors, the failed request, the browser, and the exact DOM state — not a cropped screenshot. <a href="/snap">Snap</a> turns a right-click into a report carrying that evidence, which is the difference between fixing it in one pass and three rounds of "cannot reproduce".</p>
+<h3>3. A guard pass, so re-prompting cannot undo your work</h3>
+<p>Put an automated end-to-end check on the two or three flows you cannot afford to break. <a href="/autosim">AutoSim</a> heals the selectors when a regenerated UI moves them, which matters here specifically: in a prompt-built app the markup is rewritten often, and brittle tests that fail on every change get switched off within a fortnight.</p>
+
+<h2>When should you stop prompting and export the code?</h2>
+<p>Iterating by chat is genuinely faster, right up until it isn't. Treat these as the signals to move the project into a normal codebase with a developer and a staging environment:</p>
+<ul>
+  <li><strong>The same bug comes back twice.</strong> You are now fighting regeneration, not the bug.</li>
+  <li><strong>You need a change you cannot describe precisely.</strong> "Make the permissions correct" is not a specification; a schema and a policy are.</li>
+  <li><strong>Real money, real customer data, or anything regulated is involved.</strong> Those need review, logging, and a rollback path.</li>
+  <li><strong>You want to test before you publish.</strong> A separate environment is the prerequisite for every other QA practice.</li>
+</ul>
+<p>If you reach that point, our walkthrough on <a href="/blog/vibe-coded-app-handoff-to-developers">handing a vibe-coded app to developers</a> covers what to package up. The same priority order applies to any prompt-to-app tool, so the checklists in <a href="/blog/how-to-qa-a-vibe-coded-app">how to QA a vibe-coded app</a> and <a href="/blog/lovable-app-testing">Lovable app testing</a> transfer directly.</p>
+
+<h2>What does a 30-minute pre-share QA pass look like?</h2>
+<p>Do this before the link leaves your hands, every time you publish:</p>
+<ul>
+  <li>Open the published URL signed out, in a private window. Note anything reachable that shouldn't be.</li>
+  <li>Sign in as two different accounts and attempt to cross the boundary between them.</li>
+  <li>Submit every form empty, then with absurd input, then twice in a row quickly.</li>
+  <li>Reload on a throttled connection and watch for silent failures in the console.</li>
+  <li>Run the primary flow to completion on a real phone, including whatever email or confirmation follows.</li>
+  <li>Grep the live page for placeholder names, test emails, and lorem text.</li>
+</ul>
+<p>None of this requires a QA background. It requires deciding that "it rendered" is not the same claim as "it works" — and then spending half an hour on the difference before a client does it for you.</p>
+
+<h2>Try it on your next Figma Make build</h2>
+<p>Klavity is built for exactly this gap: AI personas that walk your flows, right-click bug reports with real evidence attached, and E2E checks that survive a regenerated UI. <a href="/onboarding">Try Klavity free</a> and run a QA pass on your next prompt-built app before you share the link.</p>
+</div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Test signed out and as a second account before anything else.</li><li>Re-submit every form with values the UI would never send.</li><li>Throttle the network — generated apps render errors as empty states.</li><li>Guard fixed flows with automated checks that survive re-prompting.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Does a Figma Make app need real testing, or is design review enough?</summary><p>Design review judges the screen you were shown; QA judges the states you were not shown. Figma Make publishes working code behind a shareable link, so once that link exists people can submit empty forms, open it signed out, and reload mid-submit. Those paths need checking explicitly.</p></details><details><summary>What should I test first in a Figma Make app?</summary><p>Auth and data boundaries first: open the published link signed out and see what is reachable, then sign in as two accounts and try to cross between them. Next, server-side validation, then destructive actions, then failure and empty states, then mobile at a real 375px width.</p></details><details><summary>Why do bugs come back after I fix them in Figma Make?</summary><p>Iterating by prompt means later instructions can rewrite code that carried an earlier fix, with no diff you were watching. Manual verification does not survive regeneration, so put an automated end-to-end check on the flows you cannot afford to break.</p></details><details><summary>When should I move a Figma Make project into a real codebase?</summary><p>When the same bug returns twice, when you need a change you cannot describe precisely in a prompt, when real money or customer data is involved, or when you need a staging environment to test in before publishing.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
