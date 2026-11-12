@@ -135,12 +135,12 @@ test("wiring (source pin): the header icon comes from the lane's state, and the 
   expect(render).toMatch(/ascending/i)
 })
 
-test("wiring (source pin): board render, range select and prev/next all order lanes through kbOrderColumn", () => {
+test("wiring (source pin): board render and range select order lanes through kbOrderColumn; prev/next goes by ticket number", () => {
   const render = extractFn(HTML, "function renderTicketsKanban(")
   expect(render).toMatch(/KANBAN_COLS\.forEach\(c => \{ groups\[c\.key\] = kbOrderColumn\(groups\[c\.key\], c\.key\) \}\)/)
   expect(render.indexOf("kbOrderColumn(")).toBeLessThan(render.indexOf("const orderedIds"))   // range-select order = displayed order
   const ordered = extractFn(HTML, "function _tktOrderedVisibleIds(")
-  expect(ordered).toContain("kbOrderColumn(")
+  expect(ordered).toContain("_tktByNumber(")
 })
 
 test("wiring (source pin): every lane header has an accessible sort button that toggles only that lane, and the title/count markup is unchanged", () => {

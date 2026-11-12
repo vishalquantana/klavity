@@ -29126,15 +29126,49 @@
           // column order the kanban uses), so the dedicated page's prev/next steps through the exact board
           // order with the user's filters preserved. Empty when no board set is cached (a cold deep-link load,
           // where the board was never fetched) — prev/next then disable rather than trigger an index fetch.
-          function _tktOrderedVisibleIds() {
+          // Prev/next used to be DISABLED (both buttons, silently) whenever the open ticket wasn't in this list: a report opened
+          // from Sim Reports (those never sit on the Tickets board), a ticket the board's filters hide, or one outside the 50-row
+          // dashboard payload on a cold load. Now: from Sim Reports it steps through the Sim Reports list; and when the open ticket
+          // is filtered out, it falls back to the same order WITHOUT filters, so it can still step to its neighbours.
+          // Prev / Next step by TICKET NUMBER (KD-1, KD-2, KD-3 …) across every status — not by board column.
+          // ‹ goes to the next-lower number, › to the next-higher one. Tickets without a number go last (oldest first).
+          function _tktByNumber(list) {
+            const num = (t) => { const n = Number(t && t.seqNum); return (t && t.seqNum != null && isFinite(n)) ? n : null }
+            const at = (t) => Number(t && (t.createdAt || t.created_at)) || 0
+            return list.slice().sort((a, b) => {
+              const na = num(a), nb = num(b)
+              if (na != null && nb != null) return na - nb
+              if (na != null) return -1
+              if (nb != null) return 1
+              return at(a) - at(b)
+            })
+          }
+          function _tktOrderedVisibleIds(curId) {
+            const has = (ids) => curId == null || ids.indexOf(String(curId)) >= 0
+            const order = (list) => _tktByNumber(list).map(t => String(t.id))
+            if (_tktOriginContext === "triage" && typeof tgVisibleItems === "function") {
+              const vis = order(tgVisibleItems())
+              if (has(vis)) return vis
+              const all = order(_triageItems || [])
+              if (has(all)) return all
+            }
             const src = (Array.isArray(_tktBoardTickets) && _tktBoardTickets.length) ? _tktBoardTickets : (state.tickets || [])
-            const vis = src.filter(t => (typeof kbMatchesFilter === "function" ? kbMatchesFilter(t) : true) && tktMatchesSelectFilters(t))
-            const groups = {}; KANBAN_COLS.forEach(c => { groups[c.key] = [] })
-            vis.forEach(t => { const k = kanbanKeyForStatus(t.status); if (groups[k]) groups[k].push(t) })
-            KANBAN_COLS.forEach(c => { groups[c.key] = kbOrderColumn(groups[c.key], c.key) })   // KD-203: same per-lane order as the board
-            const orderedCols = typeof getOrderedKanbanCols === "function" ? getOrderedKanbanCols() : KANBAN_COLS
-            const ids = []; orderedCols.forEach(c => groups[c.key].forEach(t => ids.push(String(t.id))))
-            return ids
+            const ids = order(src.filter(t => (typeof kbMatchesFilter === "function" ? kbMatchesFilter(t) : true) && tktMatchesSelectFilters(t)))
+            if (has(ids)) return ids
+            return order(src)
+          }
+          // The record for a ticket id from ANY in-memory list — the 50-row dashboard payload (state.tickets), the full board cache,
+          // or the Sim Reports list — seeded into state.tickets so the single-ticket page (which reads state.tickets) can render it
+          // right away instead of showing nothing until /api/feedback/<id> returns.
+          function _tktSeedFromCaches(id) {
+            const sid = String(id)
+            if (!Array.isArray(state.tickets)) state.tickets = []
+            if (state.tickets.some(x => String(x.id) === sid)) return true
+            const hit = (Array.isArray(_tktBoardTickets) ? _tktBoardTickets.find(x => String(x.id) === sid) : null)
+              || ((typeof _triageItems !== "undefined" && Array.isArray(_triageItems)) ? _triageItems.find(x => String(x.id) === sid) : null)
+            if (!hit) return false
+            state.tickets.push({ ...hit })
+            return true
           }
           // Share-viewer onboarding: the shareable canonical URL is the ADAPTIVE ticket link /t/<id>. A member
           // who opens it gets the full ticket; a colleague without access gets the redacted teaser + email
@@ -29226,6 +29260,7 @@
             })
           }
           function _renderSingleTicket(id) {
+            _tktSeedFromCaches(id)   // prev/next can step to a ticket that is only in the board / Sim Reports cache
             const t = (state.tickets || []).find(x => String(x.id) === String(id))
             if (!t) return
             const single = $("ticketSingle"); if (!single) return
@@ -29295,7 +29330,7 @@
               const projName = (state.active && state.active.name) || "Project"
               // #681: ONE compact header row — "← All Tickets" back link + project name + #ref · status pill on a
               // single line (no separate breadcrumb, no duplicate key row). Copy-link + prev/next stay on the right.
-              const ids = _tktOrderedVisibleIds()
+              const ids = _tktOrderedVisibleIds(id)
               const cur = ids.indexOf(String(id))
               const hasPrev = cur > 0, hasNext = cur >= 0 && cur < ids.length - 1
               const ph = document.createElement("div"); ph.className = "tkt-page-head"
@@ -29329,8 +29364,9 @@
               })
               const pgDelBtn = ph.querySelector('[data-act="delete"]')
               if (pgDelBtn) pgDelBtn.addEventListener("click", () => doDeleteSingleTicket())
-              if (hasPrev) ph.querySelector('[data-act="prev"]').addEventListener("click", () => openSingleTicket(ids[cur - 1], "full"))
-              if (hasNext) ph.querySelector('[data-act="next"]').addEventListener("click", () => openSingleTicket(ids[cur + 1], "full"))
+              // Keep the origin (Tickets / Sim Reports) while stepping, so the next ticket's prev/next use the same list.
+              if (hasPrev) ph.querySelector('[data-act="prev"]').addEventListener("click", () => openSingleTicket(ids[cur - 1], "full", _tktOriginContext))
+              if (hasNext) ph.querySelector('[data-act="next"]').addEventListener("click", () => openSingleTicket(ids[cur + 1], "full", _tktOriginContext))
               // #735: the compact-header "#<key>" pill also copies the clean /t/<id> permalink.
               try { wireTktKeyCopy(ph.querySelector(".tkt-page-key"), id) } catch (e) { }
               single.appendChild(ph)
