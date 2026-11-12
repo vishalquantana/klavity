@@ -1,5 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
+import { slimSimRun } from "./lib/sim-run-list"
 import { reserveCredits, runMonthlyGrantReset } from "./lib/credits"
 import { setProjectPlanOverride } from "./lib/db"
 import type { TicketExportRow } from "./lib/db"
@@ -7980,7 +7981,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const limitRaw = Number(url.searchParams.get("limit") || "20")
       const limit = Math.max(1, Math.min(limitRaw, 100))
       const runs = await listSimRuns(projR.id, limit)
-      return json({ runs })
+      // KD-2877: ?slim=1 → per run only the issue count + Sim avatars (the list view), not every Sim's full reactions; the full run is
+      // fetched on demand via GET /api/sims/runs/:id. `projectId` lets the page skip /api/dashboard just to learn the active project.
+      return json({ runs: url.searchParams.get("slim") === "1" ? runs.map(slimSimRun) : runs, projectId: projR.id })
     }
   }
 
