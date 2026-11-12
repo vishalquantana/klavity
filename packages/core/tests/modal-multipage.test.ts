@@ -23,6 +23,16 @@ describe('buildModal — KLA-412 session mode (onMinimize provided)', () => {
     ctrl.close()
   })
 
+  it('the side column scrolls BELOW the Minimize / Close row, so no content (even scrolled) can sit under ─ or ×', () => {
+    const ctrl = buildModal('bug', { ...base(), onMinimize: () => {}, showTitleField: true } as any)
+    const css = Array.from(ctrl.shadowRoot.querySelectorAll('style')).map((s: any) => s.textContent).join('\n')
+    // Two-column layout: the scroll area starts 52px down — below the 14px + 30px buttons.
+    expect(css).toMatch(/@media \(min-width:761px\)\{\.kl-side\{margin-top:52px;/)
+    // Narrow layout: the screenshot toolbar (top row there) keeps the corner clear for ─ + ×.
+    expect(css).toMatch(/\.klavity-modal:has\(\.klavity-min\) \.kl-hero-tools\{padding-right:86px;\}/)
+    ctrl.close()
+  })
+
   it('minimize button invokes onMinimize', () => {
     let hits = 0
     const ctrl = buildModal('bug', { ...base(), onMinimize: () => { hits++ } })

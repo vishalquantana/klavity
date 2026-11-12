@@ -1,5 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
+import { slimSimRun } from "./lib/sim-run-list"
 import { reserveCredits, runMonthlyGrantReset } from "./lib/credits"
 import { setProjectPlanOverride } from "./lib/db"
 import type { TicketExportRow } from "./lib/db"
@@ -120,7 +121,7 @@ import { MODEL_CHOICES, MODEL_CHOICE_IDS, DEFAULT_WEIGHTS, pickModel, parseWeigh
 import { AsyncLocalStorage } from "node:async_hooks"
 import { removeFeedbackAttachment, attachmentKeyReferencedElsewhere } from "./lib/db"   // KD-193
 import { detachFeedbackScreenshot, screenshotReferencedElsewhere, screenshotById as screenshotRowById, deleteScreenshotRow, type CommentAttachment } from "./lib/db"   // KD-214, KD-217
-import { projectAccessForRow, listFeedbackWithMeta, type ProjectRow } from "./lib/db" // /api/dashboard round-trip reduction
+import { projectAccessForRow, listFeedbackWithMeta, listSimObservationsPerSim, type ProjectRow } from "./lib/db" // /api/dashboard round-trip reduction
 
 // Per-request context. A project-bound Bearer token (widget token) records its bound project here so
 // resolveProject can constrain it to that project (F5) — without threading state through every route.
@@ -7987,7 +7988,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const limitRaw = Number(url.searchParams.get("limit") || "20")
       const limit = Math.max(1, Math.min(limitRaw, 100))
       const runs = await listSimRuns(projR.id, limit)
-      return json({ runs })
+      // KD-2877: ?slim=1 → per run only the issue count + Sim avatars (the list view), not every Sim's full reactions; the full run is
+      // fetched on demand via GET /api/sims/runs/:id. `projectId` lets the page skip /api/dashboard just to learn the active project.
+      return json({ runs: url.searchParams.get("slim") === "1" ? runs.map(slimSimRun) : runs, projectId: projR.id })
     }
   }
 
@@ -12434,7 +12437,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // Everything below depends only on the resolved project id (+ isAdmin/me), so it runs as ONE
         // parallel wave (each is an indexed query). Only replay/exports need the ticket ids and follow.
         const knownProj = allProjects.find(p => p.id === projectId)
-        const [activeProj, rawMembers, personas, feedbackTicketsRes, activityRows, simObservations, aliasInfo, widgetPing, counts, insights] = await Promise.all([
+        const [activeProj, rawMembers, personas, feedbackTicketsRes, activityRows, simObservations, aliasInfo, widgetPing, counts, insights, simObsPerSim] = await Promise.all([
           // projects / active — REAL projects from the projects table (fallback read if not in the list).
           knownProj ? Promise.resolve(knownProj) : projectById(projectId),
           // members — project roster (project_members), mapped to legacy admin|user for the UI.
@@ -12466,6 +12469,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           latestWidgetPing(projectId),
           dashboardCounts(projectId),
           computeDashboardInsights(projectId),
+          // KD-2875: per-Sim newest observations + true totals for the Sims page cards (the 36-row query above is project-wide, so it
+          // starved any Sim whose reports weren't among the project's newest 36).
+          listSimObservationsPerSim(projectId, 3),
         ])
         const feedbackTickets = feedbackTicketsRes.rows
         const projectName = activeProj?.name || "Default Project"
@@ -12495,6 +12501,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           active: p.active !== false, // WP-S2: false = deactivated (shown greyed out; skipped by every review)
           // "baseline" marks the system-provided Baseline QA Sim (UI shows a System preset chip); null for customer Sims.
           simSource: p.simSource ?? null,
+          // KD-2875: this Sim's TOTAL Sim observations (the card badge / "See N more"), not the length of the capped list below.
+          feedbackCount: simObsPerSim.counts[p.id] ?? 0,
         }))
 
         // saying — "what your Sims are saying" overview feed: only Sim observations, newest-first.
@@ -12536,8 +12544,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // simFeedback — per-Sim observation map for the Sims tab; covers all 100 most recent
         // Sim observations grouped by simId so the Sims page can show each Sim's full history.
         const simFeedback: Record<string, Array<{ id: string; text: string; sentiment: string | null; urlPath: string | null; createdAt: number }>> = {}
-        for (const f of simObservations) {
-          if (!f.simId || !f.observation || !personaById.has(f.simId)) continue
+        // KD-2875: built from the per-Sim query (newest ≤3 per Sim, newest-first) so EVERY Sim with feedback shows its latest — see
+        // listSimObservationsPerSim. (Was: the project's newest 36 observations grouped by Sim.)
+        for (const f of simObsPerSim.rows) {
+          if (!personaById.has(f.simId)) continue
           if (!simFeedback[f.simId]) simFeedback[f.simId] = []
           simFeedback[f.simId].push({ id: f.id, text: f.observation, sentiment: f.sentiment, urlPath: f.urlPath, createdAt: f.createdAt })
         }

@@ -14866,6 +14866,11 @@
       margin-top: 13px
     }
 
+    /* KD-2876: while defining a Sim manually the example path is hidden; this is the way back to it. */
+    .sm-manual-bar {
+      margin: 0 0 10px
+    }
+
     .sm-manual-btn {
       font-size: 12px;
       color: var(--paper-faint);
@@ -23103,6 +23108,7 @@
           function applyViewHeader(v) {
             const hello = $("hello"), lead = $("lead")
             document.body.classList.toggle("view-triage", v === "triage")
+            applyDocTitle(v)
             if (!hello || !lead) return
             if (v && v !== "overview" && VIEW_TITLES[v]) {
               hello.textContent = VIEW_TITLES[v][0]
@@ -23120,6 +23126,21 @@
               : "Create your first Sim to get started."
           }
           window.applyViewHeader = applyViewHeader
+          // Browser-tab title follows the page: "Tickets · Klavity", "Sim Reports · Klavity", … (it used to stay "Dashboard · Klavity"
+          // everywhere — nothing ever updated document.title). A dedicated ticket page shows its own key + title instead
+          // (setTicketDocTitle); this never overrides that while the ticket page is open, so the ~25s poll's render() can't clobber it.
+          function applyDocTitle(v) {
+            if (window.__klavTktPageOpen && window.__klavTktDocTitle) { document.title = window.__klavTktDocTitle; return }
+            const name = (v && v !== "overview" && VIEW_TITLES[v]) ? VIEW_TITLES[v][0] : "Overview"
+            document.title = name + " · Klavity"
+          }
+          function setTicketDocTitle(key, title) {
+            const t = String(title || "").trim()
+            window.__klavTktDocTitle = (key ? key + (t ? " " : "") : "") + (t.length > 70 ? t.slice(0, 69) + "…" : t) + " · Klavity"
+            document.title = window.__klavTktDocTitle
+          }
+          window.applyDocTitle = applyDocTitle
+          window.klavSetTicketDocTitle = setTicketDocTitle
 
           // #658: always-visible sidebar counts. Cheap state→textContent writes so the sidebar nav (via the
           // mirror() MutationObserver) stays live even on a poll that skipped the card whose renderer normally
@@ -24774,8 +24795,11 @@
                 ? "/sim/" + encodeURIComponent(sim.id) + "?project=" + encodeURIComponent(pid)
                 : "/sim/" + encodeURIComponent(sim.id)
               const obs = bySimId.get(sim.id) || []
-              const badge = obs.length
-                ? obs.length + " observation" + (obs.length === 1 ? "" : "s")
+              // KD-2875: the server ships only each Sim's newest few observations, so the count comes from the Sim's TOTAL
+              // (sim.feedbackCount), never the length of that capped list. Older cached payloads fall back to the list length.
+              const obsTotal = Math.max(obs.length, Number(sim.feedbackCount) || 0)
+              const badge = obsTotal
+                ? obsTotal + " observation" + (obsTotal === 1 ? "" : "s")
                 : "no feedback yet"
               // Show only the latest (first) observation inline; if more exist, link to Triage
               const obHtml = obs.length
@@ -24786,8 +24810,8 @@
                   const meta = []
                   if (o.urlPath) meta.push(esc(o.urlPath))
                   if (o.createdAt) meta.push(ago(o.createdAt))
-                  const moreLink = obs.length > 1
-                    ? `<a class="sf-triage" href="#triage" onclick="setView('triage')">See ${obs.length - 1} more →</a>`
+                  const moreLink = obsTotal > 1
+                    ? `<a class="sf-triage" href="#triage" onclick="setView('triage')">See ${obsTotal - 1} more →</a>`
                     : `<a class="sf-triage" href="#triage" onclick="setView('triage')">View in Sim Reports →</a>`
                   meta.push(moreLink)
                   return `<div class="sf-obs"><div class="sf-ob">
@@ -28922,7 +28946,14 @@
             const shown = tickets.slice(0, FEED_VISIBLE)
             shown.forEach(t => {
               const ticketId = t.id
-              const sub = [t.simName ? ("by " + t.simName) : "", t.urlPath ? esc(t.urlPath) : "", ago(t.createdAt)].filter(Boolean).join(" · ")
+              // Sub-line: ticket ID · project · when (exact date/time on hover) · reporting Sim. It used to show the page path the report
+              // came from (e.g. "/dashboard"), which read as noise and hid the ticket's own ID. The path is still on the ticket itself.
+              const projName = (state.active && state.active.name) || ""
+              let when = ago(t.createdAt)
+              if (t.createdAt) {
+                try { when = `<span title="${esc(new Date(t.createdAt).toLocaleString())}">${esc(when)}</span>` } catch (e) { }
+              }
+              const sub = [esc(ticketKeyLabel(t)), projName ? esc(projName) : "", when, t.simName ? ("by " + esc(t.simName)) : ""].filter(Boolean).join(" · ")
 
               const rowEl = document.createElement("div")
               rowEl.className = "row-tkt " + sevRailClass(t.priority)
@@ -29292,6 +29323,8 @@
               // KLA-563 dedicated page: breadcrumb (Project › Tickets › KEY) + header row
               // (type · key · status pill · ← Back to board · Copy link · prev/next). Esc = back.
               single.classList.remove("tkt-panel"); single.classList.add("tkt-page")
+              // Browser tab: "KD-2873 <ticket title> · Klavity" while this ticket page is open (restored on close).
+              try { if (typeof window.klavSetTicketDocTitle === "function") window.klavSetTicketDocTitle(key, t.title) } catch (e) { }
               single.setAttribute("role", "region"); single.removeAttribute("aria-modal")
               single.setAttribute("aria-label", "Ticket " + key + (t.title ? " — " + t.title : ""))
               single.setAttribute("tabindex", "-1")
@@ -29607,6 +29640,8 @@
             // KLA-563: leaving the dedicated page — clear the flag FIRST so renderTicketsView() re-mounts the
             // board (with the in-memory filters preserved — exact board state), then drop the page body class.
             window.__klavTktPageOpen = false
+            window.__klavTktDocTitle = null
+            try { if (typeof window.applyDocTitle === "function") window.applyDocTitle(document.body.getAttribute("data-view") || "overview") } catch (e) { }   // tab title back to the view
             document.body.classList.remove("tkt-page-open")
             document.body.classList.remove("tkt-panel-open")   // slide the panel out
             if (single) { single.classList.add("hide"); single.classList.remove("tkt-panel"); single.classList.remove("tkt-page"); single.innerHTML = ""; single.removeAttribute("role"); single.removeAttribute("aria-modal"); single.removeAttribute("aria-label") }
@@ -35833,6 +35868,9 @@
             manually</button>
         </div>
         </div>
+        <div class="sm-manual-bar" id="smManualBar" hidden>
+          <button type="button" class="btn btn-ghost btn-sm" id="smManualBack">← Use an example instead</button>
+        </div>
         <div id="smNameStep" hidden>
           <div class="sm-desc-box"><div class="sm-desc-lbl">Sim description</div><div class="sm-desc-txt" id="smDescTxt"></div></div>
           <label class="sm-name-lbl" for="smName">Sim name</label>
@@ -36157,6 +36195,8 @@
             // WP-S3a: Describe is two steps — the description, then "Name your Sim". Create stays disabled until a name is typed.
             function showBriefStep(step) {
               const onName = step === "name";
+              // KD-2876: example/brief and manual Sim definition are mutually exclusive — moving between steps always leaves manual mode.
+              $("smManualBar").hidden = true;
               $("smBriefStep").hidden = onName; $("smNameStep").hidden = !onName;
               const hd = $("simHd"), sub = $("simSub"), card = ov;
               card.classList.toggle("sm-modal-namestep", onName);
@@ -36167,7 +36207,7 @@
               } else if (hd.dataset.orig !== undefined) {
                 hd.textContent = hd.dataset.orig; sub.innerHTML = sub.dataset.orig; delete hd.dataset.orig; delete sub.dataset.orig;
               }
-              if (!onName) out.innerHTML = "";
+              out.innerHTML = "";   // KD-2876: also on the name step — a manual card must never sit under "Name your Sim"
               setTimeout(function () { const f = $(onName ? "smName" : "smBrief"); if (f && ov.classList.contains("show")) f.focus(); }, 30);
             }
             function goToName() {
@@ -36542,6 +36582,7 @@
               ov.querySelectorAll(".sm-pane").forEach(p => p.classList.toggle("on", p.dataset.pane === b.dataset.pane));
               // KLAVITYKLA-301: keep lastSimSource in sync with the active tab
               lastSimSource = PANE_TO_SOURCE[b.dataset.pane] || "describe";
+              if (!$("smManualBar").hidden) showBriefStep("brief");   // KD-2876: leave manual mode so the example step is back when you return
               out.innerHTML = ""; hideSuccessPanel();
               // #643: the preset tab has no input to fire — auto-load the starter cast on select.
               if (b.dataset.pane === "preset") genPresets();
@@ -36553,6 +36594,7 @@
             $("smBriefGo").onclick = goToName;
             $("smCreateGo").onclick = () => withBusy($("smCreateGo"), "Imagining…", genBrief);
             $("smNameBack").onclick = () => showBriefStep("brief");
+            $("smManualBack").onclick = () => showBriefStep("brief");   // KD-2876: manual → back to the example/brief step
             $("smName").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); withBusy($("smCreateGo"), "Imagining…", genBrief); } });
             $("smUrlGo").onclick = () => withBusy($("smUrlGo"), "Reading…", genSite);
             $("smTxGo").onclick = () => withBusy($("smTxGo"), "Extracting…", genCall);
@@ -36560,6 +36602,10 @@
       if (smManualBtn) {
         smManualBtn.onclick = function () {
           clearFieldErr();
+          // KD-2876: manual definition and the example/brief path are mutually exclusive — hide the brief input + example chips (and
+          // forget any half-typed brief) while the manual Name / Description fields are open; "← Use an example instead" brings them back.
+          $("smBrief").value = "";
+          $("smBriefStep").hidden = true; $("smManualBar").hidden = false;
           const customSim = {
             name: "New Sim",
             role: "User",
@@ -36657,7 +36703,7 @@
               $("simHd").textContent = first ? "Bring your first Sim to life" : "Add a Sim";
               // Prefill the site URL from the project when known — one less hop to a first Sim reaction.
               hideDiscard(); clearFieldErr();
-              out.innerHTML = ""; out.style.display = ""; $("smBrief").value = ""; $("smName").value = ""; $("smBriefStep").hidden = false; $("smNameStep").hidden = true; $("smCreateGo").disabled = false; ov.classList.remove("sm-modal-namestep"); clearCreatedView(); if ($("simHd").dataset.orig !== undefined) { $("simSub").innerHTML = $("simSub").dataset.orig; delete $("simHd").dataset.orig; delete $("simSub").dataset.orig; } $("smUrl").value = (state && state.active && state.active.siteUrl) || ""; $("smTx").value = ""; $("smTx").hidden = true; $("smDrop").classList.remove("has-file", "over"); $("smDropT").textContent = "Drop a transcript file"; $("smDropS").textContent = "TXT, VTT or SRT";
+              out.innerHTML = ""; out.style.display = ""; $("smBrief").value = ""; $("smName").value = ""; $("smBriefStep").hidden = false; $("smManualBar").hidden = true; $("smNameStep").hidden = true; $("smCreateGo").disabled = false; ov.classList.remove("sm-modal-namestep"); clearCreatedView(); if ($("simHd").dataset.orig !== undefined) { $("simSub").innerHTML = $("simSub").dataset.orig; delete $("simHd").dataset.orig; delete $("simSub").dataset.orig; } $("smUrl").value = (state && state.active && state.active.siteUrl) || ""; $("smTx").value = ""; $("smTx").hidden = true; $("smDrop").classList.remove("has-file", "over"); $("smDropT").textContent = "Drop a transcript file"; $("smDropS").textContent = "TXT, VTT or SRT";
               hideSuccessPanel();
               selectPane(mode);
               ov.classList.add("show"); document.body.style.overflow = "hidden";
