@@ -938,7 +938,7 @@ function simMenuRow(s: CardSim): HTMLElement {
   const meta = document.createElement('div'); meta.className = 'ksl-sm-meta'
   const nm = document.createElement('div'); nm.className = 'ksl-sm-name'; nm.textContent = s.name
   const st = document.createElement('div'); st.className = 'ksl-sm-st'
-  st.textContent = !s.active ? 'Deactivated' : s.running ? 'Running' : 'Stopped'
+  st.textContent = !s.active ? 'Deactivated' : s.running ? 'Running' : 'Not running'   // KD-2869: not "Stopped" — it may never have been started
   st.dataset.kind = 'run'
   meta.append(nm, st)
   if (!s.active) {
@@ -1033,7 +1033,7 @@ function renderSimMenu(loading = false): void {
       for (const s of sims) list.appendChild(simMenuRow(s))
     }
     group('Running', running)
-    group('Stopped', stopped)
+    group('Not running', stopped)
     group('Deactivated', off, 'Activate these on the Sims tab to run them here.')
   }
   m.appendChild(list)
