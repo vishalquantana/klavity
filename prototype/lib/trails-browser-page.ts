@@ -858,6 +858,7 @@ class PuppeteerPage implements BrowserPage {
   async selectCheck(selector: string, value: string) { return await this.page.evaluate(selectCheckBody, { selector, value }) }
   async krefFor(selector: string) { return await this.page.evaluate(pwSelectorKrefBody, { selector, id: freshKref() }) }
   async stableSelector(selector: string) { try { return await this.page.$eval(selector, stableSelectorBody) } catch { return null } }
+  async click(selector: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }); await this.page.click(selector) }
   async fill(selector: string, value: string, timeoutMs: number, sensitive = false) {
     const el = await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs })
     await el.click({ clickCount: 3 }).catch(() => {}) // select existing text so type() replaces it (mirrors fill)
