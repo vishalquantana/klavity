@@ -5405,7 +5405,10 @@ export async function dashboardCounts(projectId: string): Promise<{ feedback: nu
     // KLA-780: exclude merged-away rows so a fold doesn't inflate the feedback/tickets counts (its
     // recurrence was already summed onto the survivor).
     q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL"),
-    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND plane_issue_key IS NOT NULL AND merged_into IS NULL"),
+    // "Tickets filed" (overview card) = every ticket on the Tickets board — the same rule as listTicketsPaginated: not merged away,
+    // and not a Sim report still awaiting triage. It used to count only rows with a legacy Plane issue key, which is 0 for every
+    // project since Klavity became the tracker (Plane retired), so the card always read 0.
+    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL AND NOT (status = 'new' AND sim_id IS NOT NULL)"),
     q("SELECT COUNT(*) AS n FROM activity_events WHERE project_id=?"),
     // KD-265: the sidebar "Tickets" badge = the tickets waiting on someone: To Do ('new'), Open and In Progress. Anything further
     // along (blocked, ready for deployment, deployed, QA review, done) or dismissed is not counted; merged-away rows never are.
