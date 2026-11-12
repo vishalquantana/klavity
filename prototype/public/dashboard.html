@@ -38843,13 +38843,26 @@
             }
             // KLA-150: author live-view SSE management
             var _ntSse = null; var _ntSseSid = null;
+            // KD-2255: the 2s poll rebuilds the progress box, so keep the last frame + phase here and render
+            // from them (otherwise every poll reset the view to "Waiting for the live browser…").
+            var _ntLiveSid = null, _ntLastFrame = "", _ntVerifying = false
+            function liveViewHtml(sid) {
+              if (_ntLiveSid !== sid) { _ntLiveSid = sid; _ntLastFrame = ""; _ntVerifying = false }
+              var msg = _ntVerifying ? "All steps recorded — replaying them to verify the AutoSim…" : "Waiting for the live browser…"
+              return '<div class="nt-live-view"><div class="nt-live-ph" id="ntLivePh"' + (_ntLastFrame && !_ntVerifying ? ' style="display:none"' : '') + '><div class="nt-live-spin"></div><div>' + msg + '</div></div>'
+                + '<img id="ntLiveFrame" alt="Live view"' + (_ntLastFrame && !_ntVerifying ? ' src="' + esc(_ntLastFrame) + '"' : ' style="display:none"') + ' /></div>'
+            }
+            function paintLiveView() { var v = document.querySelector(".nt-live-view"); if (v && _ntLiveSid) v.outerHTML = liveViewHtml(_ntLiveSid) }
             function startAuthorLive(sid) {
               if (_ntSse && _ntSseSid === sid) return; stopAuthorLive()
               _ntSseSid = sid
               try {
                 _ntSse = new EventSource("/api/trails/author/" + encodeURIComponent(sid) + "/live" + projQ())
                 _ntSse.addEventListener("frame", function (e) {
-                  try { var d = JSON.parse(e.data); if (d.dataUrl) { var el = document.getElementById("ntLiveFrame"); if (el) { el.src = d.dataUrl; el.style.display = ""; var ph = document.getElementById("ntLivePh"); if (ph) ph.style.display = "none" } } } catch { }
+                  try { var d = JSON.parse(e.data); if (d.dataUrl && _ntLiveSid === sid) { _ntLastFrame = d.dataUrl; paintLiveView() } } catch { }
+                })
+                _ntSse.addEventListener("status", function (e) {
+                  try { var d = JSON.parse(e.data); if (d.message === "verifying" && _ntLiveSid === sid) { _ntVerifying = true; paintLiveView() } } catch { }
                 })
                 _ntSse.addEventListener("end", stopAuthorLive)
                 _ntSse.onerror = function () { stopAuthorLive() }
@@ -38895,8 +38908,8 @@
                   var ntLimit = s.limitMs ? fmtSec(Math.round(s.limitMs / 1000)) : "";
                   var ntTimeStr = ntElapsed ? (ntElapsed + (ntLimit ? " / " + ntLimit + " max" : "")) : "";
                   box.innerHTML = html
-                    + '<div class="nt-live-view"><div class="nt-live-ph" id="ntLivePh"><div class="nt-live-spin"></div><div>Waiting for the live browser…</div></div><img id="ntLiveFrame" alt="Live view" style="display:none" /></div>'
-                    + '<div class="nt-live">AutoSim is driving…' + (ntTimeStr ? ' <span class="muted" style="font-size:11px">(' + esc(ntTimeStr) + ')</span>' : '') + '</div>'
+                    + liveViewHtml(sessionId)
+                    + '<div class="nt-live">' + (_ntVerifying ? 'AutoSim is verifying…' : 'AutoSim is driving…') + (ntTimeStr ? ' <span class="muted" style="font-size:11px">(' + esc(ntTimeStr) + ')</span>' : '') + '</div>'
                     + '<div style="margin-top:6px"><button class="btn btn-ghost" id="ntCancelRun" style="font-size:11px;padding:3px 10px"' + (ntCancelling ? ' disabled>Cancelling…' : '>Cancel') + '</button></div>'
                   startAuthorLive(sessionId)
                   var ntCb = document.getElementById("ntCancelRun")
@@ -39052,8 +39065,8 @@
                   var wzLimit = s.limitMs ? fmtSec(Math.round(s.limitMs / 1000)) : "";
                   var wzTimeStr = wzElapsed ? (wzElapsed + (wzLimit ? " / " + wzLimit + " max" : "")) : "";
                   box.innerHTML = html
-                    + '<div class="nt-live-view"><div class="nt-live-ph" id="ntLivePh"><div class="nt-live-spin"></div><div>Waiting for the live browser…</div></div><img id="ntLiveFrame" alt="Live view" style="display:none" /></div>'
-                    + '<div class="nt-live">AutoSim is driving…' + (wzTimeStr ? ' <span class="muted" style="font-size:11px">(' + esc(wzTimeStr) + ')</span>' : '') + '</div>'
+                    + liveViewHtml(sessionId)
+                    + '<div class="nt-live">' + (_ntVerifying ? 'AutoSim is verifying…' : 'AutoSim is driving…') + (wzTimeStr ? ' <span class="muted" style="font-size:11px">(' + esc(wzTimeStr) + ')</span>' : '') + '</div>'
                     + '<div style="margin-top:6px"><button class="btn btn-ghost" id="wizCancelRun" style="font-size:11px;padding:3px 10px">Cancel</button></div>'
                   startAuthorLive(sessionId)
                   var wzCb = document.getElementById("wizCancelRun"); if (wzCb) { wzCb.addEventListener("click", async function () { wzCb.disabled = true; wzCb.textContent = "Cancelling…"; await fetch("/api/trails/author/" + encodeURIComponent(sessionId) + "/cancel" + projQ(), { method: "POST" }) }) }

@@ -12,7 +12,7 @@ import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { getTestAccountByName } from "./test-accounts"
 import { sha256hex } from "./crypto"
 import { withWalkSlot, withAuthorSlot, CHROMIUM_PROD_ARGS, setCurrentAuthorSessionId, getCurrentAuthorAbortSignal, WalkBusyError } from "./trails-browser"
-import { startLiveWatchRun, publishLiveWatchFrame, endLiveWatchRun } from "./trails-live-watch"
+import { startLiveWatchRun, publishLiveWatchFrame, publishLiveWatchStatus, endLiveWatchRun } from "./trails-live-watch"
 import { acquireBrowser, type BrowserHandle } from "./trails-browser-page"
 import { db, projectById, touchAuthorHeartbeat } from "./db"
 import { stampTrailFromAuthorSession } from "./autosim-projects"
@@ -310,6 +310,8 @@ export async function authorTrail(
      * step screenshot so the UI can show what the AI is seeing in near-real-time.
      */
     onLiveFrame?: (dataUrl: string) => void
+    /** KD-2255: the drive is done and the verification replay is starting (no more live frames). */
+    onVerifying?: () => void
     /**
      * KLA-179: called when the driver encounters an auth gate, before suspending.
      * Used to fire a throttled founder-style email + Slack alert.
@@ -1315,6 +1317,7 @@ export async function authorTrail(
     // Verification Walk: zero-LLM rehearsal; draft status suppresses findings (Task 4), but pass
     // the flag explicitly too - a Verification Walk never files regardless of trail status.
     const vision = opts.verificationVision === false ? undefined : (opts.verificationVision ?? configuredVisionResolver())
+    try { opts.onVerifying?.() } catch {}
     let v: Awaited<ReturnType<typeof walkTrail>>
     try {
       v = await (opts.verificationWalk ?? walkTrail)(projectId, trailId, {
@@ -1622,6 +1625,7 @@ export async function runAuthorNow(
         abortSignal: getCurrentAuthorAbortSignal() ?? undefined,
         // KLA-150: publish each step screenshot as a live screencast frame.
         onLiveFrame: (dataUrl) => { try { publishLiveWatchFrame(projectId, sessionId, dataUrl) } catch {} },
+        onVerifying: () => { try { publishLiveWatchStatus(projectId, sessionId, "verifying") } catch {} },
         // KLA-179: the driver hit an auth gate with no verified auth method - the outcome will be
         // `needs_auth` (paused, resumable). Fire the throttled founder-style "give it a key" alert.
         // Best-effort: a notification failure must never affect the run or its persisted status.
