@@ -303,8 +303,21 @@ const PANEL_CSS = `
   .ksl-root button { font-family: inherit; }
 
   /* ═══════════════ launcher pill ═══════════════ */
-  .ksl-launcher {
+  /* KD-2870: the group IS the pill (one control). Inside it, two sibling buttons: the label (opens the panel) and, on the
+     right, a red "Stop" (stops every Sim). Siblings — never a button nested in a button. */
+  .ksl-launch-group {
     position: fixed; right: 20px; bottom: 20px;
+    display: flex; align-items: center; gap: 0;
+    background: linear-gradient(168deg, var(--surface-2), var(--surface));
+    border: 1px solid var(--accent-glow); border-radius: 999px;
+    box-shadow: 0 18px 46px -14px rgba(0,0,0,.7), 0 0 0 4px rgba(139,92,246,.1);
+    transition: transform .15s var(--ease), border-color .15s;
+    pointer-events: auto;
+  }
+  .ksl-launch-group[hidden] { display: none; }
+  .ksl-launch-group:hover { transform: translateY(-2px); border-color: var(--accent-2); }
+  .ksl-launcher {
+    position: relative;
     display: inline-flex; align-items: center; gap: 0;
     border: 0; cursor: pointer; background: transparent; padding: 0;
     pointer-events: auto;
@@ -312,16 +325,11 @@ const PANEL_CSS = `
   .ksl-launcher[hidden] { display: none; }
   .ksl-pill {
     display: flex; align-items: center; gap: 10px;
-    background: linear-gradient(168deg, var(--surface-2), var(--surface));
-    border: 1px solid var(--accent-glow); border-radius: 999px;
-    padding: 8px 16px 8px 10px;
-    box-shadow: 0 18px 46px -14px rgba(0,0,0,.7), 0 0 0 4px rgba(139,92,246,.1);
-    transition: transform .15s var(--ease), border-color .15s;
+    padding: 8px 14px 8px 10px; border-radius: 999px;
   }
-  .ksl-launcher:hover .ksl-pill { transform: translateY(-2px); border-color: var(--accent-2); }
   .ksl-launcher:active .ksl-pill { transform: scale(.97); }
   .ksl-launcher:focus-visible { outline: none; }
-  .ksl-launcher:focus-visible .ksl-pill { border-color: var(--accent-2); box-shadow: 0 18px 46px -14px rgba(0,0,0,.7), 0 0 0 3px var(--accent-2); }
+  .ksl-launcher:focus-visible .ksl-pill { box-shadow: 0 0 0 2px var(--accent-2); }
   .ksl-pill-txt { font-size: 13px; font-weight: 600; color: var(--fg); white-space: nowrap; }
   .ksl-pill-txt b { color: var(--accent-3); }
   .ksl-pill-avatars { display: flex; }
@@ -334,9 +342,20 @@ const PANEL_CSS = `
     box-shadow: 0 4px 10px rgba(0,0,0,.5);
   }
   .ksl-pill-badge[hidden] { display: none; }
+  .ksl-stop-all {
+    position: relative; display: inline-flex; align-items: center; gap: 6px;
+    margin: 4px 6px 4px 12px; padding: 5px 12px; border: 0; border-radius: 999px;
+    background: rgba(233,79,55,.18); color: #ff9aa8;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: background .15s, color .15s, transform .15s var(--ease);
+  }
+  .ksl-stop-all::before { content: ''; position: absolute; left: -7px; top: 50%; width: 1px; height: 18px; margin-top: -9px; background: var(--accent-glow); }
+  .ksl-stop-all:hover { background: #d93a4f; color: #fff; }
+  .ksl-stop-all:active { transform: scale(.96); }
+  .ksl-stop-all:focus-visible { outline: 2px solid #ff9aa8; outline-offset: 2px; }
 
   /* reviewing shimmer inside the launcher */
-  .ksl-launcher.is-reviewing .ksl-pill { border-color: var(--accent-2); }
+  .ksl-launch-group:has(.ksl-launcher.is-reviewing) { border-color: var(--accent-2); }
   .ksl-launcher.is-reviewing .ksl-pill-txt::after {
     content: ''; display: inline-block; width: 7px; height: 7px; margin-left: 7px;
     border-radius: 50%; background: var(--accent-2); vertical-align: middle;
@@ -540,7 +559,7 @@ const PANEL_CSS = `
 
   @media (max-width:480px) {
     .ksl-panel { right: 12px; bottom: 12px; width: calc(100vw - 24px); }
-    .ksl-launcher { right: 12px; bottom: 12px; }
+    .ksl-launch-group { right: 12px; bottom: 12px; }
   }
   @media (prefers-reduced-motion:reduce) {
     .ksl-panel.is-open,.ksl-row,.ksl-shimmer,.ksl-launcher.is-reviewing .ksl-pill-txt::after,.ksl-status-dot { animation: none !important; }
@@ -1154,7 +1173,20 @@ function deploy(
   pill.append(launcherAvatarsEl, launcherTxtEl)
   launcherBadgeEl = document.createElement('span'); launcherBadgeEl.className = 'ksl-pill-badge'; launcherBadgeEl.hidden = true
   launcherEl.append(pill, launcherBadgeEl)
-  root.appendChild(launcherEl)
+  const dock = document.createElement('div'); dock.className = 'ksl-launch-group'
+  dock.appendChild(launcherEl)
+  if (onCloseHandler) {
+    // KD-2870: an on-screen way to stop every Sim without opening the panel or the right-click menu. Same action as
+    // the panel's × ("Close and stop all Sims"): the host owns teardown, so nothing is duplicated here.
+    const stopAll = document.createElement('button')
+    stopAll.type = 'button'; stopAll.className = 'ksl-stop-all'
+    stopAll.title = 'Stop all Sims'
+    stopAll.setAttribute('aria-label', 'Stop all Sims')
+    stopAll.textContent = 'Stop'   // label only — the red chip already says it
+    stopAll.addEventListener('click', (e) => { e.stopPropagation(); try { onCloseHandler?.() } catch { /* the host owns teardown */ } })
+    dock.appendChild(stopAll)
+  }
+  root.appendChild(dock)
 
   // launcher avatar stack (up to 3) — the RUNNING Sims
   runningIds = new Set(visible.slice(0, 8).map(s => s.id))
@@ -1289,6 +1321,7 @@ function openPanel(): void {
   panelOpen = true
   panelEl.classList.add('is-open')
   launcherEl.hidden = true
+  if (launcherEl.parentElement) launcherEl.parentElement.hidden = true   // KD-2870: the whole pill (label + Stop)
   renderList()
 }
 
@@ -1297,6 +1330,7 @@ function closePanel(): void {
   panelOpen = false
   panelEl.classList.remove('is-open')
   launcherEl.hidden = false
+  if (launcherEl.parentElement) launcherEl.parentElement.hidden = false
   syncSurfaces()
 }
 
