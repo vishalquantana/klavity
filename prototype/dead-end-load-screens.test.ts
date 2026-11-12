@@ -26,10 +26,11 @@ test("sim-runs load() failure paths route through a Retry affordance (renderLoad
   expect(helper).toContain('id="loadRetry"')
   expect(helper).toContain("Retry")
   expect(helper).toContain("load()")
-  // Both the !r.ok and the catch path now go through it (no bare textContent dead-ends).
-  const load = fnBody(html, "async function load()", 900)
-  expect(load).toContain('renderLoadError("Error loading project.")')
-  expect(load).toContain('renderLoadError("Network error loading page.")')
+  // Both the !r.ok and the catch path go through it (no bare textContent dead-ends). KD-2877: load() now just fires the parallel requests and
+  // the runs request (fetchRuns) owns the failure paths — including a timeout, so a stalled request can't spin forever.
+  const fetchRuns = fnBody(html, "async function fetchRuns(", 2200)
+  expect(fetchRuns).toContain('renderLoadError("Error loading Sim runs.")')
+  expect(fetchRuns).toContain('renderLoadError(e && e.name === "AbortError" ? "This is taking longer than expected." : "Network error loading page.")')
 })
 
 // ── Finding 2 — trails.html: loadData() null → terminal "Couldn't load AutoSims." ───────────────────────

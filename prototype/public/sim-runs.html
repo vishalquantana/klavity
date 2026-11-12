@@ -687,42 +687,36 @@ function renderLoadError(msg) {
   if (b) b.onclick = function () { $("lead").textContent = "Loading…"; load(); };
 }
 
+// KD-2877: every request here is abortable. A stalled request used to leave "Loading Sim Runs…" on screen forever; it now times
+// out into the existing error + Retry view.
+const LOAD_TIMEOUT_MS = 20000;
+function timedFetch(url, ms) {
+  var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+  var timer = ctrl ? setTimeout(function () { try { ctrl.abort() } catch (e) { } }, ms || LOAD_TIMEOUT_MS) : null;
+  return fetch(url, { credentials: "include", signal: ctrl ? ctrl.signal : undefined }).then(
+    function (r) { if (timer) clearTimeout(timer); return r },
+    function (e) { if (timer) clearTimeout(timer); throw e });
+}
+
+// KD-2877: the page used to fetch the whole /api/dashboard (the heaviest call) first, only for the email, the project list and the
+// active project, and request the runs after it — one slow call after another. Now the runs (which resolve the project server-side and
+// return its id), the light project list and the user are requested together, and the list paints as soon as the runs arrive.
 async function load() {
   const pid = projParam();
-  try {
-    const r = await fetch("/api/dashboard" + (pid ? "?project=" + encodeURIComponent(pid) : ""));
-    if (r.status === 401) { location.href = "/login"; return; }
-    if (!r.ok) {
-      renderLoadError("Error loading project.");
-      return;
-    }
-    const d = await r.json();
-    state.email = d.email;
-    state.projects = d.projects || [];
-    state.active = d.active;
-    setSimsBack((state.active && state.active.id) || projParam());
-
-    $("who").textContent = state.email || "";
-
-    renderSwitcher();
-
-    if (!state.active) {
-      $("runsList").innerHTML = '<div class="empty-state"><p>No active project found.</p></div>';
-      renderDetails(null);
-      return;
-    }
-
-    await fetchRuns(state.active.id);
-
-  } catch (e) {
-    renderLoadError("Network error loading page.");
-  }
+  setSimsBack(pid);
+  timedFetch("/api/projects").then(function (r) { return r.ok ? r.json() : null }).then(function (d) {
+    if (d && Array.isArray(d.projects)) { state.projects = d.projects; renderSwitcher(); }
+  }).catch(function () { /* the switcher stays as it is; the runs are what matter */ });
+  timedFetch("/api/me").then(function (r) { return r.ok ? r.json() : null }).then(function (d) {
+    if (d && d.email) { state.email = d.email; $("who").textContent = d.email; }
+  }).catch(function () { });
+  await fetchRuns(pid);
 }
 
 function renderSwitcher() {
   const sel = $("projSwitch");
   const projects = state.projects || [];
-  const activeId = state.active ? state.active.id : null;
+  const activeId = state.active ? state.active.id : projParam();
   let opts = projects.map(p => `<option value="${esc(p.id)}"${p.id===activeId?" selected":""}>${esc(p.name)}</option>`).join("");
   sel.innerHTML = opts || `<option>—</option>`;
   sel.disabled = false;
@@ -735,18 +729,48 @@ function renderSwitcher() {
 
 async function fetchRuns(projectId) {
   try {
-    const r = await fetch("/api/sims/runs?project=" + encodeURIComponent(projectId) + "&limit=20");
+    // slim=1: the list only needs an issue count + Sim avatars per run; a run's full reactions load when it is selected.
+    const r = await timedFetch("/api/sims/runs?" + (projectId ? "project=" + encodeURIComponent(projectId) + "&" : "") + "limit=20&slim=1");
     if (r.status === 401) { location.href = "/login"; return; }
+    if (r.status === 404) {
+      $("runsList").innerHTML = '<div class="empty-state"><p>No active project found.</p></div>';
+      renderDetails(null);
+      return;
+    }
     if (!r.ok) {
-      $("runsList").innerHTML = '<div class="empty-state"><p>Error fetching runs.</p></div>';
+      renderLoadError("Error loading Sim runs.");
       return;
     }
     const d = await r.json();
     state.runs = d.runs || [];
+    if (d.projectId) { state.active = { id: d.projectId }; setSimsBack(d.projectId); renderSwitcher(); }
     renderRuns();
   } catch (e) {
-    $("runsList").innerHTML = '<div class="empty-state"><p>Network error fetching runs.</p></div>';
+    renderLoadError(e && e.name === "AbortError" ? "This is taking longer than expected." : "Network error loading page.");
   }
+}
+
+// KD-2877: the list carries slim runs; the full run (every Sim's reactions) is fetched when one is selected, then cached.
+const fullRuns = {};
+async function fetchFullRun(id) {
+  try {
+    const r = await timedFetch("/api/sims/runs/" + encodeURIComponent(id));
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d.run || null;
+  } catch (e) { return null; }
+}
+function showRun(run) {
+  if (!run || !run.slim || run.status === "error") { renderDetails(run); return; }   // an error run has everything it shows in the slim row
+  if (fullRuns[run.id]) { renderDetails(fullRuns[run.id]); return; }
+  $("detailsPane").innerHTML = '<div class="details-card"><div class="empty-state"><p>Loading run…</p></div></div>';
+  fetchFullRun(run.id).then(function (full) {
+    if (state.selectedRunId !== run.id) return;   // the user moved on
+    if (full) { fullRuns[run.id] = full; renderDetails(full); return; }
+    $("detailsPane").innerHTML = '<div class="details-card"><div class="empty-state"><p>Couldn’t load this run.</p>'
+      + '<button class="run-rerun-btn" type="button" id="runRetry">Retry</button></div></div>';
+    const b = $("runRetry"); if (b) b.onclick = function () { showRun(run); };
+  });
 }
 
 function renderRuns() {
@@ -766,7 +790,8 @@ function renderRuns() {
     card.className = "run-card" + (state.selectedRunId === run.id ? " selected" : "");
 
     let bugCount = 0;
-    if (run.reactions) {
+    if (run.slim) bugCount = run.issueCount || 0;
+    else if (run.reactions) {
       run.reactions.forEach(rev => {
         if (rev.observations) {
           rev.observations.forEach(o => {
@@ -780,8 +805,9 @@ function renderRuns() {
     const truncatedUrl = run.url.length > 55 ? run.url.substring(0, 55) + "..." : run.url;
 
     let simAvatarsHtml = "";
-    if (run.reactions) {
-      run.reactions.forEach(rev => {
+    const avatarSims = run.slim ? (run.sims || []) : (run.reactions || []);
+    if (avatarSims.length) {
+      avatarSims.forEach(rev => {
         const bg = rev.accent || "#8a8076";
         const init = rev.initials || rev.simName.slice(0, 2).toUpperCase();
         simAvatarsHtml += `<span class="sim-avatar" style="background: ${esc(bg)}" title="${esc(rev.simName)}">${esc(init)}</span>`;
@@ -818,7 +844,7 @@ function renderRuns() {
     selectRun(pre ? pre.id : state.runs[0].id);
   } else {
     const activeRun = state.runs.find(r => r.id === state.selectedRunId);
-    renderDetails(activeRun || null);
+    showRun(activeRun || null);
   }
 }
 
@@ -832,7 +858,7 @@ function selectRun(runId) {
   });
 
   const activeRun = state.runs.find(r => r.id === runId);
-  renderDetails(activeRun || null);
+  showRun(activeRun || null);
 }
 
 function renderDetails(run) {
