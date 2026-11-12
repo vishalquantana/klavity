@@ -22,18 +22,25 @@ beforeAll(async () => {
 // ── Finding 1: Plane tracker writeback busts the cached ticket count ──────────────────────────────
 test("Finding 1: updateFeedbackTracker invalidates the cached dashboard ticket count", async () => {
   const pid = "proj_tracker_" + Math.random().toString(36).slice(2)
-  const fid = await insertFeedback({ projectId: pid, observation: "no ticket yet", actorEmail: "u@x.io" })
+  const fid = await insertFeedback({ projectId: pid, observation: "first ticket", actorEmail: "u@x.io" })
+  await db!.execute({ sql: "UPDATE feedback SET status='open' WHERE id=?", args: [fid] })
+  invalidateDashboardCache(pid)
 
-  // Prime the cache: no plane_issue_key yet → tickets = 0.
+  // Prime the cache: one ticket. ("Tickets filed" now counts board tickets, not plane_issue_key rows.)
   const before = await dashboardCounts(pid)
-  expect(before.tickets).toBe(0)
+  expect(before.tickets).toBe(1)
 
-  // Write the tracker key (this is the mutation that previously did NOT invalidate).
+  // A second ticket written with raw SQL — this bypasses every invalidation hook, so the cached 1 stays put…
+  await db!.execute({
+    sql: "INSERT INTO feedback (id, project_id, observation, actor_email, status, created_at) VALUES (?,?,?,?,?,?)",
+    args: ["fb_raw_" + Math.random().toString(36).slice(2), pid, "raw", "u@x.io", "open", Date.now()],
+  })
+  expect((await dashboardCounts(pid)).tickets).toBe(1)
+
+  // …until the tracker writeback (the mutation that previously did NOT invalidate) busts the cache.
   await updateFeedbackTracker(fid, "KEY-1", "https://tracker/KEY-1")
-
-  // Without the fix the cached 0 would persist for the whole TTL; with it, the count reflects the write.
   const after = await dashboardCounts(pid)
-  expect(after.tickets).toBe(1)
+  expect(after.tickets).toBe(2)
 })
 
 // ── Finding 2a: merge deletes a row → counts refresh at the mutation boundary ──────────────────────
