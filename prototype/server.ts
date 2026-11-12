@@ -11220,6 +11220,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
       // /api/autosim-projects/:id/test-cases[/:tcid[/trails/:trailId]]
       if (seg[1] === "test-cases" && seg.length <= 6) {
+        // POST .../test-cases/:tcid/script — import a script exported by Export script (any Klavity
+        // server) as this test case's AutoSim. Body: { script: "<file text>" }. Replaces the current one.
+        // Handled before the create/update validation below, which requires name/start_url on POST.
+        if (seg.length === 4 && seg[3] === "script" && req.method === "POST") {
+          const tcI = await asp.getTestCase(pid, seg[2])
+          if (!tcI || tcI.autosimProjectId !== ap.id) return json({ error: "Not found" }, 404)
+          const script = typeof body.script === "string" ? body.script : ""
+          if (!script || script.length > 5_000_000) return json({ error: "script file required (max 5 MB)" }, 400)
+          try {
+            return json({ trailId: await asp.importTrailScript(pid, tcI, script, meA) }, 201)
+          } catch (e) { if (e instanceof asp.ScriptImportError) return json({ error: e.message }, 400); throw e }
+        }
         const v: any = req.method === "POST" || req.method === "PATCH" ? nameDesc(120, 4000, req.method === "POST") : {}
         if (v.error) return json(v, 400)
         if ("status" in body) {

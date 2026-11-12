@@ -594,8 +594,8 @@
         '<div class="actions"><button class="btn btn-indigo" id="aspRun">Run</button>' +
         (auto.status === 'draft' ? '<button class="btn btn-ghost" id="aspActivate" title="Active AutoSims can run on a schedule and file findings">Activate</button>' : '') +
         '<button class="btn btn-ghost" id="aspRerecord">Re-record</button>' +
-        '<a class="btn btn-ghost" href="' + esc(tcBase + '/script?project=' + P) + '" download>Download script</a>' +
-        '<button class="btn btn-ghost" data-open-autosims>Open in AutoSims</button>' +
+        '<a class="btn btn-ghost" href="' + esc(tcBase + '/script?project=' + P) + '" download title="Playwright script; also importable on another Klavity server">Export script</a>' +
+        '<button class="btn btn-ghost" id="aspImport" title="Replace this AutoSim with a script exported from Klavity">Import script</button>' +
         '<button class="btn btn-ghost btn-danger" id="aspUnlink">Remove</button></div></div>' +
         '<p class="muted">Run replays the recorded script exactly, without AI. If your app changed and runs start failing, update the execution steps if needed, then Re-record to generate a new script. Past results are kept.</p>' +
         (auto.status === 'draft' ? '<p class="muted" style="margin-top:6px">This AutoSim is a draft: you can run it now; activate it to run it on a schedule and file findings.</p>' : '') +
@@ -604,7 +604,7 @@
       : '<div class="asp-card" style="margin-bottom:18px"><div class="head" style="margin-bottom:8px"><div>' +
         '<h2 style="font:500 20px var(--display)">No AutoSim yet</h2>' +
         '<p class="muted" style="margin-top:4px">Create AutoSim records these steps once and saves them as a script. After that, every run replays the script without AI.</p></div>' +
-        '<div class="actions"><button class="btn btn-ghost" id="aspTcLink">Add existing AutoSim</button><button class="btn btn-indigo" id="aspTcCreate">+ Create AutoSim</button></div></div></div>'
+        '<div class="actions"><button class="btn btn-ghost" id="aspImport" title="Use a script exported from Klavity (this or another server)">Import script</button><button class="btn btn-indigo" id="aspTcCreate">+ Create AutoSim</button></div></div></div>'
 
     $('aspMain').innerHTML =
       '<div class="head"><div><h1>' + esc(tc.name) + '</h1></div>' +
@@ -627,7 +627,6 @@
       var s = this; s.disabled = true
       try { await moveTestCase(tc, s.value); await renderTestCase(apId, tcId) } catch (e) { toast(e.message, true); s.disabled = false }
     }
-    $('aspMain').querySelectorAll('[data-open-autosims]').forEach(function (b) { b.onclick = function () { go(null) } })
 
     // Record (first time) / re-record (replace) from this test case's own details — no wizard.
     async function record(btn, replace) {
@@ -641,6 +640,23 @@
       finally { btn.disabled = false; btn.textContent = label }
     }
     if ($('aspTcCreate')) $('aspTcCreate').onclick = function () { record(this, false) }
+
+    // Import a script exported by Export script (this or another Klavity server) as this test case's AutoSim.
+    $('aspImport').onclick = function () {
+      var btn = this, input = document.createElement('input')
+      input.type = 'file'; input.accept = '.ts,.js,text/plain'
+      input.onchange = async function () {
+        var f = input.files && input.files[0]; if (!f) return
+        var go = async function () {
+          btn.disabled = true; btn.textContent = 'Importing…'
+          try { await api('POST', tcBase + '/script', { script: await f.text() }); toast('Script imported'); renderTestCase(apId, tcId) }
+          catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = 'Import script' }
+        }
+        if (auto) confirmDanger('Replace "' + auto.name + '" with ' + f.name + '?', 'The imported script becomes this test case\'s AutoSim. The current one is archived and past results are kept.', 'Import', go)
+        else go()
+      }
+      input.click()
+    }
 
     if (auto) {
       $('aspRun').onclick = async function () {
@@ -663,15 +679,6 @@
       $('aspUnlink').onclick = function () {
         confirmDanger('Remove "' + auto.name + '" from this test case?', 'The AutoSim itself is not deleted. It stays in AutoSims, and this test case can record a new one.', 'Remove',
           async function () { await api('DELETE', tcBase + '/trails/' + encodeURIComponent(auto.id)); toast('AutoSim removed from test case'); renderTestCase(apId, tcId) })
-      }
-    } else {
-      $('aspTcLink').onclick = function () {
-        var cands = cur.unassignedTrails.map(function (t) { return { value: t.id, label: t.name + ' (unassigned)' } })
-          .concat(cur.trails.filter(function (t) { return !t.testCaseId }).map(function (t) { return { value: t.id, label: t.name + ' (no test case)' } }))
-        if (!cands.length) { toast('No unassigned AutoSims available. Create one instead.'); return }
-        openForm({ title: 'Add existing AutoSim', okLabel: 'Add to test case', message: 'A test case has one AutoSim. Its steps, schedule and history are kept.',
-          fields: [{ key: 'trail', label: 'AutoSim', type: 'select', value: cands[0].value, options: cands }],
-          submit: async function (v) { await api('PUT', tcBase + '/trails/' + encodeURIComponent(v.trail)); toast('AutoSim added'); renderTestCase(apId, tcId) } })
       }
     }
     drawRuns(tc, tcBase)

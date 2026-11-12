@@ -231,7 +231,11 @@ export async function stampTrailFromAuthorSession(projectId: string, sessionId: 
     args: [projectId, sessionId],
   })
   if (!r.rows.length) return
-  const tcId = s(r.rows[0].id), apId = s(r.rows[0].autosim_project_id)
+  await fileTrailUnderTestCase(projectId, s(r.rows[0].id), s(r.rows[0].autosim_project_id), trailId)
+}
+
+/** Make `trailId` the test case's one AutoSim, archiving the previous one (history is kept). */
+async function fileTrailUnderTestCase(projectId: string, tcId: string, apId: string, trailId: string): Promise<void> {
   await db!.batch([
     { sql: `UPDATE trails SET status='archived', updated_at=? WHERE project_id=? AND test_case_id=? AND id!=? AND status!='archived'`, args: [now(), projectId, tcId, trailId] },
     { sql: `UPDATE trails SET test_case_id=?, autosim_project_id=? WHERE project_id=? AND id=?`, args: [tcId, apId, projectId, trailId] },
@@ -326,7 +330,61 @@ export async function trailPlaywrightScript(projectId: string, trailId: string):
   const lc = await db!.execute({ sql: `SELECT step_id, resolved_selector FROM locator_cache WHERE project_id=? AND trail_id=?`, args: [projectId, trailId] })
   const selectors: Record<string, string> = {}
   for (const row of lc.rows as any[]) selectors[s(row.step_id)] = s(row.resolved_selector)
-  return generatePlaywright(trail, steps, selectors)
+  // Portable copy of the recorded steps (exact selectors + fingerprints), so this same file can be
+  // imported on another Klavity server. A comment, so the script still runs as plain Playwright.
+  const bundle: ScriptBundle = {
+    name: trail.name, intent: trail.intent, baseUrl: trail.baseUrl, viewport: trail.viewport,
+    steps: steps.map((st) => ({
+      action: st.action, actionValue: st.actionValue ?? undefined,
+      target: st.target || selectors[st.id] ? { ...(st.target ?? {}), resolvedSelector: selectors[st.id] } as any : undefined,
+      checkpoint: st.checkpoint ?? undefined, timeoutMs: st.timeoutMs,
+    })),
+  }
+  return generatePlaywright(trail, steps, selectors) +
+    `\n// Klavity AutoSim data: keep the next line to import this script on another Klavity server.\n` +
+    `${BUNDLE_TAG}${Buffer.from(JSON.stringify(bundle)).toString("base64")}\n`
+}
+
+const BUNDLE_TAG = "// klavity-autosim-v1:"
+interface ScriptBundle {
+  name: string; intent: string; baseUrl: string; viewport: unknown
+  steps: { action: string; actionValue?: string; target?: Record<string, unknown>; checkpoint?: { description: string }; timeoutMs?: number }[]
+}
+export class ScriptImportError extends Error {}
+
+/**
+ * Import a script exported by trailPlaywrightScript (on this or another Klavity server) as the test
+ * case's AutoSim. Same outcome as a successful recording: a draft Trail that replaces the previous one.
+ * Navigations to the exporting server's origin are pointed at this test case's start URL origin.
+ */
+export async function importTrailScript(projectId: string, tc: TestCase, script: string, createdBy: string | null): Promise<string> {
+  const line = script.split(/\r?\n/).find((l) => l.startsWith(BUNDLE_TAG))
+  if (!line) throw new ScriptImportError("This file has no Klavity AutoSim data. Export it with Export script from a test case.")
+  let b: ScriptBundle
+  try { b = JSON.parse(Buffer.from(line.slice(BUNDLE_TAG.length).trim(), "base64").toString("utf8")) }
+  catch { throw new ScriptImportError("The AutoSim data in this file is damaged.") }
+  const { STEP_ACTIONS } = await import("./trails-types")
+  if (!Array.isArray(b?.steps) || !b.steps.length || b.steps.length > 500 || b.steps.some((x) => !STEP_ACTIONS.includes(x?.action as any))) {
+    throw new ScriptImportError("The AutoSim data in this file has no valid steps.")
+  }
+  const baseUrl = tc.startUrl || b.baseUrl
+  if (!/^https?:\/\//.test(String(baseUrl))) throw new ScriptImportError("Set a start URL on this test case first.")
+  let fromOrigin = "", toOrigin = ""
+  try { fromOrigin = new URL(b.baseUrl).origin; toOrigin = new URL(baseUrl).origin } catch {}
+  const { crystallize } = await import("./trails-crystallize")
+  const { setTrailStatus } = await import("./trails")
+  const { trailId } = await crystallize(projectId, {
+    name: String(b.name || tc.name).slice(0, 200), intent: String(b.intent || ""), baseUrl,
+    viewport: (b.viewport as any) ?? null, authorKind: "human", createdBy: createdBy ?? undefined,
+    steps: b.steps.map((x) => ({
+      action: x.action as any,
+      actionValue: x.action === "navigate" && fromOrigin && x.actionValue?.startsWith(fromOrigin) ? toOrigin + x.actionValue.slice(fromOrigin.length) : x.actionValue,
+      target: x.target as any, checkpoint: x.checkpoint, timeoutMs: x.timeoutMs, url: "", domHash: "",
+    })),
+  })
+  await setTrailStatus(projectId, trailId, "draft")
+  await fileTrailUnderTestCase(projectId, tc.id, tc.autosimProjectId, trailId)
+  return trailId
 }
 
 /** Names of test cases that execute with this credential (blocks deleting it out from under them). */
