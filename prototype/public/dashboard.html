@@ -24767,8 +24767,11 @@
                 ? "/sim/" + encodeURIComponent(sim.id) + "?project=" + encodeURIComponent(pid)
                 : "/sim/" + encodeURIComponent(sim.id)
               const obs = bySimId.get(sim.id) || []
-              const badge = obs.length
-                ? obs.length + " observation" + (obs.length === 1 ? "" : "s")
+              // KD-2875: the server ships only each Sim's newest few observations, so the count comes from the Sim's TOTAL
+              // (sim.feedbackCount), never the length of that capped list. Older cached payloads fall back to the list length.
+              const obsTotal = Math.max(obs.length, Number(sim.feedbackCount) || 0)
+              const badge = obsTotal
+                ? obsTotal + " observation" + (obsTotal === 1 ? "" : "s")
                 : "no feedback yet"
               // Show only the latest (first) observation inline; if more exist, link to Triage
               const obHtml = obs.length
@@ -24779,8 +24782,8 @@
                   const meta = []
                   if (o.urlPath) meta.push(esc(o.urlPath))
                   if (o.createdAt) meta.push(ago(o.createdAt))
-                  const moreLink = obs.length > 1
-                    ? `<a class="sf-triage" href="#triage" onclick="setView('triage')">See ${obs.length - 1} more →</a>`
+                  const moreLink = obsTotal > 1
+                    ? `<a class="sf-triage" href="#triage" onclick="setView('triage')">See ${obsTotal - 1} more →</a>`
                     : `<a class="sf-triage" href="#triage" onclick="setView('triage')">View in Sim Reports →</a>`
                   meta.push(moreLink)
                   return `<div class="sf-obs"><div class="sf-ob">
