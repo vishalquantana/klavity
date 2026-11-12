@@ -471,8 +471,17 @@ export async function authorTrail(
   const extendDeadlineForPendingVerify = () => {
     deadlineAt = Date.now() + PROACTIVE_VERIFY_WINDOW_MS
   }
-  const bounded = <T>(p: Promise<T>, ms: number, what: string): Promise<T> =>
-    Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`${what} timed out after ${ms}ms`)), ms))])
+  // KD-2255: Cancel must not wait out a 2-min model call or a busy-page snapshot - every bounded wait also
+  // ends the moment the user cancels; the loop-top abort check then stalls with "cancelled by user".
+  const bounded = <T>(p: Promise<T>, ms: number, what: string): Promise<T> => {
+    const sig = opts.abortSignal
+    if (sig?.aborted) return Promise.reject(new Error("cancelled by user"))
+    let timer: ReturnType<typeof setTimeout> | undefined, onAbort: (() => void) | undefined
+    return Promise.race([p, new Promise<never>((_, rej) => {
+      timer = setTimeout(() => rej(new Error(`${what} timed out after ${ms}ms`)), ms)
+      if (sig) { onAbort = () => rej(new Error("cancelled by user")); sig.addEventListener("abort", onAbort, { once: true }) }
+    })]).finally(() => { clearTimeout(timer); if (sig && onAbort) sig.removeEventListener("abort", onAbort) })
+  }
   // KD-2255: heavy pages (PX4 add_new_project) keep the renderer busy for 15s+ while their scripts run; no
   // snapshot (or screenshot) can run until it frees up, and one busy spell was killing the whole walk with
   // "snapshot attempt hung". Give the page up to 4 rounds (~1 min) before failing. Real errors still throw.
@@ -528,6 +537,8 @@ export async function authorTrail(
     await h.close().catch(() => {})
   }
   const stall = async (why: string, currentUrl?: string, finalStatus: "stalled" | "needs_auth" = "stalled"): Promise<AuthorOutcome> => {
+    // A user cancel can surface as any step error (bounded() rejects everywhere); report it as what it is.
+    if (opts.abortSignal?.aborted) { why = "cancelled by user"; finalStatus = "stalled" }
     // KLA-57: persist checkpoint before closing so the session is resumable.
     if (opts.onCheckpoint) {
       try { await opts.onCheckpoint(snapshotCheckpoint(currentUrl ?? req.baseUrl)) } catch {}
@@ -823,6 +834,7 @@ export async function authorTrail(
               if (!e.retryable) return await stall(`model auth error: ${e.message}`, page.url())
             }
             lastErr = e
+            if (opts.abortSignal?.aborted) return await stall("cancelled by user", page.url())
             if (attempt < MAX_API_RETRIES - 1) await sleepMs(MODEL_RETRY_BASE_MS * Math.pow(2, attempt))
           }
         }
@@ -1301,6 +1313,8 @@ export async function authorTrail(
         launchArgs, headless: opts.headless, replay: true,
         // KD-2255: per-step screenshots, same as a manual Run, so the verification PDF shows each step.
         stepShots: true,
+        // KD-2255: Cancel also stops the verification replay (it ran up to 3 min with "Cancelling…" stuck).
+        ...(opts.abortSignal ? { signal: opts.abortSignal } : {}),
         // Replay any `upload` steps against the same fixtures the drive used.
         ...(opts.fileResolver ? { fileResolver: opts.fileResolver } : {}),
         ...(vision ? { vision } : {}),
@@ -1314,6 +1328,10 @@ export async function authorTrail(
       }
       const reason = String(verificationErr?.message || verificationErr)
       return { status: "failed", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: reason, llmCalls, costUsd, objectiveVerified }
+    }
+    // Cancelled during the verification replay: keep the recorded draft (reviewable), report the cancel.
+    if (opts.abortSignal?.aborted) {
+      return { status: "stalled", trailId, verificationRunId: v.runId, verificationVerdict: null, steps: log, stallReason: "cancelled by user", llmCalls, costUsd, objectiveVerified }
     }
     // I1: skip means "inconclusive / no steps ran" - map to amber, not red, so an empty
     // Verification Walk never looks like a regression to the reviewer.
