@@ -14865,6 +14865,11 @@
       margin-top: 13px
     }
 
+    /* KD-2876: while defining a Sim manually the example path is hidden; this is the way back to it. */
+    .sm-manual-bar {
+      margin: 0 0 10px
+    }
+
     .sm-manual-btn {
       font-size: 12px;
       color: var(--paper-faint);
@@ -35827,6 +35832,9 @@
             manually</button>
         </div>
         </div>
+        <div class="sm-manual-bar" id="smManualBar" hidden>
+          <button type="button" class="btn btn-ghost btn-sm" id="smManualBack">← Use an example instead</button>
+        </div>
         <div id="smNameStep" hidden>
           <div class="sm-desc-box"><div class="sm-desc-lbl">Sim description</div><div class="sm-desc-txt" id="smDescTxt"></div></div>
           <label class="sm-name-lbl" for="smName">Sim name</label>
@@ -36151,6 +36159,8 @@
             // WP-S3a: Describe is two steps — the description, then "Name your Sim". Create stays disabled until a name is typed.
             function showBriefStep(step) {
               const onName = step === "name";
+              // KD-2876: example/brief and manual Sim definition are mutually exclusive — moving between steps always leaves manual mode.
+              $("smManualBar").hidden = true;
               $("smBriefStep").hidden = onName; $("smNameStep").hidden = !onName;
               const hd = $("simHd"), sub = $("simSub"), card = ov;
               card.classList.toggle("sm-modal-namestep", onName);
@@ -36161,7 +36171,7 @@
               } else if (hd.dataset.orig !== undefined) {
                 hd.textContent = hd.dataset.orig; sub.innerHTML = sub.dataset.orig; delete hd.dataset.orig; delete sub.dataset.orig;
               }
-              if (!onName) out.innerHTML = "";
+              out.innerHTML = "";   // KD-2876: also on the name step — a manual card must never sit under "Name your Sim"
               setTimeout(function () { const f = $(onName ? "smName" : "smBrief"); if (f && ov.classList.contains("show")) f.focus(); }, 30);
             }
             function goToName() {
@@ -36536,6 +36546,7 @@
               ov.querySelectorAll(".sm-pane").forEach(p => p.classList.toggle("on", p.dataset.pane === b.dataset.pane));
               // KLAVITYKLA-301: keep lastSimSource in sync with the active tab
               lastSimSource = PANE_TO_SOURCE[b.dataset.pane] || "describe";
+              if (!$("smManualBar").hidden) showBriefStep("brief");   // KD-2876: leave manual mode so the example step is back when you return
               out.innerHTML = ""; hideSuccessPanel();
               // #643: the preset tab has no input to fire — auto-load the starter cast on select.
               if (b.dataset.pane === "preset") genPresets();
@@ -36547,6 +36558,7 @@
             $("smBriefGo").onclick = goToName;
             $("smCreateGo").onclick = () => withBusy($("smCreateGo"), "Imagining…", genBrief);
             $("smNameBack").onclick = () => showBriefStep("brief");
+            $("smManualBack").onclick = () => showBriefStep("brief");   // KD-2876: manual → back to the example/brief step
             $("smName").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); withBusy($("smCreateGo"), "Imagining…", genBrief); } });
             $("smUrlGo").onclick = () => withBusy($("smUrlGo"), "Reading…", genSite);
             $("smTxGo").onclick = () => withBusy($("smTxGo"), "Extracting…", genCall);
@@ -36554,6 +36566,10 @@
       if (smManualBtn) {
         smManualBtn.onclick = function () {
           clearFieldErr();
+          // KD-2876: manual definition and the example/brief path are mutually exclusive — hide the brief input + example chips (and
+          // forget any half-typed brief) while the manual Name / Description fields are open; "← Use an example instead" brings them back.
+          $("smBrief").value = "";
+          $("smBriefStep").hidden = true; $("smManualBar").hidden = false;
           const customSim = {
             name: "New Sim",
             role: "User",
@@ -36651,7 +36667,7 @@
               $("simHd").textContent = first ? "Bring your first Sim to life" : "Add a Sim";
               // Prefill the site URL from the project when known — one less hop to a first Sim reaction.
               hideDiscard(); clearFieldErr();
-              out.innerHTML = ""; out.style.display = ""; $("smBrief").value = ""; $("smName").value = ""; $("smBriefStep").hidden = false; $("smNameStep").hidden = true; $("smCreateGo").disabled = false; ov.classList.remove("sm-modal-namestep"); clearCreatedView(); if ($("simHd").dataset.orig !== undefined) { $("simSub").innerHTML = $("simSub").dataset.orig; delete $("simHd").dataset.orig; delete $("simSub").dataset.orig; } $("smUrl").value = (state && state.active && state.active.siteUrl) || ""; $("smTx").value = ""; $("smTx").hidden = true; $("smDrop").classList.remove("has-file", "over"); $("smDropT").textContent = "Drop a transcript file"; $("smDropS").textContent = "TXT, VTT or SRT";
+              out.innerHTML = ""; out.style.display = ""; $("smBrief").value = ""; $("smName").value = ""; $("smBriefStep").hidden = false; $("smManualBar").hidden = true; $("smNameStep").hidden = true; $("smCreateGo").disabled = false; ov.classList.remove("sm-modal-namestep"); clearCreatedView(); if ($("simHd").dataset.orig !== undefined) { $("simSub").innerHTML = $("simSub").dataset.orig; delete $("simHd").dataset.orig; delete $("simSub").dataset.orig; } $("smUrl").value = (state && state.active && state.active.siteUrl) || ""; $("smTx").value = ""; $("smTx").hidden = true; $("smDrop").classList.remove("has-file", "over"); $("smDropT").textContent = "Drop a transcript file"; $("smDropS").textContent = "TXT, VTT or SRT";
               hideSuccessPanel();
               selectPane(mode);
               ov.classList.add("show"); document.body.style.overflow = "hidden";
