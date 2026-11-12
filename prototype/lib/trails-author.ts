@@ -1066,6 +1066,14 @@ export async function authorTrail(
           traj.push({ action: "waitForSelector", target: { resolvedSelector: persistSelector } as any, url: page.url(), domHash: sha256hex(dom) })
           entry.selector = persistSelector
         } else {
+          // The model sometimes writes Playwright-only selectors (h1:has-text("Dashboard")) despite the prompt.
+          // Plain CSS rejects them, so resolve to the single matching element's kref instead of failing on syntax.
+          if (/:(has-text|text-is|text)\(|^text=|:visible\b/.test(a.selector!) && page.krefFor) {
+            const r = await bounded(page.krefFor(a.selector!), 8_000, "text selector")
+            if (!r.selector) throw new Error(`selector "${a.selector}" matched ${r.count} elements (need exactly 1) — prefer the [data-kref] ref from the snapshot`)
+            a.selector = r.selector
+            entry.selector = r.selector
+          }
           const n = await bounded(page.count(a.selector!), 10_000, "locator.count")
           if (n !== 1) throw new Error(`selector "${a.selector}" matched ${n} elements (need exactly 1)`)
           const fp = await bounded(page.fingerprint(a.selector!), 10_000, "fingerprint capture")

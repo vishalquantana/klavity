@@ -430,6 +430,29 @@ export function selectCheckBody(arg: { selector: string; value: string }): Targe
   return { ok: false, html, candidates }
 }
 
+const freshKref = () => `e${90000 + Math.floor(Math.random() * 9999)}` // outside the e1… range a snapshot assigns
+
+/** Page-side (Puppeteer has no Playwright engine): resolve `base:has-text("T")`, `:text("T")`, `text=T`
+ *  (plus a trailing `:visible`) to its single visible match and tag it with `data-kref`. */
+function pwSelectorKrefBody(arg: { selector: string; id: string }): { selector: string | null; count: number } {
+  let sel = arg.selector.trim().replace(/:visible\b/g, "")
+  let base = "*", want = "", exact = false
+  const t = sel.match(/^text=(["']?)(.*)\1$/s)
+  const m = sel.match(/^(.*?):(has-text|text-is|text)\((["'])(.*)\3\)\s*$/s)
+  if (t) { want = t[2]; exact = !!t[1] } else if (m) { base = m[1].trim() || "*"; want = m[4]; exact = m[2] === "text-is" } else return { selector: null, count: 0 }
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase()
+  const w = norm(want)
+  const hit = (el: Element) => { const x = norm((el as HTMLElement).innerText ?? el.textContent ?? ""); return exact ? x === w : x.includes(w) }
+  const visible = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden" }
+  let els: Element[]
+  try { els = Array.from(document.querySelectorAll(base)).filter(hit) } catch { return { selector: null, count: 0 } }
+  if (base === "*") els = els.filter((e) => !Array.from(e.children).some(hit)) // innermost element carrying the text
+  if (els.length > 1) { const v = els.filter(visible); if (v.length) els = v }
+  if (els.length !== 1) return { selector: null, count: els.length }
+  els[0].setAttribute("data-kref", arg.id)
+  return { selector: `[data-kref="${arg.id}"]`, count: 1 }
+}
+
 function fingerprintBody(el: Element): Fingerprint {
   const tag = el.tagName.toLowerCase()
   const roleMap: Record<string, string> = { button: "button", a: "link", input: "textbox", select: "combobox", textarea: "textbox" }
@@ -561,6 +584,8 @@ export interface BrowserPage {
   targetCheck?(selector: string, label: string): Promise<TargetCheck>
   /** HTML cross-check that `selector`'s dropdown contains option `value` (see selectCheckBody). Optional for fakes. */
   selectCheck?(selector: string, value: string): Promise<TargetCheck>
+  /** Resolve a Playwright-only selector (`:has-text`, `text=`…) to a `[data-kref="eN"]` on its one match; null if not exactly 1. */
+  krefFor?(selector: string): Promise<{ selector: string | null; count: number }>
   stableSelector(selector: string): Promise<string | null>
   click(selector: string, timeoutMs: number): Promise<void>
   fill(selector: string, value: string, timeoutMs: number, sensitive?: boolean): Promise<void>
@@ -659,6 +684,16 @@ class PlaywrightPage implements BrowserPage {
   async fingerprint(selector: string) { return await this.page.locator(selector).first().evaluate(fingerprintBody) }
   async targetCheck(selector: string, label: string) { return await this.page.evaluate(targetCheckBody, { selector, label }) }
   async selectCheck(selector: string, value: string) { return await this.page.evaluate(selectCheckBody, { selector, value }) }
+  async krefFor(selector: string) {
+    // Playwright's own engine understands :has-text / text= etc.; prefer the visible match when several exist.
+    let loc = this.page.locator(selector)
+    let count = await loc.count()
+    if (count > 1) { const vis = loc.filter({ visible: true }); if (await vis.count() === 1) { loc = vis; count = 1 } }
+    if (count !== 1) return { selector: null, count }
+    const id = freshKref()
+    await loc.evaluate((el: Element, v: string) => el.setAttribute("data-kref", v), id)
+    return { selector: `[data-kref="${id}"]`, count }
+  }
   async stableSelector(selector: string) { try { return await this.page.locator(selector).first().evaluate(stableSelectorBody) } catch { return null } }
   async click(selector: string, timeoutMs: number) { await clickWithTransitionFallback(this.page.locator(selector), timeoutMs) }
   async fill(selector: string, value: string, timeoutMs: number, sensitive = false) {
@@ -821,8 +856,8 @@ class PuppeteerPage implements BrowserPage {
   async fingerprint(selector: string) { return await this.page.$eval(selector, fingerprintBody) }
   async targetCheck(selector: string, label: string) { return await this.page.evaluate(targetCheckBody, { selector, label }) }
   async selectCheck(selector: string, value: string) { return await this.page.evaluate(selectCheckBody, { selector, value }) }
+  async krefFor(selector: string) { return await this.page.evaluate(pwSelectorKrefBody, { selector, id: freshKref() }) }
   async stableSelector(selector: string) { try { return await this.page.$eval(selector, stableSelectorBody) } catch { return null } }
-  async click(selector: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }); await this.page.click(selector) }
   async fill(selector: string, value: string, timeoutMs: number, sensitive = false) {
     const el = await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs })
     await el.click({ clickCount: 3 }).catch(() => {}) // select existing text so type() replaces it (mirrors fill)
