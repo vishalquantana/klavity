@@ -340,7 +340,8 @@ export function openSelectSimsModal(opts: SelectSimsModalOptions): SelectSimsMod
     meta.appendChild(el('div', 'kss-name', s.name))
     if (s.role) meta.appendChild(el('div', 'kss-role', s.role))
     const badges = el('div', 'kss-badges')
-    const st = el('span', 'kss-badge' + (running ? ' running' : ''), running ? 'Running' : 'Stopped')
+    // KD-2869: an Activated Sim that isn't running reads "Not running" — "Stopped" wrongly suggested a Sim that was never started had been halted.
+    const st = el('span', 'kss-badge' + (running ? ' running' : ''), running ? 'Running' : 'Not running')
     st.dataset.kind = 'run'
     badges.appendChild(st)
     meta.appendChild(badges)
