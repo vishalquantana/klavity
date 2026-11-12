@@ -3816,9 +3816,11 @@ export async function upsertPersona(id: string, projectId: string, data: Omit<Pe
   // persist the mandatory rules. `data.personaKind` is the caller's classification; the ON CONFLICT below never demotes a stored QA Sim.
   const kind: PersonaKind = data.simSource === BASELINE_QA_SOURCE ? "qa" : normalizePersonaKind(data.personaKind)
   const validationsJson = kind === "qa" ? JSON.stringify(canonicalValidations()) : null
+  // A NEW Sim starts Deactivated (active=0): the user turns on only the Sims they want on the Sims tab. The ON CONFLICT update below
+  // never touches `active`, so editing an existing Sim keeps its current Activated/Deactivated state.
   await db!.execute({
-    sql: `INSERT INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,sim_source,persona_kind,validations_json,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    sql: `INSERT INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,sim_source,persona_kind,validations_json,created_at,updated_at,active)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)
           ON CONFLICT(id) DO UPDATE SET name=excluded.name,role=excluded.role,type=excluded.type,
           initials=excluded.initials,accent=excluded.accent,summary=excluded.summary,
           insights_json=excluded.insights_json,avatar=excluded.avatar,

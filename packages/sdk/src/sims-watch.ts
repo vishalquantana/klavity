@@ -234,6 +234,11 @@ export interface SimsWatchOptions {
   captureViewport: () => Promise<string>
   /** Bearer token for Klavity API auth (widget session token or account token). */
   bearerToken?: string
+  /**
+   * "widget" → the server reviews ONLY the Sims this user has set to Run (sim_run_state), so a Sim stopped anywhere never reviews
+   * again from this page. Omitted (extension) → existing behaviour.
+   */
+  runScope?: 'widget'
   /** Minimum gap between successive review API calls in ms. Default 30 000. */
   minIntervalMs?: number
   /** Scroll debounce delay in ms. Default 700. */
@@ -386,6 +391,7 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
         projectId: opts.projectId,
       }
       if (opts.simIds?.length) body.simIds = opts.simIds
+      if (opts.runScope) body.runScope = opts.runScope
 
       const headers: Record<string, string> = { 'content-type': 'application/json' }
       if (opts.bearerToken) headers['authorization'] = `Bearer ${opts.bearerToken}`

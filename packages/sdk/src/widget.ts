@@ -37,7 +37,7 @@ import {
 } from "./evidence-session"
 import { SimsLive, type LiveObservation } from "./sims-live"  // side-effecting: auto-installs window.KlavitySims on load
 import { startSimsWatch, type SimsWatchController } from "./sims-watch"
-import { openSelectSimsModal, createSelectSimsApi, managedSigOf, planManagedSync, type ManagedSim, type ManagedSimAction } from "./sims-select-modal"
+import { openSelectSimsModal, createSelectSimsApi, managedSigOf, planManagedSync, isSimRunning, type ManagedSim, type ManagedSimAction } from "./sims-select-modal"
 
 const HOST_ID = "klavity-widget-host"
 // Screenshot capture filter: exclude ALL Klavity-injected chrome so the widget never captures
@@ -2160,10 +2160,10 @@ async function mount() {
       const syncConfirm = () => {
         const n = sel.size
         confirmBtn.disabled = n === 0
-        confirmBtn.textContent = n > 0 ? `Deploy ${n} Sim${n > 1 ? "s" : ""} →` : "Select a Sim first"
+        confirmBtn.textContent = n > 0 ? `Run ${n} Sim${n > 1 ? "s" : ""} →` : "Select a Sim first"
         confirmBtn.style.opacity = n > 0 ? "1" : ".45"
       }
-      confirmBtn.addEventListener("click", () => { if (!sel.size) return; closeMenu(); void deployAndWatch([...sel]) })
+      confirmBtn.addEventListener("click", () => { if (!sel.size) return; closeMenu(); void runSimsOnPage([...sel]) })
       // Sim rows — scrollable list
       const list = document.createElement("div")
       list.style.cssText = "display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto"
@@ -2201,9 +2201,9 @@ async function mount() {
     }
     // Sims actions are member-only + 'full'-mode-only — anonymous visitors and reportOnly never see them.
     if (showSims) {
-      menu.appendChild(card("users", "Deploy all Sims", "Have every Sim jump in and analyze this page.", { onClick: () => { closeMenu(); void deployAndWatch("all") } }))
-      // Opens the Select Sims management modal (deploy / deactivate / pause / resume).
-      menu.appendChild(card("sparkles", "Select Sims…", "Choose which Sims jump into action.", { onClick: () => { void openSimsManager() } }))
+      menu.appendChild(card("users", "Run all Sims", "Every activated Sim reviews the pages you browse.", { onClick: () => { closeMenu(); void runSimsOnPage("all") } }))
+      // Opens the Select Sims modal: Run / Stop each Sim (Activate / Deactivate stays on the dashboard Sims tab).
+      menu.appendChild(card("sparkles", "Select Sims…", "Run or stop individual Sims.", { onClick: () => { void openSimsManager() } }))
     }
     menu.appendChild(card("monitor", "Browser menu", "", { muted: true, hint: "⇧ right-<br>click", onClick: () => { nativePending = true; showNativeHint(x, y) } }))
     // "Powered by Klavity" footer — hidden for Pro accounts with whiteLabel enabled (KLAVITYKLA-311).
@@ -2345,54 +2345,43 @@ async function mount() {
     setTimeout(() => { if (el && el.textContent === text) safeRemove(el) }, 6000)
   }
 
-  // Deploy the named Sims (or "all") + boot the watch engine + fire an IMMEDIATE review.
-  // Uses the anonymous /api/widget/sims endpoint so this works on client sites with no admin auth.
-  async function deployAndWatch(simIds: string[] | 'all') {
-    // AUTH GATE: /api/sim/review hard-requires an authenticated caller (session cookie OR bearer token).
-    // On a cross-origin customer site the klavity.in session cookie isn't sent, so reviews only work with a
-    // widget token. Without one the Sims would deploy and float but every review 401s silently — so run the
-    // connect handshake FIRST and only deploy once we hold a real token. (First-party pages use the cookie.)
+  // "Run all Sims" / the menu's Sim chips: set the Sims to RUNNING for this user (server Run state — the same one Select Sims, the
+  // dashboard Sims tab and the card's Close use), then show them on the card, watch the page and review it right away. Every way of
+  // starting Sims goes through this state, so Stop always works however they were started. "all" = every Activated Sim.
+  async function runSimsOnPage(simIds: string[] | 'all') {
+    // AUTH GATE: the Run state and /api/sim/review need an authenticated caller (session cookie OR bearer token). On a
+    // cross-origin customer site the klavity.in cookie isn't sent, so run the connect handshake FIRST.
     if (!firstParty && !getToken()) {
       banner("Connect to Klavity so your Sims can review this page…")
       const token = await openConnect()
-      if (!token) { banner("Sims need a Klavity connection to review this page. Deploy again to connect."); return }
+      if (!token) { banner("Sims need a Klavity connection to review this page. Run them again to connect."); return }
     }
-    _simsWatchCtrl?.stop()
-    _simsWatchCtrl = null
-    let sims: Array<{ id: string; name: string; initials?: string; accent?: string }> = []
     try {
-      const r = await fetchWithTimeout(cfg.backendUrl + "/api/widget/sims?project=" + encodeURIComponent(cfg.projectId))
-      if (r.ok) {
-        const data = await r.json().catch(() => ({}))
-        sims = Array.isArray(data.sims) ? data.sims : []
-      }
-    } catch { /* non-fatal: empty dock is guarded in sims-live.ts */ }
-    _deployedSims = sims
-    ;(window as any).KlavitySims?.deploy?.(simIds, sims)
-    // Boot the watch engine for continuous monitoring (scroll / navigation / mutations).
-    _simsWatchCtrl = startSimsWatch({
-      backendUrl: cfg.backendUrl,
-      projectId: cfg.projectId,
-      simIds: simIds === 'all' ? undefined : simIds,
-      // Live-review captures the FULL page (whole scrollHeight), not just the above-the-fold viewport,
-      // so the Sim reviews the entire page — bounded by MAX_FULLPAGE_CAPTURE_HEIGHT. (KLAVITYKLA-404)
-      captureViewport: () => safeToPngFullPage({ skipFonts: true, filter: notKlavityChrome }),
-      bearerToken: getToken() || undefined,
-    })
-    // BOOT: fire an immediate review so Sims react to the current page right away (not only on next scroll).
-    void bootReview(simIds)
+      const api = managedSimsApi()
+      const ids = simIds === "all"
+        ? (await api.load()).filter((s) => s.active !== false && s.run !== "running").map((s) => s.id)
+        : simIds
+      const res = ids.length ? await api.act("run", ids) : { applied: [], skipped: [], sims: await api.load() }
+      if (!res.sims.some((s) => s.active !== false)) { banner("No activated Sims yet — activate one on the Klavity Sims tab."); return }
+      if (!res.applied.length && res.skipped.length) banner(`Couldn't run that Sim: ${res.skipped[0].reason}.`)
+      applyManagedSims(res.sims, { action: "run", applied: res.applied })
+      try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-applied")) } catch { /* noop */ }
+    } catch (e: any) {
+      banner(e?.message || "Couldn't start the Sims — please try again.")
+    }
   }
 
-  // ── Select Sims management (additive) ─────────────────────────────────────────────────────
-  // "Select Sims…" opens the isolated management modal (sims-select-modal.ts) backed by the new
-  // /api/widget/sim-deployments endpoint. After each successful action the page is synced to the
-  // server state via the SAME public primitives "Deploy all Sims" uses (KlavitySims.deploy/undeploy,
-  // startSimsWatch, bootReview) — none of those are modified. Paused Sims stay on the page (deployed)
-  // but are excluded from the watch engine, so they stop reviewing without being redeployed.
-  let _managedSelection: string[] = []
-  let _managedMountedKey: string | null = null
+  // ── Sims on this page: Run / Stop (per user) ──────────────────────────────────────────────
+  // ONE state decides which Sims run on the pages this user browses: the server Run state (/api/widget/sim-deployments →
+  // prototype/lib/sim-run-state.ts). It is set from the Select Sims modal, "Run all Sims" / the menu chips, the dashboard Sims tab,
+  // and the feedback card's Close. applyManagedSims() mirrors it onto the page:
+  //   * the feedback card shows the RUNNING Sims; a Sim that is stopped keeps the issues it already reported but adds no new ones;
+  //   * only running Sims are watched / reviewed (the server also refuses widget reviews for Sims that aren't running);
+  //   * when NO Sim is running, the card closes by itself (every reported issue is already in Sim Reports);
+  //   * the card's Close (×) stops every running Sim and closes the card.
+  let _managedMounted = false
   async function openSimsManager() {
-    // Same auth gate as deployAndWatch: cross-origin pages need a widget token for member endpoints.
+    // Same auth gate as runSimsOnPage: cross-origin pages need a widget token for member endpoints.
     if (!firstParty && !getToken()) {
       banner("Connect to Klavity to manage your Sims…")
       const token = await openConnect()
@@ -2400,8 +2389,6 @@ async function mount() {
     }
     openSelectSimsModal({
       api: managedSimsApi(),
-      initialSelection: _managedSelection,
-      onSelectionChange: (ids) => { _managedSelection = ids },
       onChange: (sims, change) => {
         applyManagedSims(sims, change)
         // Lets a host page that shows Sim status (the dashboard Sims tab) refresh it.
@@ -2417,24 +2404,22 @@ async function mount() {
       fetch: (input, init) => fetchWithTimeout(input, init),
     })
   }
-  // Signature of the managed state (deployed Sims + their execution) — lets a sync skip no-op re-applies.
+  // Signature of the running set — lets a sync skip no-op re-applies. null until the first sync.
   let _managedSig: string | null = null
 
-  // Pause / Resume / Deploy can also happen OUTSIDE this page's modal — the dashboard Sims tab, another
-  // tab, or before a reload. Re-read the server state on load, when the tab regains focus, on a light
-  // poll while managed Sims are on the page, and when the dashboard announces a change
-  // ("klavity:sim-deployments-changed"), then apply it with the same primitives as the modal. A resumed /
-  // newly deployed Sim gets an immediate review so its feedback cards show up again. When nothing was
-  // ever deployed through Select Sims, nothing is touched (legacy "Deploy all Sims" stays as it is).
+  // Run / Stop can also change OUTSIDE this page — the dashboard Sims tab, another tab, or before a reload. Re-read the server
+  // state on load, when the tab regains focus, on a light poll while Sims run here, and when the dashboard announces a change
+  // ("klavity:sim-deployments-changed"). A reload restores the running Sims WITHOUT an extra AI review; a Sim started elsewhere
+  // reviews the page right away.
   let _managedSyncing = false
   async function syncManagedSims() {
     if (_managedSyncing || rightClickMode !== "full" || (!firstParty && !getToken())) return
     _managedSyncing = true
     try {
       const sims = await managedSimsApi().load()
-      const plan = planManagedSync(_managedSig, sims, _managedMountedKey !== null)
+      const plan = planManagedSync(_managedSig, sims)
       if (plan.kind === "skip") { _managedSig = plan.sig; return }
-      applyManagedSims(sims, { action: plan.fresh.length ? "resume" : "pause", applied: plan.fresh })
+      applyManagedSims(sims, { action: plan.fresh.length ? "run" : "stop", applied: plan.fresh })
     } catch { /* best-effort: the page keeps its current Sims */ }
     finally { _managedSyncing = false }
   }
@@ -2443,46 +2428,91 @@ async function mount() {
     window.addEventListener("klavity:sim-deployments-changed", syncSoon)
     window.addEventListener("focus", syncSoon)
     document.addEventListener("visibilitychange", syncSoon)
-    // Poll only while this page actually shows Select Sims-managed Sims.
+    // Poll only while Sims are running on this page.
     setInterval(() => { if (_managedSig) syncSoon() }, 20_000)
     setTimeout(syncSoon, 1500) // after the project config (rightClickMode) has loaded
   }
 
+  // The card's Close (×): stop every Sim this user has running and close the card. Nothing is lost — each issue was saved to
+  // Sim Reports the moment its Sim reported it.
+  async function closeSimsCard() {
+    _simsWatchCtrl?.stop()
+    _simsWatchCtrl = null
+    try { (window as any).KlavitySims?.undeploy?.() } catch { /* never break page */ }
+    _managedMounted = false
+    _deployedSims = []
+    let sims: ManagedSim[] | null = null
+    try { sims = (await managedSimsApi().act("stop_all")).sims } catch { /* the server also skips stopped Sims; retry on next sync */ }
+    _managedSig = sims ? managedSigOf(sims) : ""
+    banner("Sims stopped. Every issue they reported is in Sim Reports.")
+    try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-applied")) } catch { /* noop */ }
+  }
+
+  // The feedback card's "Sims" menu: every Sim with Run / Stop (and Run / Stop selected). Same per-user Run state as Select Sims;
+  // each action is applied to the page right away (a started Sim reviews now, a stopped one stops; none left → the card closes).
+  function cardSimControls() {
+    const toCard = (list: ManagedSim[]) => list.map((s) => ({
+      id: s.id, name: s.name, role: s.role, initials: s.initials ?? null, accent: s.accent ?? null,
+      active: s.active !== false, running: isSimRunning(s),
+    }))
+    const act = async (action: "run" | "stop", ids: string[]) => {
+      const res = await managedSimsApi().act(action, ids)
+      applyManagedSims(res.sims, { action, applied: res.applied })
+      try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-applied")) } catch { /* noop */ }
+      if (!res.applied.length && res.skipped.length) throw new Error(`Couldn't ${action}: ${res.skipped[0].reason}.`)
+      return toCard(res.sims)
+    }
+    return {
+      list: async () => toCard(await managedSimsApi().load()),
+      run: (ids: string[]) => act("run", ids),
+      stop: (ids: string[]) => act("stop", ids),
+    }
+  }
+
   function applyManagedSims(sims: ManagedSim[], change: { action: ManagedSimAction; applied: string[] }) {
     _managedSig = managedSigOf(sims)
-    // A Sim deactivated on the dashboard Sims tab never runs on the page, whatever its deployment state.
-    const deployed = sims.filter((s) => s.deployment === "deployed" && s.active !== false)
-    const running = deployed.filter((s) => s.execution === "running").map((s) => s.id)
+    // A Sim Deactivated on the dashboard Sims tab never runs, whatever its Run state.
+    const running = sims.filter(isSimRunning)
     const kl = (window as any).KlavitySims
     _simsWatchCtrl?.stop()
     _simsWatchCtrl = null
-    if (!deployed.length) {
-      try { kl?.undeploy?.() } catch { /* never break page */ }
+    if (!running.length) {
+      // Nothing running → the card closes by itself (its issues are already in Sim Reports).
+      if (_managedMounted) {
+        try { kl?.undeploy?.() } catch { /* never break page */ }
+        if (change.action === "stop" || change.action === "stop_all") banner("All Sims are stopped. Their reported issues are in Sim Reports.")
+      }
+      _managedMounted = false
       _deployedSims = []
-      _managedMountedKey = null
       return
     }
-    const descriptors = deployed.map((s) => ({ id: s.id, name: s.name, initials: s.initials || undefined, accent: s.accent || undefined }))
-    // Only (re)mount the presence panel when the deployed SET changes — pause/resume keeps findings.
-    const key = deployed.map((s) => s.id).sort().join(",")
-    if (key !== _managedMountedKey) {
-      try { kl?.deploy?.(deployed.map((s) => s.id), descriptors) } catch { /* never break page */ }
-      _managedMountedKey = key
-    }
+    const descriptors = running.map((s) => ({ id: s.id, name: s.name, initials: s.initials || undefined, accent: s.accent || undefined }))
+    // Update the card in place: a stopped Sim keeps its earlier findings; a started one is added. (Mounts the card if needed.)
+    const cardOpts = { onClose: () => void closeSimsCard(), simControls: cardSimControls() }
+    try {
+      if (kl?.updateSims) kl.updateSims(descriptors, cardOpts)
+      else kl?.deploy?.(running.map((s) => s.id), descriptors, cardOpts)
+    } catch { /* never break page */ }
+    _managedMounted = true
     _deployedSims = descriptors
-    if (running.length) {
-      _simsWatchCtrl = startSimsWatch({
-        backendUrl: cfg.backendUrl,
-        projectId: cfg.projectId,
-        simIds: running,
-        captureViewport: () => safeToPngFullPage({ skipFonts: true, filter: notKlavityChrome }),
-        bearerToken: getToken() || undefined,
-      })
-    }
-    // Newly deployed / resumed Sims react to the current page right away.
-    if (change.action === "deploy" || change.action === "resume") {
-      const fresh = change.applied.filter((id) => running.includes(id))
-      if (fresh.length) void bootReview(fresh)
+    _simsWatchCtrl = startSimsWatch({
+      backendUrl: cfg.backendUrl,
+      projectId: cfg.projectId,
+      simIds: running.map((s) => s.id),
+      captureViewport: () => safeToPngFullPage({ skipFonts: true, filter: notKlavityChrome }),
+      bearerToken: getToken() || undefined,
+      runScope: "widget",
+    })
+    // Sims that just started review the current page right away — a beat AFTER the click has painted. The review starts with a
+    // full-page screenshot, which is heavy on a big page; starting it in the same tick froze the modal / card mid-update and made
+    // Run feel slow. (The Run itself is already done — this is only the first review.)
+    if (change.action === "run") {
+      const fresh = change.applied.filter((id) => running.some((s) => s.id === id))
+      if (fresh.length) {
+        const start = () => void bootReview(fresh)
+        const ric = (window as any).requestIdleCallback as undefined | ((cb: () => void, o?: { timeout: number }) => void)
+        setTimeout(() => (ric ? ric(start, { timeout: 1200 }) : start()), 350)
+      }
     }
   }
 
@@ -2516,6 +2546,8 @@ async function mount() {
         domSig: null,
         adhoc: true,
         projectId: cfg.projectId,
+        // Only Sims this user has set to Run are reviewed (a Sim stopped meanwhile is skipped by the server).
+        runScope: "widget",
       }
       if (simIds !== 'all') body.simIds = simIds
       const headers: Record<string, string> = { 'content-type': 'application/json' }

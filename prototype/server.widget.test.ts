@@ -458,72 +458,75 @@ test("GET /api/widget/sim-deployments requires a signed-in caller", async () => 
   expect(r.status).toBe(401)
 })
 
-test("GET /api/widget/sim-deployments lists Sims as not_deployed / not_running by default, with CORS", async () => {
+test("GET /api/widget/sim-deployments lists every Sim as stopped by default, with CORS", async () => {
   const r = await simDep(undefined, { origin: X_ORIGIN })
   expect(r.status).toBe(200)
   expect(r.headers.get("access-control-allow-origin")).toBe(X_ORIGIN)
   const d = await r.json()
   const s1 = d.sims.find((s: any) => s.id === SIM1)
-  expect(s1).toMatchObject({ name: "Alex", role: "End User", deployment: "not_deployed", execution: "not_running" })
+  expect(s1).toMatchObject({ name: "Alex", role: "End User", active: true, run: "stopped" })
   expect(s1.summary).toBeUndefined()
+  expect(s1.deployment).toBeUndefined()
 })
 
-test("sim-deployments: deploy → pause → resume → deactivate round-trip", async () => {
-  let d = await (await simDep({ project: projectId, action: "deploy", simIds: [SIM1, SIM2] })).json()
+test("Run / Stop round-trip: run two Sims, stop one, Stop all (the card's Close)", async () => {
+  let d = await (await simDep({ project: projectId, action: "run", simIds: [SIM1, SIM2] })).json()
   expect(d.applied.sort()).toEqual([SIM1, SIM2].sort())
-  expect(d.sims.every((s: any) => s.deployment === "deployed" && s.execution === "running")).toBe(true)
-  // Already-deployed Sims are skipped, never re-applied.
-  d = await (await simDep({ project: projectId, action: "deploy", simIds: [SIM1] })).json()
+  expect(d.sims.filter((s: any) => [SIM1, SIM2].includes(s.id)).every((s: any) => s.run === "running")).toBe(true)
+  // Already running → nothing applied, nothing skipped.
+  d = await (await simDep({ project: projectId, action: "run", simIds: [SIM1] })).json()
   expect(d.applied).toEqual([])
-  expect(d.skipped[0].simId).toBe(SIM1)
-  d = await (await simDep({ project: projectId, action: "pause", simIds: [SIM1] })).json()
-  expect(d.sims.find((s: any) => s.id === SIM1)).toMatchObject({ deployment: "deployed", execution: "paused" })
-  d = await (await simDep({ project: projectId, action: "resume", simIds: [SIM1] })).json()
-  expect(d.sims.find((s: any) => s.id === SIM1)).toMatchObject({ deployment: "deployed", execution: "running" })
-  d = await (await simDep({ project: projectId, action: "deactivate", simIds: [SIM1, SIM2] })).json()
-  expect(d.sims.every((s: any) => s.deployment === "deactivated" && s.execution === "not_running")).toBe(true)
-  // Deactivate in Select Sims = Deactivate on the Sims tab: the Sims themselves are now inactive.
-  expect(d.sims.every((s: any) => s.active === false)).toBe(true)
-  for (const id of [SIM1, SIM2]) expect((await setSimActive(id, true)).status).toBe(200)
+  expect(d.skipped).toEqual([])
+  d = await (await simDep({ project: projectId, action: "stop", simIds: [SIM1] })).json()
+  expect(d.applied).toEqual([SIM1])
+  expect(d.sims.find((s: any) => s.id === SIM1).run).toBe("stopped")
+  expect(d.sims.find((s: any) => s.id === SIM2).run).toBe("running")
+  // GET reflects it (state is persisted).
+  expect((await (await simDep()).json()).sims.find((s: any) => s.id === SIM2).run).toBe("running")
+  d = await (await simDep({ project: projectId, action: "stop_all" })).json()
+  expect(d.applied).toEqual([SIM2])
+  expect(d.sims.every((s: any) => s.run === "stopped")).toBe(true)
 })
 
-test("Deactivate on the Sims tab also takes a deployed Sim out of Select Sims; re-activating leaves it undeployed", async () => {
-  await simDep({ project: projectId, action: "deploy", simIds: [SIM2] })
+test("Deactivating a Sim on the Sims tab stops it; re-activating shows it stopped (never auto-runs)", async () => {
+  await simDep({ project: projectId, action: "run", simIds: [SIM2] })
   expect((await setSimActive(SIM2, false)).status).toBe(200)
   let s2 = (await (await simDep()).json()).sims.find((s: any) => s.id === SIM2)
-  expect(s2).toMatchObject({ active: false, deployment: "deactivated", execution: "not_running" })
+  expect(s2).toMatchObject({ active: false, run: "stopped" })
   expect((await setSimActive(SIM2, true)).status).toBe(200)
   s2 = (await (await simDep()).json()).sims.find((s: any) => s.id === SIM2)
-  expect(s2).toMatchObject({ active: true, deployment: "deactivated", execution: "not_running" }) // never auto-runs again
+  expect(s2).toMatchObject({ active: true, run: "stopped" })
 })
 
-test("sim-deployments rejects unknown actions, foreign Sims and bulk pause", async () => {
-  expect((await simDep({ project: projectId, action: "nuke", simIds: [SIM1] })).status).toBe(400)
-  expect((await simDep({ project: projectId, action: "deploy", simIds: ["sim_not_here"] })).status).toBe(400)
-  expect((await simDep({ project: projectId, action: "pause", simIds: [SIM1, SIM2] })).status).toBe(400)
+test("sim-deployments rejects unknown / retired actions and foreign Sims", async () => {
+  for (const action of ["nuke", "deploy", "deactivate", "pause", "resume"]) {
+    expect((await simDep({ project: projectId, action, simIds: [SIM1] })).status).toBe(400)
+  }
+  expect((await simDep({ project: projectId, action: "run", simIds: ["sim_not_here"] })).status).toBe(400)
+  expect((await simDep({ project: projectId, action: "run", simIds: [] })).status).toBe(400)
 })
 
-test("sim-deployments: a Sim deactivated on the Sims tab is reported inactive and can't be deployed / paused / resumed", async () => {
-  const setActive = (active: boolean) => setSimActive(SIM1, active)
-  expect((await setActive(false)).status).toBe(200)
+test("a Sim Deactivated on the Sims tab can't be run — reported in skipped; the active one still runs", async () => {
+  expect((await setSimActive(SIM1, false)).status).toBe(200)
   try {
-    let d = await (await simDep()).json()
-    expect(d.sims.find((s: any) => s.id === SIM1).active).toBe(false)
-    expect(d.sims.find((s: any) => s.id === SIM2).active).toBe(true)
-    // Only the inactive Sim → nothing applied, reported as skipped.
-    d = await (await simDep({ project: projectId, action: "deploy", simIds: [SIM1] })).json()
+    let d = await (await simDep({ project: projectId, action: "run", simIds: [SIM1] })).json()
     expect(d.applied).toEqual([])
     expect(d.skipped).toEqual([expect.objectContaining({ simId: SIM1 })])
-    expect(d.sims.find((s: any) => s.id === SIM1).deployment).not.toBe("deployed")
-    // Mixed → the active Sim is deployed, the inactive one skipped.
-    d = await (await simDep({ project: projectId, action: "deploy", simIds: [SIM1, SIM2] })).json()
+    expect(d.sims.find((s: any) => s.id === SIM1)).toMatchObject({ active: false, run: "stopped" })
+    d = await (await simDep({ project: projectId, action: "run", simIds: [SIM1, SIM2] })).json()
     expect(d.applied).toEqual([SIM2])
     expect(d.skipped.map((x: any) => x.simId)).toContain(SIM1)
   } finally {
-    await setActive(true)
+    await setSimActive(SIM1, true)
+    await simDep({ project: projectId, action: "stop_all" })
   }
-  const d = await (await simDep()).json()
-  expect(d.sims.find((s: any) => s.id === SIM1).active).toBe(true)
+})
+
+test("widget reviews (runScope=widget) only include the Sims this user has running", async () => {
+  const src = await Bun.file(import.meta.dir + "/server.ts").text()
+  const i = src.indexOf('if (body.runScope === "widget" && db)')
+  expect(i).toBeGreaterThan(-1)
+  expect(src.slice(i, i + 260)).toContain("runningSimIds(db, projectId, meR)")
 })
 
 test("sim-deployments leaves the legacy /api/widget/sims contract unchanged", async () => {

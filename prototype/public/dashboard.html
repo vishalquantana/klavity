@@ -6234,43 +6234,64 @@
       transform: scale(.96)
     }
 
+    /* KD-2864: three clearly separated steps — each its own tile (number, bold title, one readable sentence). */
     .sim-live-steps {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 10px;
-      margin-top: 10px
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      margin: 12px 0 0;
+      padding: 0;
+      list-style: none
     }
 
     .sim-live-step {
       display: flex;
       align-items: flex-start;
-      gap: 12px
+      gap: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px
     }
 
     .sim-live-n {
-      width: 22px;
-      height: 22px;
+      width: 26px;
+      height: 26px;
       border-radius: 50%;
       background: var(--indigo);
       color: #fff;
       font-family: var(--mono);
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 700;
       display: grid;
       place-items: center;
-      flex-shrink: 0;
-      margin-top: 1px
+      flex-shrink: 0
+    }
+
+    .sim-live-body {
+      min-width: 0
     }
 
     .sim-live-step b {
       display: block;
-      font-size: 12.5px;
+      font-size: 13.5px;
       font-weight: 600;
-      margin-bottom: 2px
+      margin-bottom: 4px
     }
 
     .sim-live-step .muted {
-      font-size: 11.5px
+      font-size: 12.5px;
+      line-height: 1.5
+    }
+
+    .sim-live-step .muted + .muted {
+      margin-top: 6px
+    }
+
+    .sim-live-step b.sim-live-inl {
+      display: inline;
+      font-size: inherit;
+      margin: 0;
+      color: var(--paper-dim)
     }
 
     .sim-live-pill {
@@ -6287,6 +6308,14 @@
       margin-top: 6px
     }
 
+    /* the menu names inside a step sentence: inline chips, not a block under the text */
+    .sim-live-step .muted .sim-live-pill {
+      margin-top: 0;
+      padding: 1px 7px;
+      color: var(--paper-dim);
+      vertical-align: baseline
+    }
+
     .sf-row {
       border: 1px solid var(--line);
       border-radius: 14px;
@@ -6298,12 +6327,26 @@
     .sf-top {
       display: flex;
       align-items: stretch;
-      background: var(--ink)
+      background: var(--ink);
+      transition: background .15s
+    }
+
+    /* Hover tints the WHOLE header row (link + Run/Stop + Deactivate) as one surface. The link used to scale on hover, which slid
+       over the left edge of the Run/Stop button and left a seam where its tint ended. */
+    .sf-top:hover {
+      background: var(--ink-3)
     }
 
     .sf-top .sf-hd {
       flex: 1;
-      min-width: 0
+      min-width: 0;
+      background: transparent
+    }
+
+    .sf-top .sf-hd:hover,
+    .sf-top .sf-hd:active {
+      background: transparent;
+      transform: none
     }
 
     .sf-act {
@@ -6330,17 +6373,25 @@
       cursor: default
     }
 
-    /* KD-1071: per-Sim Pause / Resume (Select Sims execution state), left of Activate/Deactivate. */
+    /* Per-user Run / Stop, left of Activate/Deactivate. Run = green call to action; Stop (while running) = red. */
+    /* Compact: smaller than the Deactivate button so the pair reads as primary-small + secondary. */
     .sf-act.sf-exec {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      margin-right: 8px
+      gap: 5px;
+      margin-right: 8px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.4;
+      border-radius: 7px;
+      border-color: color-mix(in srgb, #20b56a 55%, var(--line));
+      color: #15803d
     }
 
-    .sf-act.sf-exec.is-paused {
-      border-color: color-mix(in srgb, #f59e0b 55%, var(--line));
-      color: #b45309
+    .sf-act.sf-exec.is-running {
+      border-color: color-mix(in srgb, #dc2626 50%, var(--line));
+      color: #b91c1c
     }
 
     /* Sits on the right of the header, between the observations pill and the Activate/Deactivate button (matches the design). */
@@ -10725,6 +10776,38 @@
       color: var(--indigo)
     }
 
+    /* KD-2863: Active / Inactive tabs on the Sims page — the existing .t3-tabs look, with a little room around it. */
+    .sims-tabs {
+      margin: 2px 0 12px
+    }
+
+    /* The tab counts use the same pill as the "Your Sims" count in the card header (grey rounded badge, mono 11px bold). */
+    .sims-tabs .t3-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px
+    }
+
+    .sims-tabs .t3-tabc {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--paper-dim);
+      background: var(--ink-3);
+      padding: 2px 9px;
+      border-radius: 20px;
+      font-variant-numeric: tabular-nums
+    }
+
+    .sims-tabs .t3-tab.on .t3-tabc {
+      color: var(--paper-dim)   /* same colour on the selected tab (the base tab style would turn it indigo) */
+    }
+
+    .sims-tab-empty {
+      padding: 18px 4px;
+      font-size: 13px;
+      color: var(--paper-faint)
+    }
+
     .t3-tabpanel {
       animation: t3TabIn .16s ease
     }
@@ -14256,6 +14339,11 @@
 
     .sm-created[hidden] {
       display: none
+    }
+
+    /* KD-2862: manual button on the popup — sits in the popup's own flow, under the message. */
+    .sm-created-close {
+      margin-top: 18px
     }
 
     .sm-created-ic {
@@ -17814,6 +17902,13 @@
     .sr-toggle .tkt-vbtn { border: 0; background: transparent; color: var(--paper-dim); font: 500 12.5px var(--body); padding: 8px 16px; border-radius: 8px; box-shadow: none; }
     .sr-toggle .tkt-vbtn.active { background: var(--ink-2); color: var(--indigo); box-shadow: 0 0 0 1px var(--indigo); }
     .sr-sim { justify-self: end; }
+    /* KD-395: search box in the header, left of the Sim picker (same pill look). */
+    .sr-right { justify-self: end; display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .sr-search { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--ink-2); border-radius: 999px; padding: 4px 12px; color: var(--paper-dim); min-width: 0; }
+    .sr-search:focus-within { border-color: var(--indigo); }
+    .sr-search input { border: 0; outline: none; background: transparent; color: var(--paper); font: 500 13px var(--body); width: 170px; min-width: 0; padding: 2px 0; }
+    .sr-search input::-webkit-search-cancel-button { cursor: pointer; }
+    @media (max-width: 700px) { .sr-right { flex-wrap: wrap; justify-content: flex-end; } .sr-search input { width: 120px; } }
     .sr-sim-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--ink-2); border-radius: 999px; padding: 4px 10px 4px 12px; font: 500 13px var(--body); color: var(--paper-dim); }
     .sr-sim-pill select { border: 0; background: transparent; color: var(--paper); font: 600 13px var(--body); outline: none; cursor: pointer; max-width: 200px; }
 
@@ -18843,7 +18938,10 @@
             <div class="tkt-view-toggle sr-toggle"><button class="tkt-vbtn" id="tgListBtn" type="button" title="List view">&#9776;
                 List</button><button class="tkt-vbtn active" id="tgBoardBtn" type="button" title="Board view">&#8862;
                 Board</button></div>
-            <div class="sr-sim" id="triageSimHost"></div>
+            <div class="sr-right">
+              <label class="sr-search"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input id="tgSearch" type="search" placeholder="Search reports…" autocomplete="off" aria-label="Search Sim reports" /></label>
+              <div class="sr-sim" id="triageSimHost"></div>
+            </div>
           </div>
           <div class="tg-filters" id="triageFilters"></div>
           <div id="triageList">
@@ -19160,40 +19258,25 @@
                   <path d="M9.5 18h5" />
                   <path d="m8 22 4-11 4 11" />
                 </svg> Sims — live on your product</h2>
-              <p class="muted">Your Sims can react to the exact page you're viewing, on demand. Use the extension to ask
-                them for a live review; observations land above and in Sim Reports.</p>
-              <div class="sim-live-steps">
-                <div class="sim-live-step"><span class="sim-live-n">1</span>
-                  <div><b>Browse</b>
-                    <div class="muted">Open the product page.</div>
+              <p class="muted">Have your Sims review any page of your product, live. Three steps:</p>
+              <ol class="sim-live-steps">
+                <li class="sim-live-step"><span class="sim-live-n" aria-hidden="true">1</span>
+                  <div class="sim-live-body"><b>Open your product</b>
+                    <div class="muted">Go to any page of your product where the Klavity widget or extension is installed.</div>
                   </div>
-                </div>
-                <div class="sim-live-step"><span class="sim-live-n">2</span>
-                  <div><b>Trigger</b>
-                    <div class="muted">Right-click or open the extension.</div>
-                    <div class="sim-live-pill"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11"
-                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
-                        stroke-linejoin="round" aria-hidden="true">
-                        <path d="m10 16 1.5 1.5" />
-                        <path d="m14 8-1.5-1.5" />
-                        <path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993" />
-                        <path d="m16.5 10.5 1 1" />
-                        <path d="m17 6-2.891-2.891" />
-                        <path d="M2 15c6.667-6 13.333 0 20-6" />
-                        <path d="m20 9 .891.891" />
-                        <path d="M3.109 14.109 4 15" />
-                        <path d="m6.5 12.5 1 1" />
-                        <path d="m7 18 2.891 2.891" />
-                        <path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993" />
-                      </svg> Ask Sims to review this</div>
+                </li>
+                <li class="sim-live-step"><span class="sim-live-n" aria-hidden="true">2</span>
+                  <div class="sim-live-body"><b>Run your Sims</b>
+                    <div class="muted">Right-click the page and choose <span class="sim-live-pill">Run all Sims</span> or <span class="sim-live-pill">Select Sims…</span> to pick which ones.</div>
+                    <div class="muted">Using the extension? Choose <span class="sim-live-pill">Analyze this page</span>.</div>
                   </div>
-                </div>
-                <div class="sim-live-step"><span class="sim-live-n">3</span>
-                  <div><b>Review</b>
-                    <div class="muted">Read observations and keep what matters.</div>
+                </li>
+                <li class="sim-live-step"><span class="sim-live-n" aria-hidden="true">3</span>
+                  <div class="sim-live-body"><b>Read the results</b>
+                    <div class="muted">Each Sim's observations appear on the page, under <b class="sim-live-inl">Your Sims</b> above, and in <b class="sim-live-inl">Sim Reports</b>. Keep what matters, dismiss the rest.</div>
                   </div>
-                </div>
-              </div>
+                </li>
+              </ol>
             </div>
             <button class="sim-live-dismiss" id="simLiveDismiss" type="button"
               aria-label="Dismiss live Sims explainer"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="16"
@@ -21190,6 +21273,7 @@
       // #532: overlay locally-edited fields the fresh payload may not yet reflect (belt-and-suspenders
       // behind the __klavMutating guard) so a lagging poll read can never clobber a just-saved value.
       mergeLocalEdits(data, fetchStart)
+      mergeLocalSimEdits(data, fetchStart)   // KD-2861: a poll that began before a Sim (de)activate can't revert it
       _dashAppliedSeq = seq
       _dashLastAppliedRequestAt = fetchStart   // request ISSUE time (taken just before the fetch), not completion time
       dashNoteNetworkApplied()
@@ -21241,6 +21325,38 @@
           const t = data.tickets.find(x => String(x.id) === id)
           if (t) Object.assign(t, edit.fields)
         }
+      } catch (e) { }
+      return data
+    }
+    // KD-2861: the same protection for a Sim's active flag. Deactivate / Activate on the Sims tab flips the card at
+    // once, but two reads can still land AFTER it carrying the old value — a Sims-tab status load that started
+    // before the change, and the dashboard poll — and repainted the Sim as Active for ~10s. An edit is protected
+    // while its request is pending, and against any read that began before it was confirmed (60s window).
+    window.__klavSimEdits = window.__klavSimEdits || {}
+    function recordSimEdit(simId, active) {
+      try { window.__klavSimEdits[String(simId)] = { active: !!active, ts: Date.now(), pending: true } } catch (e) { }
+    }
+    function confirmSimEdit(simId) {
+      try { const ed = window.__klavSimEdits[String(simId)]; if (ed) { ed.pending = false; ed.ts = Date.now() } } catch (e) { }
+    }
+    function clearSimEdit(simId) {
+      try { delete window.__klavSimEdits[String(simId)] } catch (e) { }
+    }
+    // The local edit that a read which began at `fetchStart` must not overwrite, or null. fetchStart null/undefined
+    // = a read made after the change (e.g. the response to our own request): only a pending edit protects.
+    function simEditGuarding(simId, fetchStart) {
+      try {
+        const ed = window.__klavSimEdits[String(simId)]
+        if (!ed) return null
+        if (!ed.pending && Date.now() - ed.ts > 60000) { delete window.__klavSimEdits[String(simId)]; return null }
+        if (ed.pending) return ed
+        return (typeof fetchStart === "number" && ed.ts >= fetchStart) ? ed : null
+      } catch (e) { return null }
+    }
+    function mergeLocalSimEdits(data, fetchStart) {
+      try {
+        if (!data || !Array.isArray(data.sims)) return data
+        for (const s of data.sims) { const ed = simEditGuarding(s.id, fetchStart); if (ed) s.active = ed.active }
       } catch (e) { }
       return data
     }
@@ -21529,7 +21645,8 @@
           const obs = (t.observation || "").toLowerCase()
           const quote = (t.sourceQuote || "").toLowerCase()
           const seq = (t.seqNum ? String(t.seqNum) : "")
-          if (!title.includes(q) && !obs.includes(q) && !quote.includes(q) && !seq.includes(q)) return false
+          const simNm = (t.simName || "").toLowerCase(), pth = (t.urlPath || "").toLowerCase()
+          if (!title.includes(q) && !obs.includes(q) && !quote.includes(q) && !seq.includes(q) && !simNm.includes(q) && !pth.includes(q)) return false
         }
         return true
       })
@@ -21793,8 +21910,23 @@
 
     // JTBD 3.10: render the whole New-reports view — the sentiment + Sim filter bar, then the rows that
     // pass both filters. Called on load and after every filter change so the two stay in lockstep.
+    // KD-395: the header search box (lives outside the re-rendered filter bar, so it keeps focus/value). Bound once.
+    let _tgSearchBound = false
+    function bindTgSearch() {
+      const inp = $("tgSearch"); if (!inp) return
+      if (!_tgSearchBound) {
+        _tgSearchBound = true
+        let t = null
+        inp.addEventListener("input", () => {
+          clearTimeout(t)
+          t = setTimeout(() => { _triageSearch = inp.value; _tgSelected.clear(); renderTriageItems(tgVisibleItems()) }, 150)
+        })
+      }
+      if (inp.value !== _triageSearch) inp.value = _triageSearch   // "Clear filters" resets _triageSearch → mirror it here
+    }
     function renderTriageView() {
       bindTgViewToggle()
+      bindTgSearch()
       renderTriageFilters()
       renderTriageItems(tgVisibleItems())
     }
@@ -24551,6 +24683,48 @@
               }).catch(function () { $("caGo").disabled = false; $("caMsg").style.color = "var(--rose)"; $("caMsg").textContent = "Network error. Try again."; });
           }
 
+          // ── KD-2863: Active / Inactive tabs ───────────────────────────────────────────────────
+          // A Sim is "inactive" when deactivated on this page (personas.active = false). The tab the user picks is remembered for the
+          // session; until they pick one, the page opens on Active — or on Inactive when no Sim is active (so it is never an empty page).
+          var _simsTabPref = null
+          try { const t = sessionStorage.getItem("klav:simsTab"); if (t === "active" || t === "inactive") _simsTabPref = t } catch (e) { }
+          function simsSplit(sims) {
+            const a = [], i = []
+            ;(sims || []).forEach(function (s) { (s.active !== false ? a : i).push(s) })
+            return { active: a, inactive: i }
+          }
+          function simsTabResolve(pref, nActive, nInactive) {
+            if (pref === "active" || pref === "inactive") return pref
+            return nActive === 0 && nInactive > 0 ? "inactive" : "active"
+          }
+          function simsTabsHtml(tab, nActive, nInactive) {
+            const t = function (id, label, n) {
+              const on = tab === id
+              return '<button type="button" class="t3-tab' + (on ? " on" : "") + '" role="tab" id="simsTab-' + id + '" aria-selected="' + (on ? "true" : "false") + '" tabindex="' + (on ? "0" : "-1") + '" data-sims-tab="' + id + '" onclick="setSimsTab(\'' + id + '\')" onkeydown="simsTabKey(event)">' + label + ' <span class="t3-tabc">' + n + '</span></button>'
+            }
+            return '<div class="t3-tabs sims-tabs" role="tablist" aria-label="Sims">' + t("active", "Active", nActive) + t("inactive", "Inactive", nInactive) + '</div>'
+          }
+          function simsTabEmptyHtml(tab) {
+            return '<div class="sims-tab-empty" role="status">' + (tab === "active"
+              ? "No active Sims — activate one from the Inactive tab."
+              : "No inactive Sims.") + '</div>'
+          }
+          function setSimsTab(tab) {
+            if (tab !== "active" && tab !== "inactive") return
+            _simsTabPref = tab
+            try { sessionStorage.setItem("klav:simsTab", tab) } catch (e) { }
+            renderSimsFeed()
+            const b = $("simsFeed") && $("simsFeed").querySelector('[data-sims-tab="' + tab + '"]')
+            if (b && document.activeElement !== b && document.activeElement && document.activeElement.closest && document.activeElement.closest("#simsFeed")) b.focus()
+          }
+          function simsTabKey(e) {
+            if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
+            e.preventDefault()
+            const cur = e.currentTarget && e.currentTarget.getAttribute("data-sims-tab")
+            setSimsTab(cur === "active" ? "inactive" : "active")
+            const b = $("simsFeed") && $("simsFeed").querySelector('[aria-selected="true"]'); if (b) b.focus()
+          }
+
           function renderSimsFeed() {
             const sims = state.sims || []
             const el = $("simsFeed")
@@ -24592,7 +24766,10 @@
               }
             }
             const pid = curProjId()
-            el.innerHTML = sims.map(sim => {
+            const split = simsSplit(sims)
+            const tab = simsTabResolve(_simsTabPref, split.active.length, split.inactive.length)
+            const shown = split[tab]
+            el.innerHTML = simsTabsHtml(tab, split.active.length, split.inactive.length) + (shown.length ? '<div role="tabpanel" aria-labelledby="simsTab-' + tab + '">' + shown.map(sim => {
               const href = pid
                 ? "/sim/" + encodeURIComponent(sim.id) + "?project=" + encodeURIComponent(pid)
                 : "/sim/" + encodeURIComponent(sim.id)
@@ -24641,30 +24818,28 @@
       </div>
       ${obHtml}
     </div>`
-            }).join("")
+            }).join("") + '</div>' : simsTabEmptyHtml(tab))
             if (typeof supPickRefresh === "function") supPickRefresh() // the Run Sims picker only offers active Sims
             loadSimExecStates(pid)
           }
 
-          // ── KD-1071: per-Sim Pause / Resume on the Sims tab ─────────────────────────────────
-          // Reads/writes ONLY the additive Select Sims state (/api/widget/sim-deployments → sim_deployments
-          // table), the same one the widget's "Select Sims…" modal uses. Activate/Deactivate above is untouched.
+          // ── Run / Stop on the Sims tab (per user) ─────────────────────────────────────────────
+          // Every ACTIVATED Sim shows Run (stopped) or Stop (running) — whether it reviews the pages YOU browse (the widget's Sims
+          // feedback card). Same per-user state as the widget's Select Sims modal and the card's Close (/api/widget/sim-deployments →
+          // lib/sim-run-state.ts). Activate / Deactivate (project-wide) is the separate button next to it.
           var _simExec = { pid: null, states: {}, at: 0, loading: false, busy: null }
 
           function simExecButtonHtml(sim) {
             const st = _simExec && _simExec.pid === curProjId() ? _simExec.states[sim.id] : null
-            if (!st) return ""
             const id = esc(sim.id)
+            const running = !!(st && st.run === "running")
             if (_simExec.busy === sim.id) {
-              return `<button type="button" class="sf-act sf-exec" disabled>${st.execution === "paused" ? "Resuming…" : "Pausing…"}</button>`
+              return `<button type="button" class="sf-act sf-exec" disabled>${running ? "Stopping…" : "Starting…"}</button>`
             }
-            if (st.deployment === "deployed" && st.execution === "running") {
-              return `<button type="button" class="sf-act sf-exec" data-sim-exec="${id}" aria-label="Pause ${esc(sim.name)}" onclick="simExecAction('${id}', 'pause', this)">❚❚ Pause</button>`
-            }
-            if (st.deployment === "deployed" && st.execution === "paused") {
-              return `<button type="button" class="sf-act sf-exec is-paused" data-sim-exec="${id}" aria-label="Resume ${esc(sim.name)}" onclick="simExecAction('${id}', 'resume', this)">▶ Resume</button>`
-            }
-            return "" // not deployed yet → no Pause/Resume; it appears once the Sim is deployed from Select Sims
+            // Until the state has loaded, show Run (the default — no Sim runs until you start it).
+            return running
+              ? `<button type="button" class="sf-act sf-exec is-running" data-sim-exec="${id}" aria-label="Stop ${esc(sim.name)}" title="Stop this Sim reviewing your pages" onclick="simExecAction('${id}', 'stop', this)">■ Stop</button>`
+              : `<button type="button" class="sf-act sf-exec" data-sim-exec="${id}" aria-label="Run ${esc(sim.name)}" title="Have this Sim review the pages you browse" onclick="simExecAction('${id}', 'run', this)">▶ Run</button>`
           }
 
           async function loadSimExecStates(pid) {
@@ -24672,29 +24847,35 @@
             if (_simExec.pid === pid && Date.now() - _simExec.at < 15000) return // fresh enough; later renders re-read it
             _simExec.loading = true
             try {
+              const startedAt = Date.now()   // KD-2861: a read that began before a local (de)activate must not overwrite it
               const res = await fetch("/api/widget/sim-deployments?project=" + encodeURIComponent(pid), { credentials: "include" })
               const data = await res.json().catch(function () { return {} })
               if (!res.ok || !data.ok) return
-              simExecStore(pid, data.sims)
+              simExecStore(pid, data.sims, startedAt)
               renderSimsFeed()
-            } catch (e) { /* best-effort: the cards just show no Pause/Resume */ }
+            } catch (e) { /* best-effort: the cards keep showing Run until the state loads */ }
             finally { _simExec.loading = false }
           }
 
-          // A change made in the widget's Select Sims modal on this page → refresh the Sims tab cards now.
+          // A change made in the widget (Select Sims modal, Run all Sims, the card's Close) on this page → refresh the Sims tab cards now.
           window.addEventListener("klavity:sim-deployments-applied", function () {
             if (!_simExec) return
             _simExec.at = 0
             if (typeof state !== "undefined" && state && state.sims && state.sims.length) loadSimExecStates(curProjId())
           })
 
-          function simExecStore(pid, sims) {
+          function simExecStore(pid, sims, fetchStart) {
             const states = {}
-            ;(sims || []).forEach(function (s) { states[s.id] = { deployment: s.deployment, execution: s.execution } })
-            // Deactivate in the widget's Select Sims modal also turns the Sim off → mirror it on the cards right away.
+            ;(sims || []).forEach(function (s) {
+              states[s.id] = { run: s.run === "running" ? "running" : "stopped" }
+              const ed = simEditGuarding(s.id, fetchStart)
+              if (ed && !ed.active) states[s.id] = { run: "stopped" }
+            })
+            // Keep the cards' Activated/Deactivated in step with the server (e.g. changed in another tab).
             if (typeof state !== "undefined" && state && state.sims) {
               ;(sims || []).forEach(function (s) {
                 if (typeof s.active !== "boolean") return
+                if (simEditGuarding(s.id, fetchStart)) return   // KD-2861: our own newer (de)activate wins over an older read
                 const local = state.sims.find(function (x) { return x.id === s.id })
                 if (local) local.active = s.active
               })
@@ -24707,26 +24888,51 @@
           async function simExecAction(simId, action, btn) {
             const pid = curProjId()
             const sim = (state.sims || []).find(function (x) { return x.id === simId })
-            if (!pid || !sim || _simExec.busy) return
-            _simExec.busy = simId
+            if (!pid || !sim) return
+            // INSTANT: flip the button + confirm now; the request runs in the background and a failure puts it back.
+            const prevState = _simExec.states[simId]
+            if (_simExec.pid !== pid) _simExec.pid = pid
+            _simExec.states[simId] = { run: action === "run" ? "running" : "stopped" }
             renderSimsFeed()
+            klavToast(esc(sim.name) + (action === "stop" ? " is stopped." : " is running — it reviews the pages you browse."))
+            const revert = (msg) => {
+              _simExec.states[simId] = prevState || { run: "stopped" }
+              renderSimsFeed()
+              klavToast(msg, true)
+            }
             try {
               const res = await fetch("/api/widget/sim-deployments", {
                 method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
                 body: JSON.stringify({ project: pid, action: action, simIds: [simId] }),
               })
               const data = await res.json().catch(function () { return {} })
-              if (!res.ok || !data.ok) { klavToast(esc(data.error || "Could not update the Sim. Please try again."), true); return }
-              if (Array.isArray(data.sims)) simExecStore(pid, data.sims)
-              // The widget on this page applies it right away (resumed Sims review the page again → feedback cards).
+              if (!res.ok || !data.ok) { revert(esc(data.error || "Could not update the Sim. Please try again.")); return }
+              if (Array.isArray(data.sims)) { simExecStore(pid, data.sims); renderSimsFeed() }
+              // The widget on this page applies it right away (a Sim you Run reviews the page now; a stopped one leaves the card).
               try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-changed")) } catch (e) { }
-              if (data.applied && data.applied.length) klavToast(esc(sim.name) + (action === "pause" ? " is paused." : " is running again."))
-              else klavToast(esc(sim.name) + (action === "pause" ? " isn't running, so there was nothing to pause." : " isn't paused, so there was nothing to resume."), true)
+              const skip = Array.isArray(data.skipped) && data.skipped[0]
+              if (!(data.applied && data.applied.length) && skip) klavToast(esc(sim.name) + ": " + esc(skip.reason), true)
             } catch (e) {
-              klavToast("Could not update the Sim. Check your connection and try again.", true)
-            } finally {
-              _simExec.busy = null
+              revert("Could not update the Sim. Check your connection and try again.")
+            }
+          }
+
+          // KD-2861: show the new Active/Inactive state the moment the user confirms (no wait for the request). Returns the
+          // function that puts the old state back — with a message — if the request fails.
+          function applySimActiveOptimistic(sim, makeActive) {
+            const simId = sim.id
+            const prevActive = sim.active !== false
+            const prevRun = _simExec && _simExec.states ? _simExec.states[simId] : undefined
+            recordSimEdit(simId, makeActive)
+            sim.active = !!makeActive
+            if (_simExec && _simExec.states) _simExec.states[simId] = { run: "stopped" }   // deactivating stops it; re-activating shows "Run"
+            renderSimsFeed()
+            return function (msg) {
+              clearSimEdit(simId)
+              sim.active = prevActive
+              if (_simExec && _simExec.states) { if (prevRun === undefined) delete _simExec.states[simId]; else _simExec.states[simId] = prevRun }
               renderSimsFeed()
+              klavToast(msg, true)
             }
           }
 
@@ -24738,28 +24944,35 @@
             if (!makeActive) {
               const ok = await klavConfirm({
                 title: "Deactivate " + sim.name + "?",
-                message: sim.name + " will stop reviewing pages and won't appear in the widget or extension. Their history stays, and you can activate them again any time.",
+                message: sim.name + " will stop running for everyone on this project and won't appear in the widget or extension. Their history stays, and you can activate them again any time.",
                 confirmText: "Deactivate",
                 danger: false,
               })
               if (!ok) return
             }
             if (btn) btn.disabled = true
+            const revertToggle = applySimActiveOptimistic(sim, makeActive)   // KD-2861: card flips now; a failure puts it back
+            window.__klavMutating = (window.__klavMutating || 0) + 1   // keep the liveness poll out of the way while it's in flight
             try {
               const res = await fetch("/api/personas/" + encodeURIComponent(simId) + "/active?project=" + encodeURIComponent(pid), {
                 method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include",
                 body: JSON.stringify({ active: !!makeActive }),
               })
               const data = await res.json().catch(function () { return {} })
-              if (!res.ok) { klavToast(esc(data.error || "Could not update the Sim. Please try again."), true); return }
-              sim.active = !!makeActive
+              if (!res.ok) { revertToggle(esc(data.error || "Could not update the Sim. Please try again.")); return }
+              confirmSimEdit(simId)   // from here only reads that began after this moment are trusted over the local value
+              // Deactivating stops it (server clears its Run state); re-activating shows "Run" — never silently running.
+              if (_simExec && _simExec.states) _simExec.states[simId] = { run: "stopped" }
+              // Keep the cached dashboard snapshot in step so a repaint from it can't show the old state.
+              try { if (typeof swrWrite === "function" && state && state.active && state.active.id) swrWrite(dashCacheKey(state.active.id), state) } catch (e) { }
               renderSimsFeed()
               // Tell the widget on this page so a deactivated Sim stops (and a re-activated one returns) right away.
               try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-changed")) } catch (e) { }
               klavToast(esc(sim.name) + (makeActive ? " is active again." : " is deactivated."))
             } catch (e) {
-              klavToast("Could not update the Sim. Check your connection and try again.", true)
+              revertToggle("Could not update the Sim. Check your connection and try again.")
             } finally {
+              window.__klavMutating = Math.max(0, (window.__klavMutating || 1) - 1)
               if (btn) btn.disabled = false
             }
           }
@@ -35671,7 +35884,7 @@
           areas on any page.</p>
       </div>
       <div class="sm-out" id="smOut"></div>
-      <!-- Figma design: after Create/Add the popup becomes a short "Sim created!" view, then closes by itself. -->
+      <!-- Figma design: after Create/Add the popup becomes a "Sim created!" view that stays until the user closes it. -->
       <div class="sm-created" id="smCreated" role="status" aria-live="polite" hidden>
         <svg xmlns="http://www.w3.org/2000/svg" class="sm-created-ic" width="22" height="22" viewBox="0 0 24 24" fill="none"
           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -35680,6 +35893,7 @@
         <h2 class="sm-created-t" id="smCreatedT">Sim created!</h2>
         <div class="sm-created-n" id="smCreatedN"></div>
         <div class="sm-created-s" id="smCreatedS">It will appear in your Sims list shortly.</div>
+        <button type="button" class="btn btn-indigo btn-sm sm-created-close" id="smCreatedClose">View Sims</button>
       </div>
       <!-- Post-add success panel: shown after at least one Sim is saved; guides user to activate their Sims -->
       <div class="sm-success" id="smSuccess" role="status" aria-live="polite">
@@ -36027,12 +36241,11 @@
             // Pretty host for the run-now prompt copy ("…on acme.com?"). Never throws on junk input.
             function runNowHost(u) { try { return new URL(/^https?:\/\//i.test(u) ? u : "https://" + u).hostname.replace(/^www\./, ""); } catch (e) { return ""; } }
             // Figma design: after adding, the popup becomes a short "Sim created!" view (check, name, "It will appear in your Sims
-            // list shortly.") and closes by itself; close() reloads the list so the new Sim is there. If other suggested Sims are
+            // list shortly.") and stays until closed (View Sims / ✕ / Esc); close() reloads the list so the new Sim is there. If other suggested Sims are
             // still waiting (From your site / From a call) we only toast, so they can be added or skipped, and show the view last.
             // (The old "now put them to work" panel markup further down is no longer shown.)
-            let createdTimer = null;
+            // KD-2862: no auto-close — the "Sim created!" popup stays until the user closes it (View Sims / ✕ / Esc).
             function clearCreatedView() {
-              if (createdTimer) { clearTimeout(createdTimer); createdTimer = null; }
               ov.classList.remove("sm-modal-created"); $("smCreated").hidden = true;
             }
             function showSuccessPanel(addedName, addedCount, merged, simId) {
@@ -36049,7 +36262,7 @@
               $("smCreatedS").textContent = dup ? "Merged into your existing Sim." : many ? "They will appear in your Sims list shortly." : "It will appear in your Sims list shortly.";
               clearCreatedView();
               $("smCreated").hidden = false; ov.classList.add("sm-modal-created");
-              createdTimer = setTimeout(function () { createdTimer = null; if (ov.classList.contains("sm-modal-created")) close(); }, 2200);
+              try { $("smCreatedClose").focus(); } catch (e) { }
             }
             function hideSuccessPanel() {
               successEl.classList.remove("show");
@@ -36505,6 +36718,7 @@
         return e.target === ov || !e.target.closest(".sm-modal");
       }
             $("simClose").onclick = function () { requestClose(); };
+            $("smCreatedClose").onclick = function () { close(); };   // KD-2862: manual "View Sims" button on the "Sim created!" popup (closing lands on the Sims list)
       // KD-1012: a click outside the Add a Sim modal never closes it (any step, including "Sim is ready") —
       // it only closes via the 'X' icon or an explicit Cancel/close action inside the modal.
       ["mousedown", "pointerdown", "click"].forEach((type) => ov.addEventListener(type, (e) => {
@@ -36513,6 +36727,7 @@
             document.addEventListener("keydown", (e) => {
               if (e.key !== "Escape" || !ov.classList.contains("show")) return;
               if (discardOpen()) { hideDiscard(); return; }   // Esc on the prompt = keep editing
+        if (ov.classList.contains("sm-modal-created")) { close(); return; }   // KD-2862: Esc dismisses the "Sim created!" popup
         if (simSuccessShown()) return;
               requestClose();
             });
