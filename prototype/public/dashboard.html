@@ -28915,7 +28915,14 @@
             const shown = tickets.slice(0, FEED_VISIBLE)
             shown.forEach(t => {
               const ticketId = t.id
-              const sub = [t.simName ? ("by " + t.simName) : "", t.urlPath ? esc(t.urlPath) : "", ago(t.createdAt)].filter(Boolean).join(" · ")
+              // Sub-line: ticket ID · project · when (exact date/time on hover) · reporting Sim. It used to show the page path the report
+              // came from (e.g. "/dashboard"), which read as noise and hid the ticket's own ID. The path is still on the ticket itself.
+              const projName = (state.active && state.active.name) || ""
+              let when = ago(t.createdAt)
+              if (t.createdAt) {
+                try { when = `<span title="${esc(new Date(t.createdAt).toLocaleString())}">${esc(when)}</span>` } catch (e) { }
+              }
+              const sub = [esc(ticketKeyLabel(t)), projName ? esc(projName) : "", when, t.simName ? ("by " + esc(t.simName)) : ""].filter(Boolean).join(" · ")
 
               const rowEl = document.createElement("div")
               rowEl.className = "row-tkt " + sevRailClass(t.priority)
