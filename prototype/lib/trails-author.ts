@@ -84,7 +84,7 @@ const SUBMIT_CANDIDATES = [
 /** Strip ephemeral kref attribute references from strings before persisting or adding to history.
  *  Conveys which ref failed without embedding the literal data-kref attr (which is stale by the
  *  next model call anyway since every iteration re-captures and renumbers refs). */
-const dekref = (s: string) => s.replace(/\[data-kref="(e\d+)"\]/g, "snapshot ref $1")
+const dekref = (s: string) => s.replace(/[a-z0-9-]*\[data-kref=["']?(e\d+)["']?\]/gi, "snapshot ref $1")
 
 function isAnalysisObjective(objective: string): boolean {
   return /\b(analy[sz]e|analysis|audit|review|inspect|evaluate|assess|suggest(?:[-\s_]+improvements?)?|recommend(?:ations?)?|improvements?)\b/i
@@ -1299,6 +1299,8 @@ export async function authorTrail(
       v = await (opts.verificationWalk ?? walkTrail)(projectId, trailId, {
         fixtureUrl: req.baseUrl, suppressFindings: true, credResolver, deadlineMs: 180_000,
         launchArgs, headless: opts.headless, replay: true,
+        // KD-2255: per-step screenshots, same as a manual Run, so the verification PDF shows each step.
+        stepShots: true,
         // Replay any `upload` steps against the same fixtures the drive used.
         ...(opts.fileResolver ? { fileResolver: opts.fileResolver } : {}),
         ...(vision ? { vision } : {}),

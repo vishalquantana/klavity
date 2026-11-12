@@ -14,7 +14,9 @@ const TRUNCATION_MARKER = "\n…[snapshot truncated]"
 
 /** True iff s is exactly one stamped kref selector, e.g. `[data-kref="e12"]`. */
 export function isKrefSelector(s: string | null | undefined): boolean {
-  return typeof s === "string" && /^\[data-kref="e\d+"\]$/.test(s.trim())
+  // KD-2255: the model also writes button[data-kref="e26"] / [data-kref='e6']; those are just as ephemeral
+  // and were being persisted into the replay script (replay can never match them).
+  return typeof s === "string" && /^[a-z0-9-]*\[data-kref=["']?e\d+["']?\]$/i.test(s.trim())
 }
 
 export type RecordedStepState = {
@@ -29,7 +31,7 @@ export type RecordedStepState = {
 }
 
 function dekref(s: string): string {
-  return s.replace(/\[data-kref="(e\d+)"\]/g, "snapshot ref $1")
+  return s.replace(/[a-z0-9-]*\[data-kref=["']?(e\d+)["']?\]/gi, "snapshot ref $1")
 }
 
 function safeSelector(selector: string | null | undefined): string | null {

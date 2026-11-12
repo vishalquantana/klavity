@@ -595,7 +595,6 @@
         (auto.status === 'draft' ? '<button class="btn btn-ghost" id="aspActivate" title="Active AutoSims can run on a schedule and file findings">Activate</button>' : '') +
         '<button class="btn btn-ghost" id="aspRerecord">Re-record</button>' +
         '<a class="btn btn-ghost" href="' + esc(tcBase + '/script?project=' + P) + '" download title="Playwright script; also importable on another Klavity server">Export script</a>' +
-        '<button class="btn btn-ghost" id="aspImport" title="Replace this AutoSim with a script exported from Klavity">Import script</button>' +
         '<button class="btn btn-ghost btn-danger" id="aspUnlink">Remove</button></div></div>' +
         '<p class="muted">Run replays the recorded script exactly, without AI. If your app changed and runs start failing, update the execution steps if needed, then Re-record to generate a new script. Past results are kept.</p>' +
         (auto.status === 'draft' ? '<p class="muted" style="margin-top:6px">This AutoSim is a draft: you can run it now; activate it to run it on a schedule and file findings.</p>' : '') +
@@ -641,19 +640,16 @@
     }
     if ($('aspTcCreate')) $('aspTcCreate').onclick = function () { record(this, false) }
 
-    // Import a script exported by Export script (this or another Klavity server) as this test case's AutoSim.
-    $('aspImport').onclick = function () {
+    // Import a script exported by Export script (this or another Klavity server). Only offered while the
+    // test case has no AutoSim; to replace an existing one, Remove it first.
+    if ($('aspImport')) $('aspImport').onclick = function () {
       var btn = this, input = document.createElement('input')
       input.type = 'file'; input.accept = '.ts,.js,text/plain'
       input.onchange = async function () {
         var f = input.files && input.files[0]; if (!f) return
-        var go = async function () {
-          btn.disabled = true; btn.textContent = 'Importing…'
-          try { await api('POST', tcBase + '/script', { script: await f.text() }); toast('Script imported'); renderTestCase(apId, tcId) }
-          catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = 'Import script' }
-        }
-        if (auto) confirmDanger('Replace "' + auto.name + '" with ' + f.name + '?', 'The imported script becomes this test case\'s AutoSim. The current one is archived and past results are kept.', 'Import', go)
-        else go()
+        btn.disabled = true; btn.textContent = 'Importing…'
+        try { await api('POST', tcBase + '/script', { script: await f.text() }); toast('Script imported'); renderTestCase(apId, tcId) }
+        catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = 'Import script' }
       }
       input.click()
     }

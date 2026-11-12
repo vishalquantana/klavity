@@ -9,7 +9,7 @@
 // hands Playwright the resolved devtools endpoint. See acquirePlaywrightBrowser + createSteelSession.
 import type { Fingerprint, NetworkMock as TrailNetworkMock, TrailViewport } from "./trails-types"
 import { KREF_SNAPSHOT_CAP } from "./trails-snapshot"
-import { clickWithTransitionFallback, selectOptionAnyWidget } from "./trails-click"
+import { clickWithTransitionFallback, selectOptionAnyWidget, gotoPastRedirect } from "./trails-click"
 // KLA-786 (dialog-capture): keep at most the last N captured dialogs per page so an alert-spamming page
 // can't grow the buffer unbounded between drains. The author loop drains every loop-top, so N need only
 // cover a burst within one action.
@@ -648,7 +648,7 @@ class PlaywrightPage implements BrowserPage {
   }
   drainDialogs() { const out = this.dialogs; this.dialogs = []; return out }
   url() { return this.page.url() }
-  async goto(url: string, timeoutMs: number) { await this.page.goto(url, { timeout: timeoutMs, waitUntil: "domcontentloaded" }) }
+  async goto(url: string, timeoutMs: number) { await gotoPastRedirect(this.page, url, { timeout: timeoutMs, waitUntil: "domcontentloaded" }) }
   async screenshotJpeg(quality: number, timeoutMs: number, opts?: { fullPage?: boolean }) { return (await this.page.screenshot({ type: "jpeg", quality, timeout: timeoutMs, fullPage: !!opts?.fullPage })).toString("base64") }
   async krefSnapshot(capChars = KREF_SNAPSHOT_CAP) { return cap(await retryNavRace(() => this.page.evaluate(krefSnapshotBody)), capChars) }
   async pageElements(opts?: { fullPage?: boolean }) { return await this.page.evaluate(pageElementsBody, !!opts?.fullPage) }

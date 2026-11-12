@@ -38906,23 +38906,18 @@
             // The server files the new AutoSim under the test case and picks its login. Throws on a rejected
             // start (validation, plan limit, another AutoSim running) so the caller can show the message.
             var ntTestCaseId = null
+            // Opens the New AutoSim form pre-filled from the test case. Nothing starts until the user clicks
+            // Create AutoSim there (the ntGo handler files it under ntTestCaseId).
             async function startAutosimForTestCase(ctx) {
-              var r = await fetch("/api/trails/author" + projQ(), {
-                method: "POST", headers: { "content-type": "application/json" },
-                body: JSON.stringify({ name: String(ctx.name || "").slice(0, 80), objective: ctx.objective, base_url: ctx.url, viewport: { preset: "desktop", width: 1920, height: 1080 }, test_case_id: ctx.id, replace: !!ctx.replace }),
-              })
-              if (!r.ok) { var e = await r.json().catch(function () { return {} }); throw new Error(e.error || ("Couldn't start the AutoSim (" + r.status + ")")) }
-              var d = await r.json()
               ntTestCaseId = ctx.id
               document.getElementById("ntName").value = String(ctx.name || "").slice(0, 80)
               document.getElementById("ntUrl").value = ctx.url
               document.getElementById("ntObj").value = ctx.objective
               try { await loadAccounts() } catch (e) { }
               var acc = document.getElementById("ntAcc"); if (acc) acc.value = ctx.cred && ctx.cred !== "-" ? ctx.cred : ""
-              document.getElementById("ntGo").disabled = true
-              var box = document.getElementById("ntProgress"); box.innerHTML = '<div class="nt-live">AutoSim is recording your test case…</div>'
+              document.getElementById("ntGo").disabled = false
+              document.getElementById("ntProgress").innerHTML = ""
               document.getElementById("ntBg").classList.add("show")
-              pollAuthor(d.sessionId, box)
             }
             function closeNtDialog() {
               document.getElementById("ntBg").classList.remove("show")

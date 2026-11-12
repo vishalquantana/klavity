@@ -110,6 +110,29 @@ async function readPageState(page: Page): Promise<string | null> {
 }
 
 /**
+ * KD-2255: goto that tolerates the app's own redirect. PX4 sends the browser to /Resources by script
+ * right after the company pick; a goto issued meanwhile fails with "interrupted by another navigation"
+ * and crashed the whole replay. Let the app's navigation land, then go where the step says (2 retries).
+ */
+export async function gotoPastRedirect(page: Page, url: string, opts: { timeout: number; waitUntil?: "load" | "domcontentloaded" }): Promise<void> {
+  const where = (u: string) => { try { const x = new URL(u); return x.origin + x.pathname.replace(/\/+$/, "") } catch { return u } }
+  const settle = () => page.waitForLoadState("load", { timeout: Math.min(opts.timeout, 15_000) }).catch(() => {})
+  for (let i = 0; ; i++) {
+    let resp: Awaited<ReturnType<Page["goto"]>> = null
+    try { resp = await page.goto(url, opts) }
+    catch (e) {
+      if (i >= 2 || !/interrupted by another navigation/i.test(String((e as Error)?.message ?? e))) throw e
+      await settle(); continue
+    }
+    // The server served the page we asked for, but the app's own script then sent us elsewhere (a silent
+    // bounce, no error): let it land and go back. A server-side redirect (resp URL differs) is honored.
+    const serverRedirected = !!resp && where(resp.url()) !== where(url)
+    if (i >= 2 || serverRedirected || where(page.url()) === where(url)) return
+    await settle()
+  }
+}
+
+/**
  * KD-2255: `select` on a styled dropdown (select2 / chosen / a wrapper div). The visible element is a
  * <span role="combobox">, not a <select>, so Playwright's selectOption throws "Element is not a <select>
  * element" and the walk stalls after 3 identical misses. Resolve the hidden native <select> behind the
