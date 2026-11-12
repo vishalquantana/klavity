@@ -64,7 +64,7 @@ describe("Select Sims modal — Run / Stop", () => {
     expect(row("s1").textContent).toContain("Eleanor Vance")
     expect(row("s1").textContent).toContain("Technology executive")
     expect(row("s2").querySelector('[data-kind="run"]')!.textContent).toBe("Running")
-    expect(row("s1").querySelector('[data-kind="run"]')!.textContent).toBe("Stopped")
+    expect(row("s1").querySelector('[data-kind="run"]')!.textContent).toBe("Not running")   // KD-2869: never "Stopped" for a Sim that was never started
     expect(rowBtn("s2")!.dataset.action).toBe("stop")
     expect(rowBtn("s1")!.dataset.action).toBe("run")
     // No Deploy / Deactivate / Pause / Resume anywhere.
@@ -122,6 +122,25 @@ describe("Select Sims modal — Run / Stop", () => {
     input.value = "product"
     input.dispatchEvent(new Event("input"))
     expect(rows().map((r) => r.dataset.simId)).toEqual(["s2"])
+  })
+
+  it("KD-2869: an idle Activated Sim says 'Not running'; Run shows 'Running' at once and it stays Running after the server answers", async () => {
+    const { api, hold } = fakeApi(PROJECT)
+    openSelectSimsModal({ api })
+    await flush()
+    const badge = (id: string) => row(id).querySelector('[data-kind="run"]')!.textContent
+    expect(badge("s1")).toBe("Not running")
+    expect(badge("s3")).toBe("Not running")
+    expect(badge("s2")).toBe("Running")
+    expect(root().textContent).not.toContain("Stopped")
+    const release = hold()
+    rowBtn("s1")!.click()
+    expect(badge("s1")).toBe("Running")              // instant, before the server answers
+    release(); await flush(); await flush()
+    expect(badge("s1")).toBe("Running")              // and no flip back once it has answered
+    foot("stop_all").click()
+    await flush(); await flush()
+    expect(badge("s1")).toBe("Not running")
   })
 
   it("Run is INSTANT: the row flips and the toast shows before the server answers", async () => {
