@@ -1048,5 +1048,12 @@
     "excerpt": "Figma Make testing starts below the UI: auth and data boundaries, server-side validation, and failure states — before you share the link.",
     "category": "Guides",
     "date": "2026-11-11"
+  },
+  {
+    "slug": "ai-qa-for-nextjs-apps",
+    "title": "AI QA for Next.js Apps: Catch Bugs Before Your Client",
+    "excerpt": "AI QA for Next.js apps means running AI agents against a production build, so hydration, caching and middleware bugs surface before clients do.",
+    "category": "Guides",
+    "date": "2026-11-12"
   }
 ]

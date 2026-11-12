@@ -1,0 +1,195 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI QA for Next.js Apps: Catch Bugs Before Your Client · Klavity</title>
+<meta name="description" content="AI QA for Next.js apps means running AI agents against a production build, so hydration, caching and middleware bugs surface before clients do.">
+<link rel="canonical" href="https://klavity.in/blog/ai-qa-for-nextjs-apps">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI QA for Next.js Apps: Catch Bugs Before Your Client"><meta property="og:description" content="AI QA for Next.js apps means running AI agents against a production build, so hydration, caching and middleware bugs surface before clients do.">
+<meta property="og:url" content="https://klavity.in/blog/ai-qa-for-nextjs-apps"><meta property="og:image" content="https://klavity.in/blog/ai-qa-for-nextjs-apps.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI QA for Next.js Apps: Catch Bugs Before Your Client"><meta name="twitter:description" content="AI QA for Next.js apps means running AI agents against a production build, so hydration, caching and middleware bugs surface before clients do."><meta name="twitter:image" content="https://klavity.in/blog/ai-qa-for-nextjs-apps.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI QA for Next.js Apps: Catch Bugs Before Your Client","description":"AI QA for Next.js apps means running AI agents against a production build, so hydration, caching and middleware bugs surface before clients do.","datePublished":"2026-11-12","dateModified":"2026-11-12","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-qa-for-nextjs-apps.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-qa-for-nextjs-apps","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI QA for Next.js Apps: Catch Bugs Before Your Client","item":"https://klavity.in/blog/ai-qa-for-nextjs-apps"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-qa-for-nextjs-apps"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Why do Next.js bugs not show up in next dev?","acceptedAnswer":{"@type":"Answer","text":"The development server renders every request on demand and skips most caching and static generation, while React Strict Mode double-invokes effects. Environment variables are also inlined at build time, so a missing NEXT_PUBLIC_ prefix only becomes visible once you build. Test next build plus next start, not next dev."}},{"@type":"Question","name":"What is a hydration mismatch and how do I catch it?","acceptedAnswer":{"@type":"Answer","text":"It happens when the HTML the server rendered does not match what the client renders first — commonly from dates, random values, locale formatting or reading localStorage during render. It usually produces a console error and a silent client re-render rather than a visible crash, so the only reliable way to catch it is to fail your QA run on hydration errors in the console."}},{"@type":"Question","name":"Can AI QA test authenticated Next.js routes and middleware?","acceptedAnswer":{"@type":"Answer","text":"Yes, provided you give it a real test session. Middleware bugs are almost always about which paths the matcher covers, so test as a matrix: signed in, signed out and expired session, against both protected and public routes."}},{"@type":"Question","name":"Does this apply to Next.js apps generated by v0, Bolt or Lovable?","acceptedAnswer":{"@type":"Answer","text":"Especially so. AI builders usually emit Next.js and optimise for a working preview, not a correct production build. Check that the app survives next build, that \"use client\" has not been applied to the entire tree, that env vars are prefixed correctly, and that route handlers validate their input."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-11-12</div>
+    <h1>AI QA for Next.js Apps: Catch Bugs Before Your Client</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <line x1="0" y1="80" x2="800" y2="80" stroke="#f5f0e8" stroke-opacity="0.06" stroke-width="1"/>
+  <line x1="0" y1="330" x2="800" y2="330" stroke="#f5f0e8" stroke-opacity="0.06" stroke-width="1"/>
+  <rect x="48" y="44" width="54" height="6" rx="3" fill="#6366f1"/>
+  <rect x="110" y="44" width="26" height="6" rx="3" fill="#6366f1" fill-opacity="0.4"/>
+  <rect x="48" y="110" width="170" height="170" rx="12" fill="#f5f0e8" fill-opacity="0.04" stroke="#6366f1" stroke-width="2"/>
+  <rect x="70" y="136" width="100" height="8" rx="4" fill="#6366f1" fill-opacity="0.75"/>
+  <rect x="70" y="158" width="126" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="70" y="180" width="80" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="70" y="202" width="112" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+  <circle cx="192" cy="140" r="7" fill="#4ade80"/>
+  <line x1="218" y1="195" x2="278" y2="195" stroke="#6366f1" stroke-width="3"/>
+  <polyline points="268,188 280,195 268,202" fill="none" stroke="#6366f1" stroke-width="3"/>
+  <rect x="284" y="140" width="86" height="110" rx="10" fill="#f5f0e8" fill-opacity="0.04" stroke="#6366f1" stroke-width="2" stroke-dasharray="7 5"/>
+  <path d="M327 164 L349 196 L305 196 Z" fill="#6366f1" fill-opacity="0.8"/>
+  <rect x="303" y="212" width="48" height="7" rx="3.5" fill="#f5f0e8" fill-opacity="0.25"/>
+  <line x1="370" y1="195" x2="430" y2="195" stroke="#f87171" stroke-width="3" stroke-dasharray="6 5"/>
+  <circle cx="399" cy="132" r="20" fill="#f87171" fill-opacity="0.16" stroke="#f87171" stroke-width="2"/>
+  <line x1="392" y1="125" x2="406" y2="139" stroke="#f87171" stroke-width="3"/>
+  <line x1="406" y1="125" x2="392" y2="139" stroke="#f87171" stroke-width="3"/>
+  <line x1="399" y1="152" x2="399" y2="186" stroke="#f87171" stroke-width="2" stroke-dasharray="4 4"/>
+  <rect x="436" y="96" width="316" height="198" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-width="2"/>
+  <line x1="436" y1="128" x2="752" y2="128" stroke="#6366f1" stroke-width="2"/>
+  <circle cx="456" cy="112" r="5" fill="#f87171"/>
+  <circle cx="474" cy="112" r="5" fill="#6366f1" fill-opacity="0.6"/>
+  <circle cx="492" cy="112" r="5" fill="#4ade80"/>
+  <rect x="460" y="152" width="180" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.26"/>
+  <rect x="460" y="176" width="134" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.18"/>
+  <rect x="460" y="212" width="112" height="30" rx="8" fill="#6366f1"/>
+  <circle cx="700" cy="232" r="22" fill="#4ade80" fill-opacity="0.15" stroke="#4ade80" stroke-width="2"/>
+  <polyline points="690,232 698,240 712,224" fill="none" stroke="#4ade80" stroke-width="3"/>
+  <rect x="48" y="356" width="704" height="12" rx="6" fill="#f5f0e8" fill-opacity="0.08"/>
+  <rect x="48" y="356" width="430" height="12" rx="6" fill="#6366f1"/>
+  <circle cx="478" cy="362" r="9" fill="#1e1b2e" stroke="#4ade80" stroke-width="3"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI QA for Next.js apps has to run against a production build, because caching, static generation and environment variables behave differently in next dev. The highest-value checks are hydration errors, server/client boundary breaks, stale cached routes, middleware redirect loops and failed Server Actions — all of which can occur on a page that returns HTTP 200 and looks correct.</div>
+    <div class="prose"><p><strong>AI QA for Next.js apps</strong> means pointing AI agents at your app in a real browser &mdash; walking routes, submitting forms, and checking what actually renders &mdash; so framework-specific failures surface before a client finds them. The bugs that matter in Next.js are rarely plain logic errors. They live at the boundaries the framework introduces: server versus client components, hydration, caching, and middleware. Most of them do not reproduce in <code>next dev</code> at all. So a working AI QA setup does three things: it runs against a <em>production</em> build, it covers every route including dynamic and authenticated ones, and it treats console and network errors as test failures rather than background noise.</p>
+
+<h2>What makes QA for a Next.js app different from testing a plain React site?</h2>
+
+<p>A single-page React app renders in one place: the browser. Next.js splits rendering across a server runtime, an edge runtime, and the client, then stitches the results together. Every seam is a place where a page can look right in one environment and break in another.</p>
+
+<p>That changes what QA has to look at. Checking that a page "loads" is no longer meaningful, because a Next.js page can return HTTP 200, paint correct-looking HTML, and still be broken &mdash; a hydration mismatch throws the server markup away and re-renders on the client, a cached route serves last week's content, or a Server Action fails and the error boundary swallows the real status code. None of that shows up in a screenshot diff. All of it shows up in the console, the network tab, and in what happens after you click.</p>
+
+<h2>Why do Next.js bugs only appear in production builds?</h2>
+
+<p>This is the single most common reason an agency ships a broken Next.js site: the development server is a different program than the production one.</p>
+
+<ul>
+<li><strong>Caching and static generation only fully apply after a build.</strong> In development, pages are rendered per request. Run <code>next build &amp;&amp; next start</code> and the same route may become statically generated, cached, or revalidated on a timer &mdash; which is where stale-content bugs are born.</li>
+<li><strong>React Strict Mode double-invokes effects in development.</strong> Code that depends on an effect running exactly once can behave differently in dev and prod, in either direction.</li>
+<li><strong>Environment variables resolve at build time.</strong> Only variables prefixed <code>NEXT_PUBLIC_</code> are inlined into the client bundle. A missing prefix gives you <code>undefined</code> in the browser; an accidental prefix on a secret ships that secret to every visitor.</li>
+<li><strong>Bundling and tree-shaking change.</strong> Code paths that worked unminified can break once optimised, and dynamic imports fail differently.</li>
+</ul>
+
+<p>The practical rule: <strong>any QA that runs only against <code>next dev</code> is not QA.</strong> Build the app, serve it the way production serves it, then test that. This is the same discipline we describe for <a href="/blog/ai-qa-for-saas-applications">AI QA for SaaS applications</a> &mdash; test the artifact you are shipping, not the one that is convenient to run.</p>
+
+<h2>Which Next.js failures should AI QA for Next.js apps cover first?</h2>
+
+<p>Not all framework bugs are equally likely. These are the clusters worth automating before anything else, with where each one hides:</p>
+
+<table>
+<tr><th>Failure class</th><th>Where it hides</th><th>How to catch it</th></tr>
+<tr><td>Hydration mismatch</td><td>Console error; silent client re-render</td><td>Fail the run on any hydration error in the console</td></tr>
+<tr><td>Server/client boundary break</td><td>Build error, or a runtime serialization error</td><td>Production build + exercise interactive components</td></tr>
+<tr><td>Stale cached content</td><td>Correct page, outdated data</td><td>Change content, then re-check the route after revalidation</td></tr>
+<tr><td>Middleware redirect loops</td><td>Auth-gated routes only</td><td>Run authenticated and unauthenticated passes</td></tr>
+<tr><td>Failed Server Action / route handler</td><td>Generic error boundary; 500 in network tab</td><td>Treat any 4xx/5xx during a flow as a failure</td></tr>
+<tr><td>Client-navigation state leak</td><td>Only after multiple in-app clicks</td><td>Multi-step journeys, not single page loads</td></tr>
+</table>
+
+<p>That last row deserves emphasis. Next.js <code>&lt;Link&gt;</code> navigation does not do a full page load, so component state, scroll position, and stale data can persist between views. A QA pass that visits each URL directly will never see it. Only a flow that clicks through the app the way a person does will.</p>
+
+<h2>How do you test server components, route handlers, and middleware?</h2>
+
+<p>Each layer needs a different kind of check, and conflating them is why Next.js test suites get flaky.</p>
+
+<h3>Server Components</h3>
+<p>These render on the server and ship no interactivity. They cannot use hooks or event handlers, and you cannot pass a function across the <code>"use client"</code> boundary &mdash; it fails to serialize. Verify them by asserting on the rendered output of a production build, not by mounting them in a unit test runner.</p>
+
+<h3>Route handlers and Server Actions</h3>
+<p>Test these as an API: call them directly, assert status codes and response shapes, and include the unhappy paths &mdash; missing fields, wrong content type, unauthenticated calls. Browser-level testing alone hides the real status behind an error boundary.</p>
+
+<h3>Middleware</h3>
+<p>Middleware runs before the route resolves, on a restricted edge runtime, and matches by config. Its bugs are almost always about <em>which</em> paths it matches: a redirect loop on a login page, or a protected route that quietly slips through the matcher. Test it as a matrix &mdash; signed in, signed out, expired session &mdash; against both protected and public routes.</p>
+
+<h2>What does an AI QA workflow for a Next.js app look like?</h2>
+
+<p>The reason AI helps here is coverage economics. Writing and maintaining selector-based tests for every route of a client site is work most agencies never finish, and Next.js routes change shape constantly during a build. An AI-driven pass works from intent instead of selectors.</p>
+
+<ol>
+<li><strong>Build and serve production.</strong> <code>next build</code>, then serve it &mdash; locally or on a preview deployment. Never QA the dev server.</li>
+<li><strong>Enumerate real routes.</strong> Include dynamic segments with real IDs and authenticated routes with a real test session, not just the marketing pages.</li>
+<li><strong>Run persona journeys.</strong> <a href="/sims">Klavity Sims</a> drives AI personas through the flows that matter &mdash; sign up, search, checkout, submit the form &mdash; clicking through the app rather than hitting URLs, which is how client-navigation and state bugs appear.</li>
+<li><strong>Fail on console and network errors.</strong> Hydration warnings and 500s from Server Actions are the highest-signal Next.js defects and the easiest to ignore. Promote them to failures.</li>
+<li><strong>Lock the passing flows into regression tests.</strong> <a href="/autosim">AutoSim</a> converts verified journeys into E2E tests that repair their own selectors when the markup shifts &mdash; which matters in Next.js, where refactoring a server component into a client component rewrites the DOM without changing behaviour.</li>
+<li><strong>Keep a reporting path for humans.</strong> When a client or stakeholder does hit something, <a href="/snap">Snap</a> captures the console, network, and route context from a right-click, so "the form didn't work" arrives as a reproducible ticket.</li>
+</ol>
+
+<h2>How should agencies QA Next.js sites generated by v0, Bolt, or Lovable?</h2>
+
+<p>Most AI app builders emit Next.js. That means the output arrives with exactly the risk profile described above, written by a tool that optimised for a working preview rather than a correct production build. The specific things to check on generated code: whether <code>"use client"</code> has been sprayed across the whole tree (which throws away the framework's benefits), whether env vars are correctly prefixed, whether any route handler validates its input at all, and whether the thing even survives <code>next build</code> &mdash; previews frequently do not.</p>
+
+<p>Treat generated code as unreviewed, because it is. The same approach we lay out for <a href="/blog/v0-app-testing">testing a v0-generated UI</a> applies to any Next.js output: verify behaviour against a production build before you put your name on it. For the broader method, see our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>The short version</h2>
+
+<p>Next.js gives you rendering strategies that make sites fast and a set of seams that make bugs invisible. QA that only loads pages on a dev server will miss nearly all of them. QA that runs real journeys against a production build, and fails on console and network errors, catches them while they are still cheap.</p>
+
+<p><a href="/onboarding"><strong>Scan your next client site free</strong></a> &mdash; point Klavity at a Next.js build and see what your QA pass is currently missing.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>QA the production build, never the dev server</li><li>Fail runs on hydration and console errors</li><li>Test middleware as an auth-state matrix</li><li>Click through flows instead of visiting URLs</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Why do Next.js bugs not show up in next dev?</summary><p>The development server renders every request on demand and skips most caching and static generation, while React Strict Mode double-invokes effects. Environment variables are also inlined at build time, so a missing NEXT_PUBLIC_ prefix only becomes visible once you build. Test next build plus next start, not next dev.</p></details><details><summary>What is a hydration mismatch and how do I catch it?</summary><p>It happens when the HTML the server rendered does not match what the client renders first — commonly from dates, random values, locale formatting or reading localStorage during render. It usually produces a console error and a silent client re-render rather than a visible crash, so the only reliable way to catch it is to fail your QA run on hydration errors in the console.</p></details><details><summary>Can AI QA test authenticated Next.js routes and middleware?</summary><p>Yes, provided you give it a real test session. Middleware bugs are almost always about which paths the matcher covers, so test as a matrix: signed in, signed out and expired session, against both protected and public routes.</p></details><details><summary>Does this apply to Next.js apps generated by v0, Bolt or Lovable?</summary><p>Especially so. AI builders usually emit Next.js and optimise for a working preview, not a correct production build. Check that the app survives next build, that &quot;use client&quot; has not been applied to the entire tree, that env vars are prefixed correctly, and that route handlers validate their input.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
