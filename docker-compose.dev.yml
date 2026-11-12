@@ -9,6 +9,7 @@ services:
     image: python:3.11-slim # just a Debian bookworm base; bun is installed on first start
     working_dir: /app
     ports: ["4317:4317"]
+    restart: unless-stopped # a server crash brings it back instead of leaving localhost:4317 down
     volumes:
       - .:/app
       - nm-root:/app/node_modules

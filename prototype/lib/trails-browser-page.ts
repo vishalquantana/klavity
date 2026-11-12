@@ -529,7 +529,10 @@ export async function retryNavRace<T>(fn: () => Promise<T>, tries = 4, attemptMs
   for (let i = 1; ; i++) {
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      return await Promise.race([fn(), new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error("snapshot attempt hung")), attemptMs) })])
+      // The losing attempt keeps running; when it later fails (e.g. the browser was closed by a cancel)
+      // nothing awaits it any more - mark it handled so it can't crash the server (KD-2255).
+      const attempt = fn(); attempt.catch(() => {})
+      return await Promise.race([attempt, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error("snapshot attempt hung")), attemptMs) })])
     } catch (e) {
       if (i >= tries || !NAV_RACE_RE.test(String((e as any)?.message ?? e))) throw e
       await new Promise((r) => setTimeout(r, 750))

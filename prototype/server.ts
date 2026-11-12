@@ -16674,6 +16674,12 @@ async function handleVoiceStreamUpgrade(
   return wjson({ error: "upgrade failed" }, 400)
 }
 
+// KD-2255: one stray background rejection (a browser op that fails after its AutoSim was cancelled and the
+// browser closed) used to exit the whole server, and the container (restart: no) stayed down. Log it instead.
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection] kept server alive:", String((reason as any)?.stack || reason).split("\n").slice(0, 4).join(" | "))
+})
+
 Bun.serve({
   port: PORT,
   idleTimeout: 180,

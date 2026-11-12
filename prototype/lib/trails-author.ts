@@ -475,6 +475,7 @@ export async function authorTrail(
   // ends the moment the user cancels; the loop-top abort check then stalls with "cancelled by user".
   const bounded = <T>(p: Promise<T>, ms: number, what: string): Promise<T> => {
     const sig = opts.abortSignal
+    p.catch(() => {})   // may fail after we've given up on it (cancel/timeout closed the page): never a crash
     if (sig?.aborted) return Promise.reject(new Error("cancelled by user"))
     let timer: ReturnType<typeof setTimeout> | undefined, onAbort: (() => void) | undefined
     return Promise.race([p, new Promise<never>((_, rej) => {
