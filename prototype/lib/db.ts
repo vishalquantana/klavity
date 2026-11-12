@@ -4426,6 +4426,32 @@ export type FeedbackMeta = {
 // `boardOnly` drops Sim reports still awaiting triage (status 'new', sim_id set) — the same rule as listTicketsPaginated. Those live in
 // Sim Reports only and reach the Tickets board after a person accepts them; without it they leaked onto the board via /api/dashboard's
 // `tickets` (the kanban's cold-cache fallback and the overview "Recent tickets").
+// KD-2875: the Sims page shows each Sim's latest observation + a count. Those used to be derived from the project's newest 36
+// Sim observations in total, so a Sim whose reports were older than that (or crowded out by one busy Sim) read "No feedback yet".
+// This returns, PER SIM, its newest `perSim` observations plus its true total — same filters as listFeedback({simOnly}) (not merged,
+// non-empty) — in one query, so the payload stays small (≤ perSim rows per Sim) while no Sim is starved.
+export type SimObservationRow = { id: string; simId: string; observation: string; sentiment: string | null; urlPath: string | null; createdAt: number }
+export async function listSimObservationsPerSim(projectId: string, perSim = 3): Promise<{ rows: SimObservationRow[]; counts: Record<string, number> }> {
+  const r = await db!.execute({
+    sql: `SELECT id, sim_id, observation, sentiment, url_path, created_at, total FROM (
+            SELECT id, sim_id, observation, sentiment, url_path, created_at,
+                   ROW_NUMBER() OVER (PARTITION BY sim_id ORDER BY created_at DESC) AS rn,
+                   COUNT(*) OVER (PARTITION BY sim_id) AS total
+            FROM feedback
+            WHERE project_id=? AND sim_id IS NOT NULL AND merged_into IS NULL AND observation IS NOT NULL AND observation <> ''
+          ) WHERE rn <= ? ORDER BY created_at DESC`,
+    args: [projectId, Math.max(1, Math.floor(perSim))],
+  })
+  const rows: SimObservationRow[] = []
+  const counts: Record<string, number> = {}
+  for (const x of r.rows as any[]) {
+    const simId = String(x.sim_id)
+    counts[simId] = Number(x.total) || 0
+    rows.push({ id: String(x.id), simId, observation: String(x.observation), sentiment: x.sentiment != null ? String(x.sentiment) : null, urlPath: x.url_path != null ? String(x.url_path) : null, createdAt: Number(x.created_at) })
+  }
+  return { rows, counts }
+}
+
 export async function listFeedbackWithMeta(projectId: string, opts: { limit?: number; simOnly?: boolean; boardOnly?: boolean } = {}): Promise<{ rows: FeedbackRow[]; meta: Record<string, FeedbackMeta> }> {
   const limit = opts.limit ?? 20
   const boardFilter = opts.boardOnly ? " AND NOT (status = 'new' AND sim_id IS NOT NULL)" : ""
