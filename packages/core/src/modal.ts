@@ -1689,7 +1689,13 @@ export function buildModal(
     .klavity-min:hover{transform:var(--kl-lift);color:var(--kl-accent);background:color-mix(in srgb,var(--kl-accent) 14%,transparent);}
     .klavity-min:active{transform:var(--kl-press);}
     .klavity-min:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
-    .klavity-modal:has(.klavity-min) .klavity-toggle{padding-right:66px;}
+    /* Minimize (─) and Close (×) are pinned to the modal's top-right corner while the side column scrolls. Padding the first row
+       wasn't enough: once scrolled, any row (e.g. "Start Recording") slid UNDER the buttons. So on the two-column layout the side
+       column's scroll area starts BELOW the button row — nothing can ever pass beneath them. (The divider moves to the hero so it
+       still runs full height.) */
+    @media (min-width:761px){.kl-side{margin-top:52px;padding-top:6px;border-left:none;}.kl-hero{border-right:1px solid var(--kl-border);}.kl-side>.klavity-toggle,.kl-side>.klavity-types,.kl-side>.klavity-title-label{padding-right:0;}}
+    /* Narrow layout: the screenshot toolbar is the top row instead, so it reserves the corner (× alone, or ─ + ×). */
+    @media (max-width:760px){.kl-hero-tools{padding-right:50px;}.klavity-modal:has(.klavity-min) .kl-hero-tools{padding-right:86px;}}
     /* KLA-412 per-shot page label — the mono path each screenshot came from, under its thumbnail. Only
        rendered for shots that carry page metadata, so single-page reports show no label. */
     .klavity-pglabel{margin-top:4px;max-width:104px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9.5px;line-height:1.3;color:var(--kl-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
