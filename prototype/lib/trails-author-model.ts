@@ -93,6 +93,8 @@ export interface AuthorAction {
    */
   parseError?: boolean
   isAuthGate?: boolean
+  /** click/hover: the exact visible label the model intends to hit; cross-checked against the element's HTML. */
+  target?: string | null
 }
 export interface AuthorStepInput {
   objective: string; pageUrl: string; screenshotB64: string; mediaType: string
@@ -104,8 +106,11 @@ export interface AuthorModelResult { action: AuthorAction; costUsd: number }
 export type AuthorModel = (input: AuthorStepInput, ctx: { projectId: string; email?: string | null; projectInstructions?: string }) => Promise<AuthorModelResult>
 
 export const AUTHOR_SYS = `You are a browser-driving test author. You are given a user OBJECTIVE, the current page's screenshot and ELEMENT SNAPSHOT (a compact accessibility-style tree), and the actions taken so far. Propose exactly ONE next action as STRICT JSON (no prose):
-{"op":"navigate"|"click"|"type"|"select"|"assert"|"wait"|"waitForSelector"|"upload"|"hover"|"keyPress"|"clearField"|"done"|"stall","selector":string|null,"value":string|null,"url":string|null,"checkpoint":string|null,"rationale":string,"isAuthGate":boolean}
+{"op":"navigate"|"click"|"type"|"select"|"assert"|"wait"|"waitForSelector"|"upload"|"hover"|"keyPress"|"clearField"|"done"|"stall","selector":string|null,"value":string|null,"url":string|null,"checkpoint":string|null,"target":string|null,"rationale":string,"isAuthGate":boolean}
 Rules:
+- For click/hover set "target" to the exact visible label of the element you mean (e.g. "Project"). Before acting the system checks that label against the chosen element's real HTML and REJECTS the action on a mismatch, listing the elements whose HTML does carry it — then re-pick from that list.
+- Dropdowns: a combobox line lists its real field name and options from the HTML, e.g. combobox "Select" {field: "Jurisdiction"} {options: "Alaska" | ...}. Pick the dropdown whose {field} matches the objective's field (not whichever box reads "Select"), and set "value" to the EXACT option text from its {options}. Use op "select" on that line directly — do not click it open first. Before acting, the system checks the option against the dropdown's HTML and REJECTS a mismatch, naming the field that has it.
+- Choose elements from the ELEMENT SNAPSHOT (built from the page HTML), using the screenshot only to understand layout. Where a line carries an HTML hint like <a href=/index.php/Projects> or <div.add_dropdown_item>, use it to tell look-alikes apart: a navigation link is not a dropdown item even if both read similarly.
 - "wait" pauses for "value" milliseconds (500-15000) — use it when the page is visibly processing (a spinner, "loading", an AI extraction) before asserting the result. Never use "stall" just to wait.
 - "waitForSelector" waits (up to a few seconds) for an element matching "selector" to APPEAR — prefer this over a blind "wait" when the next content is dynamic, e.g. waiting for a chatbot's reply bubble to render after you send a message, or a result row to load. Continue a multi-turn conversation by alternating type→keyPress Enter (or click send)→waitForSelector for the new reply→read it→respond.
 - "upload" attaches the AutoSim's uploaded fixture file to a file input; "selector" targets the <input type=file> and "value" is the attachment NAME shown in AVAILABLE UPLOADS. Only valid when an upload is available.
@@ -115,6 +120,14 @@ Rules:
 - "hover" moves the pointer over the element (use to reveal dropdown menus or tooltips).
 - "keyPress" presses a keyboard key while the element has focus; set "value" to the key name (e.g. "Enter", "Tab", "Escape", "ArrowDown"). Use instead of click when a keyboard interaction is required (form submit, dismissing a dialog, moving focus).
 - "clearField" clears the current value of an input/textarea without typing anything new — use before re-filling a field that already has a value.
+- TARGETING (follow strictly when the OBJECTIVE names an element):
+  * Work through numbered OBJECTIVE steps in order; the next action belongs to the first step not yet done in ACTIONS SO FAR.
+  * Browser/OS-level instructions you have no op for (zoom in/out, Ctrl+/-, window or screen size/resolution, full screen, open devtools, clear cache) are handled by the AutoSim's window settings: treat them as already done and continue with the rest of that step. Never "stall" because of them.
+  * A text "Label" [ref=eN] line is a clickable visible label (many apps wire clicks onto plain text). If the objective names a control and no button/link line carries that label, click its text line.
+  * Match the named label EXACTLY (case-insensitive; ignore icon-font words glued to the text such as "file_copy" in "file_copyProjects"). Singular and plural differ: "Project" is NOT "Projects", "Add" is NOT "More".
+  * Respect location words. If the objective says the element is inside a dropdown, menu, dialog, panel or next to another element, open that container first, then pick the element nested under it in the snapshot (lines under a "menu" line, menuitem entries, or elements that appeared after your previous click). Never pick a same-named element elsewhere, e.g. the main navigation bar.
+  * "Do not click X" / "not the X" statements are hard constraints: never target X.
+  * NEVER substitute a differently labelled element for the one the objective names. If it is missing from the snapshot or {disabled}, "wait" (it may still be loading) and look again; if it is still missing, "stall" and name the element you could not find.
 - navigate requires "url" (absolute).
 - "assert" marks a CHECKPOINT: an element that proves a milestone of the objective is reached; set "checkpoint" to a short human description.
 - op "done" only when the FULL objective (including any cleanup it asks for) is visibly complete.
@@ -190,6 +203,7 @@ export function parseAuthorAction(content: string): AuthorAction {
     checkpoint: typeof obj.checkpoint === "string" && obj.checkpoint.trim() ? obj.checkpoint.trim() : null,
     rationale: typeof obj.rationale === "string" ? obj.rationale : "",
   }
+  if (typeof obj.target === "string" && obj.target.trim()) a.target = obj.target.trim().slice(0, 120)
   if (["click", "type", "select", "assert", "hover", "keyPress", "clearField", "waitForSelector", "upload"].includes(a.op) && !a.selector) return STALL(`op "${a.op}" without selector`)
   if (["type", "select"].includes(a.op) && a.value === null) return STALL(`op "${a.op}" without value`)
   if (a.op === "upload" && !a.value) return STALL('op "upload" needs a "value" (the attachment name to upload)')

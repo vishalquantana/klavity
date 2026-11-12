@@ -173,3 +173,95 @@ describe("structuralPathFor", () => {
     expect(path).toBeNull()
   })
 })
+
+describe("captureKrefSnapshot: untyped clickables and dropdown menus (KD-2255 PX4 Add > Project)", () => {
+  test("Add toggle and its menu items get refs and nest under a menu; nav Projects stays separate", async () => {
+    const p = await (await browser.newContext()).newPage()
+    await p.setContent(`<!doctype html><body>
+      <header>
+        <a href="/n">17382</a>
+        <div class="dropdown">
+          <span class="add" data-toggle="dropdown" style="cursor:pointer">Add</span>
+          <ul class="dropdown-menu" style="display:block">
+            <li><a>Action</a></li>
+            <li><a>Project</a></li>
+          </ul>
+        </div>
+        <input placeholder="Recently viewed" />
+        <div style="cursor:pointer" onclick=""><span>Clickable row</span></div>
+      </header>
+      <nav><a href="/projects">Projects</a></nav>
+    </body>`)
+    const snap = await captureKrefSnapshot(p)
+    expect(snap).toMatch(/button "Add" \[ref=e\d+\]/)
+    expect(snap).toMatch(/menu "[^"]*"\n(\s+menuitem "[^"]*" \[ref=e\d+\]\n)*\s+menuitem "Project" \[ref=e\d+\]/)
+    expect(snap).toMatch(/button "Clickable row" \[ref=e\d+\]/)
+    expect(snap.match(/Clickable row/g)!.length).toBe(1) // inherited cursor on the inner span is not a 2nd target
+    expect(snap).toMatch(/link "Projects" \[ref=e\d+\]/)
+    const ref = snap.match(/menuitem "Project" \[ref=(e\d+)\]/)![1]
+    expect(await p.locator(`[data-kref="${ref}"]`).textContent()).toBe("Project")
+    await p.close()
+  })
+})
+
+describe("clickWithTransitionFallback: covered target (KD-2255 overlapping header)", () => {
+  test("clicks a button another element is drawn on top of; disabled still fails", async () => {
+    const { clickWithTransitionFallback } = await import("./trails-click")
+    const p = await (await browser.newContext({ viewport: { width: 800, height: 600 } })).newPage()
+    await p.setContent(`<!doctype html><body>
+      <span id="add" style="cursor:pointer" onclick="document.body.dataset.hit='add'">Add</span>
+      <div style="position:fixed;inset:0;background:transparent" onclick="document.body.dataset.hit='cover'"></div>
+      <button id="off" disabled>Off</button>
+    </body>`)
+    await clickWithTransitionFallback(p.locator("#add"), 1500)
+    expect(await p.evaluate(() => document.body.dataset.hit)).toBe("add")
+    await expect(clickWithTransitionFallback(p.locator("#off"), 800)).rejects.toThrow()
+    await p.close()
+  }, 20_000)
+})
+
+describe("captureKrefSnapshot: React onClick divs (KD-2255 real PX4 Header.jsx markup)", () => {
+  test("Add <div onClick> with no cursor/role/attr and CSS-module menu items are targetable", async () => {
+    const p = await (await browser.newContext()).newPage()
+    await p.setContent(`<!doctype html><body>
+      <div class="_add_dropdown_container_k3j1">
+        <div class="_icon_wrapper_9fa2" id="tog"><svg width="10" height="10"></svg><span class="_add_icon_x1">Add</span></div>
+        <div class="_add_dropdown_menu_p0q9">
+          <div class="_add_dropdown_item_z8" id="it1"><span>Action</span></div>
+          <div class="_add_dropdown_item_z8" id="it2"><span>Project</span></div>
+        </div>
+      </div>
+      <nav><a href="/projects">Projects</a></nav>
+      <script>
+        // what React 17+ leaves on the DOM node for <div onClick={...}>
+        for (const id of ["tog", "it1", "it2"]) document.getElementById(id)["__reactProps$ab12"] = { onClick() {}, className: "x" }
+      </script>
+    </body>`)
+    const snap = await captureKrefSnapshot(p)
+    expect(snap).toMatch(/button "Add" \[ref=e\d+\]/)
+    expect(snap).toMatch(/menu "[^"]*"\n(\s+menuitem "[^"]*" \[ref=e\d+\]\n)*\s+menuitem "Project" \[ref=e\d+\]/)
+    expect(snap).toMatch(/link "Projects" \[ref=e\d+\]/)
+    const ref = snap.match(/button "Add" \[ref=(e\d+)\]/)![1]
+    expect(await p.locator(`[data-kref="${ref}"]`).getAttribute("id")).toBe("tog")
+    await p.close()
+  })
+})
+
+describe("captureKrefSnapshot: labels with invisible handlers (KD-2255 PHP/jQuery header)", () => {
+  test("short labels get clickable refs once; text inside buttons is not duplicated; paragraphs stay ref-less", async () => {
+    const p = await (await browser.newContext()).newPage()
+    await p.setContent(`<!doctype html><body>
+      <div class="hdr"><a href="/n">215</a><div id="add"><i class="ic"></i> Add <span class="caret"></span></div><input placeholder="Recently viewed"></div>
+      <button><span>Save</span></button>
+      <p>A long descriptive paragraph that should never become a click target.</p>
+      <script>document.getElementById("add").addEventListener("click", () => document.body.dataset.hit = "add")</script>
+    </body>`)
+    const snap = await captureKrefSnapshot(p)
+    const ref = snap.match(/text "Add" \[ref=(e\d+)\]/)![1]
+    await p.locator(`[data-kref="${ref}"]`).click()
+    expect(await p.evaluate(() => document.body.dataset.hit)).toBe("add")
+    expect(snap.match(/Save/g)!.length).toBe(1)
+    expect(snap).not.toMatch(/long descriptive paragraph.*\[ref=/)
+    await p.close()
+  })
+})

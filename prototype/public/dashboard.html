@@ -38694,7 +38694,7 @@
             async function startAutosimForTestCase(ctx) {
               var r = await fetch("/api/trails/author" + projQ(), {
                 method: "POST", headers: { "content-type": "application/json" },
-                body: JSON.stringify({ name: String(ctx.name || "").slice(0, 80), objective: ctx.objective, base_url: ctx.url, viewport: "desktop", test_case_id: ctx.id, replace: !!ctx.replace }),
+                body: JSON.stringify({ name: String(ctx.name || "").slice(0, 80), objective: ctx.objective, base_url: ctx.url, viewport: { preset: "desktop", width: 1920, height: 1080 }, test_case_id: ctx.id, replace: !!ctx.replace }),
               })
               if (!r.ok) { var e = await r.json().catch(function () { return {} }); throw new Error(e.error || ("Couldn't start the AutoSim (" + r.status + ")")) }
               var d = await r.json()
@@ -39149,7 +39149,7 @@
                 var box = document.getElementById("ntProgress"); box.innerHTML = ""
                 var body = { name: document.getElementById("ntName").value.trim(), objective: document.getElementById("ntObj").value.trim(), base_url: document.getElementById("ntUrl").value.trim(), viewport: document.getElementById("ntViewport").value || "desktop", test_account: document.getElementById("ntAcc").value || undefined }
                 // KD-2255: a retry stays filed under the test case; the user already chose to (re-)record it.
-                if (ntTestCaseId) { body.test_case_id = ntTestCaseId; body.replace = true }
+                if (ntTestCaseId) { body.test_case_id = ntTestCaseId; body.replace = true; body.viewport = { preset: "desktop", width: 1920, height: 1080 } }
                 try {
                   var r = await fetch("/api/trails/author" + projQ(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
                   if (!r.ok) { var e = await r.json().catch(function () { return {} }); box.innerHTML = '<div class="nt-stall">' + esc(e.error || r.statusText) + "</div>"; btn.disabled = false; return }

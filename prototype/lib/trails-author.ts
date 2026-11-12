@@ -473,6 +473,21 @@ export async function authorTrail(
   }
   const bounded = <T>(p: Promise<T>, ms: number, what: string): Promise<T> =>
     Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`${what} timed out after ${ms}ms`)), ms))])
+  // KD-2255: heavy pages (PX4 add_new_project) keep the renderer busy for 15s+ while their scripts run; no
+  // snapshot (or screenshot) can run until it frees up, and one busy spell was killing the whole walk with
+  // "snapshot attempt hung". Give the page up to 4 rounds (~1 min) before failing. Real errors still throw.
+  const snapshotPatiently = async (pg: { krefSnapshot(): Promise<string> }, what: string): Promise<string> => {
+    for (let i = 1; ; i++) {
+      try { return await bounded(pg.krefSnapshot(), 15_000, what) }
+      catch (e) {
+        const msg = String((e as any)?.message ?? e)
+        if (i >= 4 || !/hung|timed out|Timeout/i.test(msg)) throw e
+        console.warn(`[trails-author] ${what}: page busy (${msg.split("\n")[0]}), retry ${i}/3`)
+        opts.onHeartbeat?.()
+        await new Promise((r) => setTimeout(r, 2_000))
+      }
+    }
+  }
   // KLA (BookJoy login stall): click the single most-likely submit control. Shared by the no-op
   // stagnation guard AND the repeated-`type` guard - "filled the login form but never submitted it"
   // is the classic failure (observed live: the model re-typed the email field 4 and never clicked
@@ -556,7 +571,7 @@ export async function authorTrail(
       await page.goto(req.baseUrl, 20_000)
       // Record the initial navigation as the first TrajectoryStep so the crystallized Trail starts
       // with a navigate action pointing at the baseUrl (gives the runner a concrete starting point).
-      const initSnap = await bounded(page.krefSnapshot(), 15_000, "snapshot capture")
+      const initSnap = await snapshotPatiently(page, "snapshot capture")
       traj.push({ action: "navigate", actionValue: req.baseUrl, url: page.url(), domHash: sha256hex(initSnap) })
     }
     let stepLimit = AUTHOR_MAX_STEPS
@@ -591,8 +606,14 @@ export async function authorTrail(
         }
       }
       const includeShot = !textFirst || misses > 0
+      // KD-2255: a slow page (fonts/long-running scripts on a sluggish QA server) can make a screenshot time
+      // out. The model can still act on the element snapshot alone, so continue text-only for this step
+      // instead of failing the whole recording.
       const screenshotB64 = includeShot
-        ? await bounded(page.screenshotJpeg(60, 15_000), 20_000, "screenshot")
+        ? await bounded(page.screenshotJpeg(60, 15_000), 20_000, "screenshot").catch((e) => {
+            console.warn("[trails-author] step screenshot failed, continuing without it:", String(e).split("\n")[0])
+            return ""
+          })
         : ""
       // KLA-150: publish live frame so the UI can show what the AI sees before deciding.
       // In text-first mode the model gets no screenshot (token savings), but the interactive
@@ -607,13 +628,13 @@ export async function authorTrail(
           if (liveShot) opts.onLiveFrame(`data:image/jpeg;base64,${liveShot}`)
         } catch {}
       }
-      let dom = await bounded(page.krefSnapshot(), 15_000, "snapshot capture")
+      let dom = await snapshotPatiently(page, "snapshot capture")
       // KLA (BookJoy login stall): a mid-navigation / not-yet-rendered page yields an EMPTY snapshot
       // (observed live: /v2/login captured as sha256("")). Feeding the model a blank observation makes
       // it flail. Wait a beat and re-capture ONCE before proceeding, so the model acts on real content.
       if (dom.trim().length < 8) {
         await new Promise((r) => setTimeout(r, 900))
-        dom = await bounded(page.krefSnapshot(), 15_000, "snapshot re-capture")
+        dom = await snapshotPatiently(page, "snapshot re-capture")
       }
       // KLA-786 (dialog-capture): surface any JS dialogs the previous action triggered (alert/confirm/
       // prompt). Many apps confirm a save via an alert the headless browser silently auto-dismisses
@@ -1044,6 +1065,33 @@ export async function authorTrail(
           persistSelector = isKrefSelector(a.selector)
             ? (stable ?? fp.domPath ?? a.selector!)
             : (stable ?? a.selector!)
+          // HTML cross-check: the screenshot can make a nav "Projects" link look like the dropdown's "Project".
+          // Before acting, confirm the chosen element's HTML carries the label the model says it is targeting;
+          // on mismatch reject (a normal miss) and hand back the elements whose HTML does carry it.
+          if ((a.op === "click" || a.op === "hover") && a.target && page.targetCheck) {
+            const tc = await bounded(page.targetCheck(a.selector!, a.target), 8_000, "target check").catch(() => null)
+            if (tc && !tc.ok) {
+              throw new Error(
+                `target mismatch: you meant "${a.target}" but the chosen element's HTML is ${tc.html} — it does not carry that label. ` +
+                (tc.candidates.length
+                  ? `Elements whose HTML text is exactly "${a.target}": ${tc.candidates.map((c, i) => `(${i + 1}) ${c}`).join("; ")}. Pick the one matching the objective's location (find its line in the new snapshot).`
+                  : `No visible element's HTML carries "${a.target}" right now — open its container (dropdown/menu) first, or wait for it to load.`),
+              )
+            }
+          }
+          // Same HTML cross-check for dropdowns: the screenshot shows identical "Select" boxes, the HTML
+          // knows which field each one is and what options it holds.
+          if (a.op === "select" && page.selectCheck) {
+            const sc = await bounded(page.selectCheck(a.selector!, a.value ?? ""), 8_000, "select check").catch(() => null)
+            if (sc && !sc.ok) {
+              throw new Error(
+                `select mismatch: the chosen dropdown's HTML is ${sc.html} — it has no option "${a.value}". ` +
+                (sc.candidates.length
+                  ? `Dropdowns whose HTML does contain "${a.value}": ${sc.candidates.join("; ")}. Pick that dropdown's line ({field: ...}) in the new snapshot.`
+                  : `No dropdown on the page contains "${a.value}" — check the {options: ...} in the snapshot and use the exact option text.`),
+              )
+            }
+          }
           if (a.op === "click") await page.click(a.selector!, ACTION_TIMEOUT)
           else if (a.op === "type") {
             const raw = a.value ?? ""

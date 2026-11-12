@@ -34,7 +34,7 @@ import { setupReplayCapture, saveReplay, type ReplayCapture } from "./trails-rep
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { contentSigFor } from "./trails-findings-dedup"
 import { captureKrefSnapshot, stableSelectorFor, structuralPathFor, isKrefSelector, recordedStepState } from "./trails-snapshot"
-import { clickWithTransitionFallback } from "./trails-click"
+import { clickWithTransitionFallback, selectOptionAnyWidget } from "./trails-click"
 import { matchesMock } from "./trails-browser-page"
 import type { NetworkMock } from "./trails-browser-page"
 import { notifyWalkRed } from "./walk-red-alert"
@@ -1536,7 +1536,7 @@ async function runOneStep(
           await clickWithTransitionFallback(resolved.locator, actionTimeout, actionTimeout)
           break
         case "select":
-          await resolved.locator.selectOption(step.actionValue ?? "", { timeout: actionTimeout })
+          await selectOptionAnyWidget(resolved.locator, step.actionValue ?? "", actionTimeout)
           break
         case "hover":
           await resolved.locator.hover({ timeout: actionTimeout })
@@ -1865,7 +1865,7 @@ async function runVisionTier2(
             await loc.fill(val, { timeout: ACTION_TIMEOUT }); break
           }
           case "click": await clickWithTransitionFallback(loc, ACTION_TIMEOUT, ACTION_TIMEOUT); break
-          case "select": await loc.selectOption(step.actionValue ?? "", { timeout: ACTION_TIMEOUT }); break
+          case "select": await selectOptionAnyWidget(loc, step.actionValue ?? "", ACTION_TIMEOUT); break
           case "hover": await loc.hover({ timeout: ACTION_TIMEOUT }); break
           case "keyPress": await loc.press(step.actionValue ?? "Enter", { timeout: ACTION_TIMEOUT }); break
           case "clearField": await loc.clear({ timeout: ACTION_TIMEOUT }); break

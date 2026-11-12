@@ -98,8 +98,45 @@ export async function captureKrefSnapshot(page: Page, cap = KREF_SNAPSHOT_CAP): 
       if (t === "option") return "option"
       if (/^h[1-6]$/.test(t)) return "heading"
       if (t === "img" && el.getAttribute("alt")) return "img"
+      // Dropdown panel without ARIA (Bootstrap "dropdown-menu", CSS-module "_add_dropdown_menu_x1y2"):
+      // emit it as a container so its items nest under it.
+      if (/dropdown[-_]?menu/i.test(el.getAttribute("class") || "")) return "menu"
       return null
     }
+    // Clickable elements with no semantic role (<a> without href, <div onclick>, Bootstrap
+    // data-toggle, React onClick divs that only show cursor:pointer). Without a ref the model
+    // cannot target them and picks a look-alike (e.g. nav "Projects" instead of the Add menu's
+    // "Project"). An element wrapping other clickables is skipped so its children are listed.
+    const CLICKABLE_INSIDE = "a,button,input,select,textarea,[role],[onclick],[data-toggle],[data-bs-toggle],[tabindex]"
+    // React keeps an element's props on the node (__reactProps$<id>, React <17: __reactEventHandlers$<id>).
+    // An onClick there is the ONLY trace of a <div onClick> with no cursor/role/attribute (PX4 header "Add").
+    const reactClick = (el: Element): boolean => {
+      for (const k of Object.keys(el)) {
+        if (k.startsWith("__reactProps$") || k.startsWith("__reactEventHandlers$")) {
+          const p = (el as any)[k]
+          return !!(p && (p.onClick || p.onMouseDown || p.onPointerDown))
+        }
+      }
+      return false
+    }
+    const handlers = new Set<Element>()
+    document.body.querySelectorAll("*").forEach((el) => { if (reactClick(el)) handlers.add(el) })
+    // Ancestors of any clickable are wrappers, not targets: list the inner clickables instead.
+    const wrappers = new Set<Element>()
+    for (const el of [...Array.from(handlers), ...Array.from(document.body.querySelectorAll(CLICKABLE_INSIDE))]) {
+      for (let p = el.parentElement; p && !wrappers.has(p); p = p.parentElement) wrappers.add(p)
+    }
+    const isPointer = (el: Element | null) => !!el && getComputedStyle(el as HTMLElement).cursor === "pointer"
+    const isUntypedClickable = (el: Element): boolean => {
+      if (wrappers.has(el)) return false
+      const t = el.tagName.toLowerCase()
+      const explicit = t === "a" || handlers.has(el) || el.hasAttribute("onclick") || el.hasAttribute("data-toggle") ||
+        el.hasAttribute("data-bs-toggle") || el.hasAttribute("aria-haspopup") ||
+        (el.hasAttribute("tabindex") && el.getAttribute("tabindex") !== "-1")
+      // cursor:pointer is inherited, so only the outermost pointer element counts.
+      return explicit || (isPointer(el) && !isPointer(el.parentElement))
+    }
+    const inMenu = (el: Element) => !!el.closest('[class*="dropdown-menu"],[class*="dropdown_menu"],[class*="dropdownMenu"],[role="menu"],[role="listbox"]')
     const labelFor = (el: Element): string => {
       const id = el.getAttribute("id")
       if (id) {
@@ -122,24 +159,43 @@ export async function captureKrefSnapshot(page: Page, cap = KREF_SNAPSHOT_CAP): 
           el.getAttribute("name") || el.getAttribute("title") || ""
       return cand.replace(/\s+/g, " ").slice(0, 80)
     }
-    const walk = (el: Element, depth: number) => {
+    // Short visible labels in generic containers ("Add" in <div><i/> Add</div>) whose click handler we
+    // cannot see (jQuery $(..).on("click"), delegated listeners, PHP-rendered headers). Giving the label a
+    // ref lets the model click it like a person would; the click bubbles to the real handler.
+    const LABEL_TAGS = new Set(["span", "div", "i", "b", "strong", "small", "em", "font"])
+    const ownText = (el: Element): string => Array.from(el.childNodes)
+      .filter((c) => c.nodeType === 3).map((c) => c.textContent || "").join(" ").trim().replace(/\s+/g, " ")
+    const walk = (el: Element, depth: number, inCtl = false) => {
       for (const child of Array.from(el.children)) {
         const t = child.tagName.toLowerCase()
         if (SKIP.has(t)) continue
         let emitted = false
+        let refd = false
         if (visible(child)) {
-          const role = roleOf(child)
+          let role = roleOf(child)
+          let clickable = false
+          if (!role && isUntypedClickable(child) && nameOf(child)) {
+            role = inMenu(child) ? "menuitem" : "button"
+            clickable = true
+          }
           const indent = "  ".repeat(Math.min(depth, 6))
           if (role) {
             let line = `${indent}${role} "${nameOf(child)}"`
             if ((child as HTMLInputElement).disabled) line += " {disabled}"
-            if (INTERACTIVE.has(t) || child.getAttribute("role")) {
+            if (clickable || INTERACTIVE.has(t) || child.getAttribute("role")) {
               const ref = `e${++n}`
               child.setAttribute("data-kref", ref)
               line += ` [ref=${ref}]`
+              refd = true
             }
             lines.push(line)
             emitted = true
+          } else if (!inCtl && LABEL_TAGS.has(t) && /^.{2,30}$/.test(ownText(child))) {
+            const ref = `e${++n}`
+            child.setAttribute("data-kref", ref)
+            lines.push(`${indent}text "${ownText(child)}" [ref=${ref}]`)
+            emitted = true
+            refd = true
           } else if (TEXTUAL.has(t)) {
             // Structural text digest (NO ref): only direct text, only when it has no element
             // children carrying the same text — keeps asserts groundable without ballooning.
@@ -150,7 +206,7 @@ export async function captureKrefSnapshot(page: Page, cap = KREF_SNAPSHOT_CAP): 
             }
           }
         }
-        walk(child, emitted ? depth + 1 : depth)
+        walk(child, emitted ? depth + 1 : depth, inCtl || refd)
       }
     }
     walk(document.body, 0)
