@@ -301,6 +301,121 @@ export async function getObjectStream(
   return { stream: target.stream() as unknown as ReadableStream<Uint8Array>, contentType, size }
 }
 
+// ── Large-file (chunked) uploads ─────────────────────────────────────────────────────────────────────
+// A file too big for the single /api/feedback request is sent in fixed-size chunks (see lib/large-upload.ts).
+// Each chunk is stored as its OWN private object, so any server instance can take any chunk (no in-memory
+// state, safe across the zero-downtime slots) and a retried chunk simply overwrites itself. On "complete"
+// the chunks are streamed, in order, into ONE final private attachment object (Bun's multipart writer —
+// memory stays around one chunk) and then deleted. Chunks are never under the public dir in local mode.
+const LOCAL_TMP_DIR = join(import.meta.dir, '..', '.tmp-uploads')
+const safeUploadId = (id: string) => { if (!/^[A-Za-z0-9_-]{8,80}$/.test(id)) throw new Error('bad upload id'); return id }
+export function uploadPartKey(uploadId: string, n: number): string {
+  return `${FOLDER}/tmp-uploads/${safeUploadId(uploadId)}/${String(n).padStart(6, '0')}`
+}
+export function uploadPartsPrefix(): string { return `${FOLDER}/tmp-uploads/` }
+
+export async function putUploadPart(uploadId: string, n: number, bytes: Uint8Array): Promise<void> {
+  const key = uploadPartKey(uploadId, n)
+  if (!s3Configured()) {
+    const p = join(LOCAL_TMP_DIR, key)
+    ensureLocalDir(p)
+    await Bun.write(p, bytes)
+    return
+  }
+  await getClient().write(key, bytes, { acl: 'private', type: 'application/octet-stream' })
+}
+
+/** Size of a stored part, or null when it is missing. */
+export async function uploadPartSize(uploadId: string, n: number): Promise<number | null> {
+  const key = uploadPartKey(uploadId, n)
+  try {
+    if (!s3Configured()) {
+      const f = Bun.file(join(LOCAL_TMP_DIR, key))
+      return (await f.exists()) ? f.size : null
+    }
+    const st = await getClient().file(key).stat()
+    return st && Number.isFinite(st.size) ? st.size : null
+  } catch { return null }
+}
+
+/** Size of an already-assembled final object (lets a retried "complete" return at once), or null. */
+export async function attachmentObjectSize(key: string): Promise<number | null> {
+  try {
+    if (!s3Configured()) {
+      const f = Bun.file(join(LOCAL_PUB_DIR, key))
+      return (await f.exists()) ? f.size : null
+    }
+    const st = await getClient().file(key).stat()
+    return st && Number.isFinite(st.size) ? st.size : null
+  } catch { return null }
+}
+
+/** The final attachment key for an upload id (deterministic, so a retried complete rewrites the same object). */
+export function largeAttachmentKey(uploadId: string, filename: string): string {
+  const extMatch = /\.([A-Za-z0-9]{1,8})$/.exec(filename)
+  const ext = extMatch ? extMatch[1].toLowerCase() : 'bin'
+  return `${FOLDER}/attachments/${safeUploadId(uploadId)}.${ext}`
+}
+
+/**
+ * Join parts 0..count-1 into the final private attachment object, in order, then delete the parts.
+ * `onProgress` is called after each part (the route uses it to keep the HTTP connection alive).
+ */
+export async function assembleUploadParts(
+  uploadId: string, count: number, finalKey: string, contentType: string, onProgress?: (done: number) => void,
+): Promise<void> {
+  const type = contentType || 'application/octet-stream'
+  if (!s3Configured()) {
+    const out = join(LOCAL_PUB_DIR, finalKey)
+    ensureLocalDir(out)
+    const w = Bun.file(out).writer()
+    for (let n = 0; n < count; n++) {
+      w.write(new Uint8Array(await Bun.file(join(LOCAL_TMP_DIR, uploadPartKey(uploadId, n))).arrayBuffer()))
+      await w.flush()
+      onProgress?.(n + 1)
+    }
+    await w.end()
+  } else {
+    const c = getClient()
+    const w = c.file(finalKey).writer({ type, acl: 'private', partSize: 8 * 1024 * 1024, retry: 3 } as any)
+    for (let n = 0; n < count; n++) {
+      w.write(new Uint8Array(await c.file(uploadPartKey(uploadId, n)).arrayBuffer()))
+      await w.flush()
+      onProgress?.(n + 1)
+    }
+    await w.end()
+  }
+  await deleteUploadParts(uploadId, count)
+}
+
+/** Best-effort removal of an upload's parts. Never throws. */
+export async function deleteUploadParts(uploadId: string, count: number): Promise<void> {
+  for (let n = 0; n < count; n++) {
+    const key = uploadPartKey(uploadId, n)
+    try {
+      if (!s3Configured()) { const p = join(LOCAL_TMP_DIR, key); if (existsSync(p)) unlinkSync(p) }
+      else await getClient().delete(key)
+    } catch { /* the stale-parts sweep catches anything left */ }
+  }
+}
+
+/** Delete parts of uploads abandoned more than `olderThanMs` ago (upload ids start with a base36 timestamp). */
+export async function sweepStaleUploadParts(olderThanMs: number, now = Date.now()): Promise<number> {
+  if (!s3Configured()) return 0
+  let removed = 0
+  let token: string | undefined
+  do {
+    const { keys, next } = await listObjectKeys(uploadPartsPrefix(), token)
+    for (const k of keys) {
+      const id = k.slice(uploadPartsPrefix().length).split('/')[0] || ''
+      const ts = parseInt(id.split('_')[0] || '', 36)
+      if (Number.isFinite(ts) && now - ts > olderThanMs) { try { await getClient().delete(k); removed++ } catch { /* retry next sweep */ } }
+    }
+    token = next
+  } while (token)
+  return removed
+}
+
 // Upload one screenshot and return its public path-style URL.
 export async function uploadScreenshot(bytes: ArrayBuffer | Uint8Array, contentType: string): Promise<string> {
   return (await uploadScreenshotMeta(bytes, contentType)).url

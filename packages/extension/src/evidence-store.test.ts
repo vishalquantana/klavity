@@ -16,6 +16,9 @@ import {
   evCountText,
   buildPagesTrail,
   isFresh,
+  hasEvidence,
+  setRecordings,
+  setFiles,
   type EvidenceStorage,
   type ExtEvidenceSession,
   type ExtEvidenceShot,
@@ -253,5 +256,63 @@ describe('cross-origin durability (the #442 core guarantee)', () => {
     const final = await getActiveSession(s)
     expect(pageCount(final!)).toBe(2)
     expect(buildPagesTrail(final!.shots)).toContain('https://billing.other.com/y')
+  })
+})
+
+// KD-1074 (ext parity): a "Record me" video must survive Minimize → Resume (and navigation) like the shots do.
+describe('recordings persist across minimize (KD-1074 ext parity)', () => {
+  const rec = { id: 'r1', dataUrl: 'data:video/webm;base64,AAAA', mime: 'video/webm', durationMs: 1200, bytes: 4, width: 640, height: 360, screenOnly: true }
+
+  it('setRecordings stores the video and getActiveSession returns it (resume reads it back)', async () => {
+    const s = memStorage()
+    await startOrContinue(s, 'p1')
+    await setRecordings(s, [rec])
+    const back = await getActiveSession(s)
+    expect(back!.recordings).toEqual([rec])
+  })
+
+  it('setRecordings with [] clears the video (composer removed it)', async () => {
+    const s = memStorage()
+    await startOrContinue(s, 'p1')
+    await setRecordings(s, [rec])
+    await setRecordings(s, [])
+    expect((await getActiveSession(s))!.recordings).toEqual([])
+  })
+
+  it('a video-only session still counts as evidence (dock shows on minimize) and the label mentions it', async () => {
+    const s = memStorage()
+    const sess = await startOrContinue(s, 'p1')
+    expect(hasEvidence(sess)).toBe(false)
+    const withVid = await setRecordings(s, [rec])
+    expect(hasEvidence(withVid)).toBe(true)
+    expect(evCountText(withVid)).toBe('0 shots · 0 pages · 1 video · not lost')
+  })
+
+  it('setRecordings returns null when there is no session (never throws)', async () => {
+    expect(await setRecordings(memStorage(), [rec])).toBeNull()
+  })
+})
+
+// Files attached via Attach must survive Minimize → Resume (metadata always; bytes for small files).
+describe('attached files persist across minimize', () => {
+  const doc = { id: 'f1', name: 'app.log', type: 'text/plain', size: 3, dataUrl: 'data:text/plain;base64,YWJj' }
+  const big = { id: 'f2', name: 'huge.mp4', type: 'video/mp4', size: 2_000_000_000, dataUrl: '' }
+
+  it('setFiles stores the list and the session counts as evidence (dock shows)', async () => {
+    const s = memStorage()
+    await startOrContinue(s, 'p1')
+    const sess = await setFiles(s, [doc, big])
+    expect(hasEvidence(sess)).toBe(true)
+    expect(evCountText(sess)).toBe('0 shots · 0 pages · 2 files · not lost')
+    expect((await getActiveSession(s))!.files).toEqual([doc, big])
+  })
+
+  it('setFiles with [] clears; returns null with no session', async () => {
+    const s = memStorage()
+    await startOrContinue(s, 'p1')
+    await setFiles(s, [doc])
+    await setFiles(s, [])
+    expect((await getActiveSession(s))!.files).toEqual([])
+    expect(await setFiles(memStorage(), [doc])).toBeNull()
   })
 })

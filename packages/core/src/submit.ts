@@ -35,6 +35,7 @@ export async function dispatchSubmit(
     title: payload.title,
     kind: payload.kind,
     files: payload.files,
+    fileRefs: payload.fileRefs,
     recordings: payload.recordings,
     reporter: payload.reporter,
     clientInfo: payload.clientInfo,

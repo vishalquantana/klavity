@@ -2,7 +2,7 @@ import type { BackgroundMessage, ContentMessage, KlavitySettings, KlavConfig, Re
 import { findProjectForUrl } from './project-url'
 import { onSettingsChanged } from './config-flush'
 import { revalidateConfig } from './config-revalidate'
-import { DEFAULT_SETTINGS } from '@klavity/core'
+import { DEFAULT_SETTINGS, DEFAULT_BACKEND_URL } from '@klavity/core'
 import { dispatchSubmit } from '@klavity/core/submit'
 // KLA-720: client-direct tracker submitters (jira/linear/github/plane) removed — persist-first only.
 import { submitReport as backendSubmit } from '@klavity/core/integrations/backend'
@@ -783,6 +783,38 @@ chrome.runtime.onMessage.addListener((msg: BackgroundMessage, sender, sendRespon
       }
       console.warn('[Klavity] CAPTURE_TAB failed:', r1.error)
       reply('', r1.error)
+    })
+    return true
+  }
+
+  // Large-file upload proxy (core/large-upload.ts): the content script slices a big attachment and sends each
+  // /api/uploads/* call here; the SW posts it to the backend with the same auth a report submit uses. Only
+  // the three upload paths are allowed, so this can't be used to call anything else with the user's token.
+  if (msg.kind === 'LARGE_UPLOAD') {
+    const allowed = ['/api/uploads/start', '/api/uploads/chunk', '/api/uploads/complete']
+    if (!allowed.includes(msg.path)) { sendResponse({ status: 400, text: JSON.stringify({ error: 'bad upload path' }) }); return }
+    getSettings().then(async (settings) => {
+      const base = (settings.backendUrl || DEFAULT_BACKEND_URL).replace(/\/+$/, '')
+      const headers: Record<string, string> = {}
+      if (settings.connectionMode === 'klavity' && settings.klavToken) headers.Authorization = `Bearer ${settings.klavToken}`
+      let body: BodyInit | undefined
+      if (typeof msg.b64 === 'string') {
+        const bin = atob(msg.b64)
+        const bytes = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+        headers['content-type'] = 'application/octet-stream'
+        body = bytes
+      } else if (msg.json !== undefined) {
+        headers['content-type'] = 'application/json'
+        body = JSON.stringify(msg.json)
+      }
+      const qs = msg.query ? '?' + new URLSearchParams(msg.query).toString() : ''
+      try {
+        const res = await fetch(base + msg.path + qs, { method: 'POST', headers, body })
+        sendResponse({ status: res.status, text: await res.text().catch(() => '') })
+      } catch (e) {
+        sendResponse({ status: 0, text: JSON.stringify({ error: String((e as Error)?.message || e) }) })
+      }
     })
     return true
   }

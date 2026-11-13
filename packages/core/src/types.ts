@@ -195,6 +195,8 @@ export interface SubmitReportPayload {
   screenshots: string[] // data URLs (PNG or JPEG)
   // PX4 #425: non-image file attachments (PDF, logs, .har, ...). Optional; screenshots keep their own path.
   files?: ReportFileAttachment[]
+  // Large files already uploaded in chunks (/api/uploads/*): signed refs sent as `file_refs`. Optional.
+  fileRefs?: string[]
   // KLAVITYKLA-438: "Record me" video recordings (screen+camera+mic). Optional + additive — absent when the
   // composer's recording flag is off or the reporter attached none. Threaded to /api/feedback as `recording`.
   recordings?: ReportRecording[]
@@ -239,6 +241,8 @@ export interface IntegrationConfig {
   title?: string
   kind?: IssueKind
   files?: ReportFileAttachment[]
+  // Large files already uploaded in chunks (/api/uploads/*): signed refs sent as `file_refs`. Optional.
+  fileRefs?: string[]
   recordings?: ReportRecording[]
   reporter?: Reporter
   clientInfo?: ClientInfo
@@ -264,6 +268,9 @@ export type BackgroundMessage =
   | { kind: 'KLAV_CONSENT'; projectId: string; status: 'granted' | 'paused' | 'revoked' }               // POST /api/consent
   | { kind: 'KLAV_RECONCILE_SCRIPTS' }                       // re-register dynamic content scripts after a host-permission grant
   | { kind: 'KLAV_DEPLOY_SIMS'; projectId: string; simIds: string[] | 'all' } // trigger sims-live deploy (Dev2 hook)
+  // Large-file upload: content proxies one /api/uploads/* call through the SW (which holds the auth token).
+  // `b64` carries a chunk's bytes (Blobs/ArrayBuffers don't survive runtime messaging). Reply: { status, text }.
+  | { kind: 'LARGE_UPLOAD'; path: string; query?: Record<string, string>; json?: unknown; b64?: string }
 
 export type KlavMonitoredProject = { id: string; name: string; reviewMode: string; monitoredUrls: string[] }
 export interface KlavConfig {
