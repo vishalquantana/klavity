@@ -528,7 +528,10 @@ export function createSelectSimsApi(o: {
   projectId: string
   getToken: () => string
   fetch?: (input: string, init?: RequestInit) => Promise<Response>
+  /** The application these Sims run on (default: this page's origin). Run / Stop apply to this application only. */
+  origin?: string
 }): SelectSimsApi {
+  const appOrigin = () => o.origin ?? (typeof location !== 'undefined' ? location.origin : '')
   const f = o.fetch || ((input: string, init?: RequestInit) => fetch(input, init))
   const endpoint = o.backendUrl + '/api/widget/sim-deployments'
   const headers = (json: boolean) => {
@@ -552,14 +555,15 @@ export function createSelectSimsApi(o: {
   }
   return {
     async load() {
-      const r = await f(endpoint + '?project=' + encodeURIComponent(o.projectId), { headers: headers(false), credentials: 'include' })
+      const og = appOrigin()
+      const r = await f(endpoint + '?project=' + encodeURIComponent(o.projectId) + (og ? '&origin=' + encodeURIComponent(og) : ''), { headers: headers(false), credentials: 'include' })
       const d = await parse(r)
       return Array.isArray(d.sims) ? d.sims : []
     },
     async act(action, simIds) {
       const r = await f(endpoint, {
         method: 'POST', headers: headers(true), credentials: 'include',
-        body: JSON.stringify({ project: o.projectId, action, simIds }),
+        body: JSON.stringify({ project: o.projectId, action, simIds, origin: appOrigin() }),
       })
       const d = await parse(r)
       return {

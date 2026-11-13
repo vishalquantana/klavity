@@ -445,12 +445,15 @@ const SIM2 = `sim_w2_${ts}`
 const setSimActive = (id: string, active: boolean) => fetch(base + `/api/personas/${id}/active?project=` + projectId, {
   method: "PATCH", headers: { cookie: sessionCookie, "content-type": "application/json" }, body: JSON.stringify({ active }),
 })
-const simDep = (body?: unknown, headers: Record<string, string> = {}) => body === undefined
-  ? fetch(base + "/api/widget/sim-deployments?project=" + projectId, { headers: { cookie: sessionCookie, ...headers } })
+// The widget always says which application it is on (its page origin) — Run / Stop / status are per application. Tests that don't
+// care use one app origin; the origin-scoping tests below pass their own.
+const APP = "http://app-one.test", APP2 = "http://app-two.test"
+const simDep = (body?: unknown, headers: Record<string, string> = {}, origin: string | null = APP) => body === undefined
+  ? fetch(base + "/api/widget/sim-deployments?project=" + projectId + (origin ? "&origin=" + encodeURIComponent(origin) : ""), { headers: { cookie: sessionCookie, ...headers } })
   : fetch(base + "/api/widget/sim-deployments", {
       method: "POST",
       headers: { cookie: sessionCookie, "content-type": "application/json", ...headers },
-      body: JSON.stringify(body),
+      body: JSON.stringify(origin && typeof body === "object" && body ? { origin, ...(body as object) } : body),
     })
 
 test("GET /api/widget/sim-deployments requires a signed-in caller", async () => {
@@ -526,7 +529,38 @@ test("widget reviews (runScope=widget) only include the Sims this user has runni
   const src = await Bun.file(import.meta.dir + "/server.ts").text()
   const i = src.indexOf('if (body.runScope === "widget" && db)')
   expect(i).toBeGreaterThan(-1)
-  expect(src.slice(i, i + 260)).toContain("runningSimIds(db, projectId, meR)")
+  expect(src.slice(i, i + 420)).toContain("runningSimIds(db, projectId, meR, normOrigin(pageUrl) || null)")   // the REVIEWED page's application decides
+})
+
+test("KD-origin: Sims run on one application only — a Run on app one is not running on app two or on Klavity", async () => {
+  try {
+    const d = await (await simDep({ project: projectId, action: "run", simIds: [SIM1] })).json()
+    expect(d.applied).toEqual([SIM1])
+    const on = async (origin: string | null) => (await (await simDep(undefined, {}, origin)).json()).sims.find((s: any) => s.id === SIM1).run
+    expect(await on(APP)).toBe("running")
+    expect(await on(APP2)).toBe("stopped")
+    expect(await on(base)).toBe("stopped")             // Klavity's own pages
+    expect(await on(null)).toBe("running")             // the Sims tab (no origin) sees it running somewhere
+    // Stop on the other application doesn't touch it; Stop with no origin (Sims tab) stops it everywhere.
+    await simDep({ project: projectId, action: "stop_all" }, {}, APP2)
+    expect(await on(APP)).toBe("running")
+    await simDep({ project: projectId, action: "stop", simIds: [SIM1] }, {}, null)
+    expect(await on(APP)).toBe("stopped")
+  } finally { await simDep({ project: projectId, action: "stop_all" }, {}, null) }
+})
+
+test("KD-origin: a Run from the Sims tab (no origin) goes to the application last started on; with none it is skipped", async () => {
+  try {
+    let d = await (await simDep({ project: projectId, action: "run", simIds: [SIM1] }, {}, null)).json()
+    expect(d.applied).toEqual([])
+    expect(d.skipped).toEqual([expect.objectContaining({ simId: SIM1 })])
+    await simDep({ project: projectId, action: "run", simIds: [SIM2] }, {}, APP2)      // last started on app two
+    d = await (await simDep({ project: projectId, action: "run", simIds: [SIM1] }, {}, null)).json()
+    expect(d.applied).toEqual([SIM1])
+    const on = async (origin: string) => (await (await simDep(undefined, {}, origin)).json()).sims.find((s: any) => s.id === SIM1).run
+    expect(await on(APP2)).toBe("running")
+    expect(await on(APP)).toBe("stopped")
+  } finally { await simDep({ project: projectId, action: "stop_all" }, {}, null) }
 })
 
 test("sim-deployments leaves the legacy /api/widget/sims contract unchanged", async () => {
