@@ -58,7 +58,17 @@ export interface EvidenceSession {
   env?: string
   shots: EvidenceShot[]
   recordings?: EvidenceRecording[]
+  /** Files attached via Attach. Small ones keep their bytes (dataUrl); big ones only metadata (dataUrl ''), their bytes stay in page memory. */
+  files?: EvidenceFile[]
   isOpen?: boolean
+}
+
+export interface EvidenceFile {
+  id: string
+  name: string
+  type: string
+  size: number
+  dataUrl: string
 }
 
 /** addShot outcome — carries a reason when the size/count cap rejected the shot so the UI can nudge. */
@@ -280,6 +290,16 @@ export async function setRecordings(sessionId: string, recordings: EvidenceRecor
     id: r.id, dataUrl: r.dataUrl, mime: r.mime, durationMs: r.durationMs, bytes: r.bytes,
     width: r.width, height: r.height, screenOnly: r.screenOnly,
   }))
+  cur.updatedAt = Date.now()
+  await putSession(cur)
+  return cur
+}
+
+/** Replace the session's attached files with the composer's current list (empty array clears). */
+export async function setFiles(sessionId: string, files: EvidenceFile[]): Promise<EvidenceSession | null> {
+  const cur = await getById(sessionId)
+  if (!cur) return null
+  cur.files = files.map((f) => ({ id: f.id, name: f.name, type: f.type, size: f.size, dataUrl: f.dataUrl || '' }))
   cur.updatedAt = Date.now()
   await putSession(cur)
   return cur

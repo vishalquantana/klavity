@@ -3,3 +3,4 @@ node_modules
 bun.lock
 bun.lockb
 public/uploads/
+.tmp-uploads/

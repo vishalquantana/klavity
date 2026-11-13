@@ -8,6 +8,7 @@ import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit, suppres
 import { safeRemove } from './safe-remove'
 import { klavityAttributionUrl } from './attribution'
 import { createSharePickerHint, shareCaptureLikelyGranted } from './share-hint'
+import { LARGE_FILE_MAX_BYTES, needsLargeUpload } from './large-upload'
 // Re-export so the widget/launcher (which already imports from '@klavity/core/modal') can build the same hint.
 export { createSharePickerHint, shareCaptureLikelyGranted } from './share-hint'
 import {
@@ -583,6 +584,10 @@ export interface ModalCallbacks {
   // (100MB). Raise per plan later. When a file exceeds it the composer shows a friendly, role-aware CTA —
   // it never silently drops the file (enforced per-workspace QUOTA + billing is KLA-594 fast-follow).
   maxFileBytes?: number
+  // Large-file uploads (core/large-upload.ts): the host's submit uploads files over the single-request caps in
+  // chunks first. When true the per-file cap becomes LARGE_FILE_MAX_BYTES (5 GB) and big files are kept as the
+  // original File (never base64). Off by default → today's 100 MB behaviour. Ignored if maxFileBytes is set.
+  largeFileUploads?: boolean
   // KLA-591: who is filing — drives the over-cap CTA. A member/owner/admin is offered a direct upgrade link;
   // an anon/guest end-user is never asked to pay. Absent/undefined is treated as 'anon' (the safe default).
   reporterRole?: ReporterRole
@@ -606,6 +611,11 @@ export interface ModalCallbacks {
   // KD-1074: fired with the current list whenever a recording is added, replaced or removed, so the host can
   // persist it (the widget keeps it in the evidence session so minimize → resume doesn't lose the video).
   onRecordingsChange?: (recordings: ReportRecording[]) => void
+  // Seed attached files (videos/docs) when the composer re-opens — e.g. Resume after Minimize.
+  initialFiles?: ReportFileAttachment[]
+  // Fired with the current list whenever an attached file is added or removed, so the host can keep it
+  // across minimize → resume (a video/doc attached via Attach must never be lost by minimizing).
+  onFilesChange?: (files: ReportFileAttachment[]) => void
   onRecord?: (onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => Promise<ReportRecording | null>
   // KLA-505: server-side LIVE DICTATION for the Voice button. When provided AND MediaRecorder is available,
   // the composer PREFERS this over the flaky Web Speech backend: it records short mic segments and hands each
@@ -926,12 +936,17 @@ export function buildModal(
   // file over this isn't silently dropped — the composer shows a friendly, role-aware over-cap CTA. The
   // backend attach path (prototype/server.ts) mirrors the 100MB video ceiling + 120MB total; the enforced
   // per-workspace storage QUOTA + billing is KLA-594 (fast-follow).
-  const PER_FILE_MAX_BYTES = callbacks.maxFileBytes && callbacks.maxFileBytes > 0 ? callbacks.maxFileBytes : DEFAULT_MAX_FILE_BYTES
+  const largeUploads = !!callbacks.largeFileUploads && !(callbacks.maxFileBytes && callbacks.maxFileBytes > 0)
+  const PER_FILE_MAX_BYTES = callbacks.maxFileBytes && callbacks.maxFileBytes > 0 ? callbacks.maxFileBytes
+    : largeUploads ? LARGE_FILE_MAX_BYTES : DEFAULT_MAX_FILE_BYTES
   // KLA-591: who is filing — drives the over-cap CTA (member/owner → upgrade link; anon/guest → ask-team).
   const reporterRole: ReporterRole = callbacks.reporterRole ?? 'anon'
   const upgradeUrl = callbacks.upgradeUrl
-  const MAX_FILES_TOTAL_BYTES = Math.max(120 * 1024 * 1024, PER_FILE_MAX_BYTES + 20 * 1024 * 1024) // holds one max-size file
-  let attachedFiles: ReportFileAttachment[] = []
+  const MAX_FILES_TOTAL_BYTES = largeUploads ? LARGE_FILE_MAX_BYTES * MAX_FILES
+    : Math.max(120 * 1024 * 1024, PER_FILE_MAX_BYTES + 20 * 1024 * 1024) // holds one max-size file
+  let attachedFiles: ReportFileAttachment[] = Array.isArray(callbacks.initialFiles) ? callbacks.initialFiles.filter(Boolean) : []
+  // Last list reported via onFilesChange (seeded from initialFiles so a restore doesn't echo back as a write).
+  let filesSnapshot: ReportFileAttachment[] = attachedFiles.slice()
   // Object-URL previews for blob-backed (video) attachments — revoked on remove/close so a big video isn't pinned.
   const attachmentPreviewUrls = new WeakMap<ReportFileAttachment, string>()
   const canBlobPreview = () => typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
@@ -939,6 +954,10 @@ export function buildModal(
   const revokeAttachmentPreview = (f: ReportFileAttachment) => {
     const u = attachmentPreviewUrls.get(f)
     if (u) { try { URL.revokeObjectURL(u) } catch { /* noop */ } attachmentPreviewUrls.delete(f) }
+  }
+  // Seeded blob-backed files need a fresh preview URL (the previous composer revoked its own on close).
+  for (const f of attachedFiles) {
+    if (f.blob && canBlobPreview()) { try { attachmentPreviewUrls.set(f, URL.createObjectURL(f.blob)) } catch { /* no preview; upload still works */ } }
   }
   // KLA-591: current aggregate upload percent while a submit is in flight (null = not uploading). Painted
   // onto every video tile + file chip so the reporter sees a large video actually uploading.
@@ -1868,7 +1887,7 @@ export function buildModal(
       ${/* KLA-591: ONE hidden input drives the unified attach control (broad accept) when file attachments
            are enabled; the image-only accept is kept for the plain Upload button otherwise. */''}
       <input type="file" id="klavity-file" accept="${fileAttachEnabled ? UNIFIED_ATTACH_ACCEPT : 'image/*,.heic,.heif'}" multiple style="display:none">
-      ${fileAttachEnabled ? `<div class="klavity-attach-hint" id="klavity-attach-hint"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span>Images, video, PDF or logs — up to ${Math.round(PER_FILE_MAX_BYTES / 1024 / 1024)}MB each</span></div>` : ''}
+      ${fileAttachEnabled ? `<div class="klavity-attach-hint" id="klavity-attach-hint"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span>Images, video, PDF or logs — up to ${PER_FILE_MAX_BYTES >= 1024 * 1024 * 1024 ? Math.round(PER_FILE_MAX_BYTES / 1024 / 1024 / 1024) + 'GB' : Math.round(PER_FILE_MAX_BYTES / 1024 / 1024) + 'MB'} each</span></div>` : ''}
       ${/* KLA composer-polish: the images-count row now also hosts the Mevak-style circular Voice mic at its
            right end (replaces the old full-width Voice button in the capture grid). The row always renders when
            Voice is supported so the mic has a home even before any image is attached (the counter itself stays
@@ -2597,6 +2616,13 @@ export function buildModal(
     })
     // An attached file is evidence in its own right — re-evaluate Submit (a file-only report is valid).
     refreshSubmit()
+    notifyFilesChange()
+  }
+  function notifyFilesChange() {
+    if (_closed) return
+    if (filesSnapshot.length === attachedFiles.length && filesSnapshot.every((f, i) => f === attachedFiles[i])) return
+    filesSnapshot = attachedFiles.slice()
+    try { callbacks.onFilesChange?.(attachedFiles.slice()) } catch { /* host persistence is best-effort */ }
   }
 
   // KLA-591: remove an attachment (video or doc) by its attachedFiles index, keeping the strip + chips +
@@ -2708,7 +2734,9 @@ export function buildModal(
         const effectiveType = file.type || (isVideoFile(file) ? videoContentType(file.name) : '')
         // Videos (up to ~100MB) stay as the original File + an object-URL preview — base64-ing one and
         // round-tripping it through atob at submit peaked at ~500MB+ and crashed the tab. Docs stay data URLs.
-        const keepAsBlob = isVideoFile(file) && canBlobPreview()
+        // With large uploads on, any file too big for the single request is also kept as the File: reading a
+        // multi-GB file into a data URL would crash the tab, and the chunked upload reads it slice by slice.
+        const keepAsBlob = (isVideoFile(file) && canBlobPreview()) || (largeUploads && needsLargeUpload(file))
         const entry: ReportFileAttachment = keepAsBlob
           ? { name: file.name, type: effectiveType, size: file.size, dataUrl: '', blob: file }
           : { name: file.name, type: effectiveType, size: file.size, dataUrl: await fileToDataUrl(file) }
@@ -5835,6 +5863,14 @@ export function buildModal(
   // KD-1074: recordings seeded on open (a resumed evidence session) must show in the strip straight away —
   // select the newest as the hero, like a fresh "Record me" capture.
   if (recordings.length) { activeRecordingIndex = recordings.length - 1; renderRecordings() }
+  // Files seeded on open (Resume after Minimize) show straight away; the newest video becomes the hero
+  // unless a seeded recording already took it.
+  if (attachedFiles.length) {
+    if (activeRecordingIndex == null) {
+      for (let i = attachedFiles.length - 1; i >= 0; i--) { if (attachmentKind(attachedFiles[i]) === 'video') { activeVideoIndex = i; break } }
+    }
+    renderFiles(); updateStrip()
+  }
 
   if (callbacks.autoCaptureOnOpen) {
     // KLAVITYKLA-506: very large DOMs make the html-to-image render slow enough to jank the composer's first

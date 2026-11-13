@@ -41,6 +41,35 @@ export interface ExtEvidenceSession {
   desc: string
   reportType: string
   shots: ExtEvidenceShot[]
+  /** KD-1074 (ext parity): "Record me" videos, so a minimize / navigation never loses them. */
+  recordings?: ExtEvidenceRecording[]
+  /** Files attached via Attach (videos/docs), so a minimize never loses them. */
+  files?: ExtEvidenceFile[]
+}
+
+/**
+ * An attached file. Small files keep their bytes here (`dataUrl`). Big ones (blob-backed videos, multi-GB
+ * files) can't live in chrome.storage — only their metadata is stored and the bytes stay in the content
+ * script's memory (`dataUrl` is '') — enough to survive Minimize → Resume on the same page.
+ */
+export interface ExtEvidenceFile {
+  id: string
+  name: string
+  type: string
+  size: number
+  dataUrl: string
+}
+
+/** A composer "Record me" recording, stored as a data URL (same shape the composer's ReportRecording uses). */
+export interface ExtEvidenceRecording {
+  id: string
+  dataUrl: string
+  mime: string
+  durationMs: number
+  bytes: number
+  width: number
+  height: number
+  screenOnly: boolean
 }
 
 /** addShot outcome — carries a reason when a cap rejected the shot so the UI can nudge. */
@@ -118,11 +147,20 @@ export function sessionBytes(session: ExtEvidenceSession): number {
   return session.shots.reduce((n, s) => n + (typeof s.bytes === 'number' ? s.bytes : (s.dataUrl?.length ?? 0)), 0)
 }
 
-/** Dock label — "N shots · M pages · not lost". */
+/** True when the session holds anything worth keeping a dock for (a shot or a recorded video). */
+export function hasEvidence(session: ExtEvidenceSession | null): boolean {
+  return !!session && (session.shots.length > 0 || (session.recordings?.length ?? 0) > 0 || (session.files?.length ?? 0) > 0)
+}
+
+/** Dock label — "N shots · M pages · not lost" (plus "· K video(s)" when a recording is held). */
 export function evCountText(session: ExtEvidenceSession | null): string {
   const n = session ? session.shots.length : 0
   const m = session ? pageCount(session) : 0
-  return `${n} shot${n === 1 ? '' : 's'} · ${m} page${m === 1 ? '' : 's'} · not lost`
+  const r = session?.recordings?.length ?? 0
+  const vids = r ? ` · ${r} video${r === 1 ? '' : 's'}` : ''
+  const f = session?.files?.length ?? 0
+  const files = f ? ` · ${f} file${f === 1 ? '' : 's'}` : ''
+  return `${n} shot${n === 1 ? '' : 's'} · ${m} page${m === 1 ? '' : 's'}${vids}${files} · not lost`
 }
 
 // KD-162: only worth listing when the reporter ACTUALLY navigated across pages while capturing evidence
@@ -240,6 +278,33 @@ export async function removeShot(storage: EvidenceStorage, shotId: string): Prom
   const cur = await readRaw(storage)
   if (!cur) return null
   cur.shots = cur.shots.filter((s) => s.id !== shotId)
+  cur.updatedAt = Date.now()
+  await storage.set(EVIDENCE_KEY, cur)
+  return cur
+}
+
+/**
+ * KD-1074 (ext parity): replace the session's recordings with the composer's current list (empty clears).
+ * Videos are NOT counted against MAX_SESSION_BYTES (that cap guards screenshots); the manifest's
+ * unlimitedStorage permission covers the size, and the composer already enforces its own upload cap.
+ */
+export async function setRecordings(storage: EvidenceStorage, recordings: ExtEvidenceRecording[]): Promise<ExtEvidenceSession | null> {
+  const cur = await readRaw(storage)
+  if (!cur) return null
+  cur.recordings = recordings.map((r) => ({
+    id: r.id, dataUrl: r.dataUrl, mime: r.mime, durationMs: r.durationMs, bytes: r.bytes,
+    width: r.width, height: r.height, screenOnly: r.screenOnly,
+  }))
+  cur.updatedAt = Date.now()
+  await storage.set(EVIDENCE_KEY, cur)
+  return cur
+}
+
+/** Replace the session's attached files with the composer's current list (empty clears). */
+export async function setFiles(storage: EvidenceStorage, files: ExtEvidenceFile[]): Promise<ExtEvidenceSession | null> {
+  const cur = await readRaw(storage)
+  if (!cur) return null
+  cur.files = files.map((f) => ({ id: f.id, name: f.name, type: f.type, size: f.size, dataUrl: f.dataUrl || '' }))
   cur.updatedAt = Date.now()
   await storage.set(EVIDENCE_KEY, cur)
   return cur

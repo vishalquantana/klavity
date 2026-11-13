@@ -3,6 +3,7 @@ import { injectSimStyles } from "@klavity/core/sim"
 import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage, safeToPngViewport, hasUncapturableEmbeds, fullPageCaptureSize } from "./capture"
 import { buildModal, installRegionDrag, isEditableTarget, isLinkTarget, createSharePickerHint, shareCaptureLikelyGranted, type ModalController, type PickedTarget, type CaptureQuality, type ShotCapture } from "@klavity/core/modal"
 import { safeRemove } from "@klavity/core"
+import { splitForLargeUpload, offloadLargeFiles, fetchTransport, LargeUploadError } from "@klavity/core/large-upload"
 import { cropDataUrl, cumulativeScrollForRect, type Rect } from "@klavity/core/crop"
 import {
   planScrollStitch,
@@ -33,6 +34,7 @@ import {
   getActiveSession, startOrContinue, addShot, removeShot, clear as clearEvidenceSession,
   makeShotId, pageCount, MAX_SHOTS, updateShotAnnotations, updateFields as updateEvidenceFields,
   setRecordings as setEvidenceRecordings,
+  setFiles as setEvidenceFiles,
   type EvidenceSession, type EvidenceShot,
 } from "./evidence-session"
 import { SimsLive, type LiveObservation } from "./sims-live"  // side-effecting: auto-installs window.KlavitySims on load
@@ -1088,7 +1090,47 @@ async function mount() {
   }
   function hasEvSessionContent(session: EvidenceSession | null): boolean {
     if (!session) return false
-    return session.shots.length > 0 || (session.recordings?.length ?? 0) > 0 || session.desc.trim().length > 0 || session.title.trim().length > 0
+    return session.shots.length > 0 || (session.recordings?.length ?? 0) > 0 || (session.files?.length ?? 0) > 0 || session.desc.trim().length > 0 || session.title.trim().length > 0
+  }
+  // ── Attached files across Minimize → Resume ──
+  // The composer's attached Files can't all go into IndexedDB (a multi-GB video would blow the quota), so the
+  // bytes stay in page memory and the session stores metadata — plus the bytes for small data-URL files, which
+  // therefore also survive a reload/navigation. A big file the page lost is reported on Resume, never dropped silently.
+  const EV_FILE_STORE_MAX_CHARS = 12 * 1024 * 1024 // ≈ an 8 MB file as a data URL
+  const evFileIds = new WeakMap<object, string>()
+  const evFilesMem = new Map<string, any>()
+  function evFileId(f: object): string {
+    let id = evFileIds.get(f)
+    if (!id) { id = "f_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); evFileIds.set(f, id) }
+    return id
+  }
+  function evPersistFiles(sessionId: string, files: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>) {
+    const keep = new Set<string>()
+    const rows = files.map((f) => {
+      const id = evFileId(f); keep.add(id); evFilesMem.set(id, f)
+      return { id, name: f.name, type: f.type, size: f.size, dataUrl: f.dataUrl && f.dataUrl.length <= EV_FILE_STORE_MAX_CHARS ? f.dataUrl : "" }
+    })
+    for (const id of [...evFilesMem.keys()]) if (!keep.has(id)) evFilesMem.delete(id)
+    void queueEvWrite(async () => { evSession = await setEvidenceFiles(sessionId, rows) ?? evSession; updateEvDock() })
+  }
+  function evRestoreFiles(session: EvidenceSession): any[] {
+    const out: any[] = []
+    const lost: string[] = []
+    for (const row of session.files ?? []) {
+      const mem = evFilesMem.get(row.id)
+      if (mem) { out.push(mem); continue }
+      if (row.dataUrl) {
+        const f = { name: row.name, type: row.type, size: row.size, dataUrl: row.dataUrl }
+        evFileIds.set(f, row.id); evFilesMem.set(row.id, f); out.push(f)
+        continue
+      }
+      lost.push(row.name)
+    }
+    if (lost.length) {
+      try { evBanner(`${lost.join(", ")} couldn't be kept after the page reloaded — please attach ${lost.length === 1 ? "it" : "them"} again.`) } catch { /* best-effort */ }
+      evPersistFiles(session.id, out)
+    }
+    return out
   }
   function evCountText(): string {
     const n = evSession ? evSession.shots.length : 0
@@ -1096,6 +1138,8 @@ async function mount() {
     // KD-1074: a recording-only report (e.g. a walkthrough, whose default snap is dropped) still says what's saved.
     const r = evSession?.recordings?.length ?? 0
     if (n === 0 && r > 0) return `${r} recording${r === 1 ? "" : "s"} - not lost`
+    const f = evSession?.files?.length ?? 0
+    if (n === 0 && f > 0) return `${f} file${f === 1 ? "" : "s"} - not lost`
     if (n === 0) return "Bug report in progress - not lost"
     return `${n} shot${n === 1 ? "" : "s"} - ${m} page${m === 1 ? "" : "s"} - not lost`
   }
@@ -1192,6 +1236,7 @@ async function mount() {
   async function discardEvidence() {
     const s = evSession
     evSession = null
+    evFilesMem.clear()
     clearDraft(cfg.projectId, evOrigin)
     hideEvDock()
     if (s) { try { await clearEvidenceSession(s.id) } catch { /* best-effort */ } }
@@ -1449,6 +1494,7 @@ async function mount() {
     const arrivedNow = [...(opts?.initialRecordings || []), ...arrivedRecordings]
     arrivedRecordings = []
     const seedRecordings = mergeRecordings(ev?.recordings?.map((r) => ({ ...r })), arrivedNow)
+    const seedFiles = ev ? evRestoreFiles(ev) : []
     // The composer never echoes its seed back via onRecordingsChange, so persist an arrived video into the
     // session here — otherwise a later minimize/reload would lose it again.
     if (ev && arrivedNow.length) {
@@ -1492,9 +1538,12 @@ async function mount() {
       // so we skip the full-page auto-capture and let the zoomed-in region lead. KLA-412: also skip it when
       // resuming an evidence session that already holds shots (we seed those below); a BRAND-NEW session
       // (empty, no region shot) still auto-captures so the first shot lands + persists via onShotAdded.
-      autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0) && !opts?.initialRecordings?.length,
+      autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0) && !opts?.initialRecordings?.length && !seedFiles.length,
       // Saved session recordings + a "Record me" video that finished after the reporter navigated (see above).
       initialRecordings: seedRecordings.length ? seedRecordings : undefined,
+      // Files attached via Attach used to live ONLY in the open composer, so Minimize → Resume lost them.
+      initialFiles: seedFiles.length ? seedFiles : undefined,
+      onFilesChange: ev ? (files) => evPersistFiles(ev.id, files) : undefined,
       // #638: render the "Attach console logs" toggle (default OFF) in the composer. When the reporter enables
       // it, the submit payload carries attachConsole:true and onSubmit includes the captured console logs.
       consoleAttachToggle: true,
@@ -1684,6 +1733,8 @@ async function mount() {
       // PX4 #411/#425: enhanced-composer opts from the project config (all default off → classic composer).
       showTitleField: composerShowTitle,
       allowFileAttachments: composerFileAttach,
+      // Files over the single-request caps upload in chunks before the report is sent (prepareSubmission).
+      largeFileUploads: true,
       // KLA-591: role-aware over-cap CTA. An identified reporter (first-party page / signed-in widget) is a
       // workspace member/owner → offer a direct upgrade link; an anonymous end-user on a customer's site is
       // never asked to pay → the composer shows "ask your team to upgrade / attach a smaller file". The
@@ -1817,6 +1868,7 @@ async function mount() {
             evMinimizing = false
             try { await clearEvidenceSession(ev.id) } catch { /* best-effort */ }
             evSession = null
+            evFilesMem.clear()
             hideEvDock()
           }
         }
@@ -1836,7 +1888,7 @@ async function mount() {
           const freshTurnstile = needsTurnstile ? () => getTurnstileToken(turnstileSiteKey) : undefined
           const attempt = (repair?: string[]) => {
             pill.uploading()
-            ;(preparedP ||= prepareSubmission(uploadCfg, uploadPayload).catch((e) => { preparedP = null; throw e }))
+            ;(preparedP ||= prepareSubmission(uploadCfg, uploadPayload, (sent, total) => pill.progress(Math.round((sent / total) * 90), sent, total)).catch((e) => { preparedP = null; throw e }))
               .then((prepared) => sendPrepared(prepared, uploadCfg, {
                 onProgress: (pct, loaded, total) => pill.progress(pct, loaded, total),
                 onRetry: (i) => i.pending ? pill.waiting(i.delayMs, i.waitedMs ?? 0) : pill.retrying(i.attempt, i.maxAttempts, i.error.userMessage),
@@ -1852,6 +1904,8 @@ async function mount() {
               .catch((e) => {
                 // Retry re-sends the SAME prepared body + key. Against a server that did not confirm idempotency support, a lost answer may
                 // mean the ticket already exists — say so, and name the button honestly ("Retry anyway").
+                // A large file that couldn't be uploaded: say which, and Retry starts that file's upload again (it is still held).
+                if (e instanceof LargeUploadError) { pill.failure(() => attempt(repair), e.message); return }
                 const copy = retryFailureCopy(e instanceof SubmitError ? e : null, serverIdempotent)
                 pill.failure(() => attempt(repair), copy.message, copy.retryLabel)
               })
@@ -1927,6 +1981,7 @@ async function mount() {
               if (latest) await clearEvidenceSession(latest.id)
               clearDraft(cfg.projectId, evOrigin)
               evSession = null
+              evFilesMem.clear()
               hideEvDock()
             }
           })
@@ -3061,7 +3116,25 @@ export function enhancePriorityToTicket(p: string | undefined | null): "urgent" 
 export async function prepareSubmission(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
   payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; annotations?: any; reporterEmail?: string; createContact?: boolean; turnstileToken?: string; submissionKey?: string; feedbackTarget?: 'project' | 'klavity'; suggestedPriority?: string },
+  // Progress of the large-file (chunked) uploads that run before the report is sent: bytes sent / total.
+  onLargeUploadProgress?: (sent: number, total: number) => void,
 ): Promise<PreparedSubmission> {
+  // Files over the single-request caps are uploaded first, in chunks (core/large-upload.ts), and the report
+  // carries a signed ref for each. Files that fit keep the existing multipart path. If one can't be uploaded
+  // this throws (LargeUploadError) — the caller shows a retryable failure and the file stays in the payload.
+  let inlineFiles = payload.files
+  let fileRefs: string[] = []
+  if (splitForLargeUpload(payload.files).large.length) {
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = "" }   // leaving now would lose the upload
+    try { window.addEventListener("beforeunload", warn) } catch { /* non-browser */ }
+    try {
+      const r = await offloadLargeFiles(payload.files, fetchTransport(cfg.backendUrl, { firstParty: cfg.firstParty, token: cfg.token }), { projectId: cfg.projectId, onProgress: onLargeUploadProgress })
+      inlineFiles = r.inline
+      fileRefs = r.refs
+    } finally {
+      try { window.removeEventListener("beforeunload", warn) } catch { /* non-browser */ }
+    }
+  }
   // Compress screenshots (PNG → JPEG, downscale very wide ones) so the upload is fast. Best-effort,
   // parallel; each falls back to its original on failure.
   const screenshots = await Promise.all(payload.screenshots.map((s) => compressScreenshot(s)))
@@ -3086,7 +3159,7 @@ export async function prepareSubmission(
     screenshots,
     screenshotThumbs,
     // PX4 #425: non-image file attachments carried through as their own multipart field.
-    files: payload.files,
+    files: inlineFiles,
     // KLAVITYKLA-438 "Record me": video recordings carried through as their own `recording` multipart field(s).
     recordings: payload.recordings,
     context: payload.context,
@@ -3118,6 +3191,8 @@ export async function prepareSubmission(
   // status 'new' — the server's priority-self-elevation guard is unaffected.
   const enhancedPriority = enhancePriorityToTicket(payload.suggestedPriority)
   if (enhancedPriority) fd.set("priority", enhancedPriority)
+  // Large files uploaded above, as signed refs (a plain text field, so repair/retry bodies carry it too).
+  if (fileRefs.length) fd.set("file_refs", JSON.stringify(fileRefs))
 
   // One idempotency key per prepared report, reused by EVERY attempt (the server returns the existing ticket for a repeat).
   const key = payload.submissionKey || newSubmissionKey()

@@ -62,7 +62,8 @@ import { notifyStatusChange } from "./lib/status-notification"
 import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie, uidCookie, clearUidCookie, clearProjectCookie } from "./lib/auth"
-import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, objectExists, type UploadedScreenshot } from "./lib/s3"
+import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, objectExists, type UploadedScreenshot, putUploadPart, uploadPartSize, assembleUploadParts, attachmentObjectSize, largeAttachmentKey, sweepStaleUploadParts } from "./lib/s3"
+import { CHUNK_BYTES as LARGE_CHUNK_BYTES, largeUploadMaxBytes, newUploadId, signUploadToken, verifyUploadToken, signFileRef, chunkCount, chunkLength, validateStart as validateLargeUploadStart, parseFileRefs } from "./lib/large-upload"
 import { storeVerifiedScreenshot, type StoredScreenshot } from "./lib/sim-evidence"
 import { enrichQaPersona, normalizePersonaKind, isQaPersona, qaRunPrompt, type PersonaKind } from "./lib/sim-validations"
 import { elementListForPrompt, sanitizePageMeta, type PageMeta } from "./lib/sim-ui-identity"
@@ -1417,6 +1418,10 @@ function isWidgetCorsPath(path: string): boolean {
     // KLA-612: the widget's guest "Request upgrade" button POSTs here cross-origin from the customer's site.
     case "/api/upgrade-request":
     case "/api/feedback":
+    // Large-file attachments: chunked upload that runs before the /api/feedback submit (same auth model).
+    case "/api/uploads/start":
+    case "/api/uploads/chunk":
+    case "/api/uploads/complete":
     case "/api/errors":
     case "/api/consent":
     case "/api/sim/review":
@@ -2427,10 +2432,15 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
     for (const a of fb.attachments) {
       try {
         if (!a || !a.key) continue
+        const filename = String(a.filename || "attachment")
+        // A large (chunk-uploaded) file is never read into memory for export: the ticket gets the link only.
+        if (Number(a.size) > LARGE_INLINE_READ_MAX_BYTES) {
+          try { lines.push(`Attachment (${filename}, ${Math.round(Number(a.size) / 1024 / 1024)} MB): ${presignGet(String(a.key), 7 * 24 * 3600)}`) } catch { /* link is best-effort */ }
+          continue
+        }
         const { bytes, contentType } = await getObjectBytes(String(a.key))
         let url = ""
         try { url = presignGet(String(a.key), 3600) } catch { /* link is best-effort */ }
-        const filename = String(a.filename || "attachment")
         if (url) lines.push(`Attachment (${filename}): ${url}`)
         attachments.push({ filename, contentType: String(a.contentType || contentType || "application/octet-stream"), bytes, url })
       } catch (e: any) { console.warn("file attachment fetch failed for ticket (non-fatal):", e?.message || e) }
@@ -3313,6 +3323,14 @@ const FEEDBACK_ANON_WINDOW = 60 * 60 * 1000
 const FEEDBACK_ANON_PER_IP = 20
 const FEEDBACK_ANON_PER_PROJECT = 200
 const FEEDBACK_PK_PER_KEY = 200 // per publishable key, per FEEDBACK_ANON_WINDOW (mobile SDK)
+// Large-file uploads started per hour (each one file of up to LARGE_UPLOAD_MAX_BYTES).
+const LARGE_UPLOAD_ANON_PER_IP = 20
+const LARGE_UPLOAD_PER_USER = 60
+// Files above this are never read whole into memory (export to trackers, transcription): the 1GB box can't
+// hold a multi-GB file. The existing single-request path caps videos at 100MB, so it never reaches this.
+const LARGE_INLINE_READ_MAX_BYTES = 100 * 1024 * 1024
+// Joins in progress in THIS process, by upload id — a duplicate complete waits on the same join.
+const largeUploadAssembling = new Map<string, Promise<void>>()
 
 // SECURITY (KLA-559): hard ceiling on any request body. Bun buffers the whole body before our handler
 // runs, so without this an attacker could POST an arbitrarily large body (no Origin needed) and spike
@@ -5856,6 +5874,100 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   }
 
   // ── feedback intake (extension backend mode) ──
+  // ── Large-file attachments (lib/large-upload.ts) ─────────────────────────────────────────────────────
+  // Files over the single-request caps are uploaded here in CHUNK_BYTES pieces BEFORE the report is
+  // submitted; the submit then carries a signed `file_refs` entry per file. The start call applies the same
+  // gate an anonymous /api/feedback submit gets (rate limit + the project's report gate); chunk/complete
+  // are authorised by the signed upload token start returned.
+  if (req.method === "POST" && path === "/api/uploads/start") {
+    try {
+      const body = await readJsonLimited(req, 10_000)
+      if (!body.ok) return wjson({ error: body.error }, body.status)
+      const v = validateLargeUploadStart(body.data)
+      if (!v.ok) return wjson({ error: v.error }, 400)
+      const email = (await bearerEmail(req)) || (await sessionEmail(req))
+      if (email) {
+        if (!rlAllow(`lup:user:${email}`, LARGE_UPLOAD_PER_USER, FEEDBACK_ANON_WINDOW)) return wjson({ error: "rate limited" }, 429)
+      } else {
+        if (!rlAllow(`lup:ip:${clientIp(req, server)}`, LARGE_UPLOAD_ANON_PER_IP, FEEDBACK_ANON_WINDOW)) return wjson({ error: "rate limited" }, 429)
+        const reqOrigin = req.headers.get("origin") || ""
+        const baseOrigin = (() => { try { return new URL(BASE).origin } catch { return "" } })()
+        if (reqOrigin && reqOrigin !== baseOrigin) {
+          // Cross-origin widget: the same project checks the report submit itself will make.
+          if (!v.projectId) return wjson({ error: "Unknown project." }, 404)
+          const proj = await projectById(v.projectId)
+          if (!proj) return wjson({ error: "Unknown project." }, 404)
+          if ((widgetConfigFromProject(proj)?.reportGate || "anonymous") === "login") return wjson({ error: "Sign in to Klavity to report on this project." }, 401)
+        }
+      }
+      const uploadId = newUploadId()
+      const token = signUploadToken({ u: uploadId, p: v.projectId, n: v.filename, t: v.contentType, s: v.size, ts: Date.now() })
+      return wjson({ token, chunk_bytes: LARGE_CHUNK_BYTES, chunks: chunkCount(v.size) })
+    } catch (e) { return wjson(oops(e, "uploads/start"), 500) }
+  }
+
+  if (req.method === "POST" && path === "/api/uploads/chunk") {
+    try {
+      const t = verifyUploadToken(url.searchParams.get("token"))
+      if (!t) return wjson({ error: "This upload expired. Please attach the file again." }, 410)
+      const n = Number(url.searchParams.get("n"))
+      const want = Number.isInteger(n) ? chunkLength(t.s, n) : -1
+      if (want < 0) return wjson({ error: "Bad chunk number." }, 400)
+      const len = Number(req.headers.get("content-length") || 0)
+      if (Number.isFinite(len) && len > want) return wjson({ error: "Chunk is too large." }, 413)
+      const bytes = new Uint8Array(await req.arrayBuffer())
+      if (bytes.byteLength !== want) return wjson({ error: `Chunk ${n} is incomplete (${bytes.byteLength} of ${want} bytes).` }, 400)
+      await putUploadPart(t.u, n, bytes)
+      return wjson({ ok: true })
+    } catch (e) { return wjson(oops(e, "uploads/chunk"), 500) }
+  }
+
+  if (req.method === "POST" && path === "/api/uploads/complete") {
+    try {
+      const body = await readJsonLimited(req, 10_000)
+      if (!body.ok) return wjson({ error: body.error }, body.status)
+      const t = verifyUploadToken(body.data?.token)
+      if (!t) return wjson({ error: "This upload expired. Please attach the file again." }, 410)
+      const finalKey = largeAttachmentKey(t.u, t.n)
+      const makeRef = () => signFileRef({ k: finalKey, p: t.p, n: t.n, t: t.t, s: t.s, ts: Date.now() })
+      // A retried complete (e.g. the answer was lost) finds the file already joined → answer at once.
+      if ((await attachmentObjectSize(finalKey)) === t.s) return wjson({ ref: makeRef(), size: t.s })
+      // Every chunk must be present with its exact length; otherwise tell the client which to re-send.
+      const count = chunkCount(t.s)
+      const missing: number[] = []
+      for (let i = 0; i < count; i += 16) {
+        const batch = Array.from({ length: Math.min(16, count - i) }, (_, j) => i + j)
+        const sizes = await Promise.all(batch.map((n) => uploadPartSize(t.u, n)))
+        sizes.forEach((sz, j) => { if (sz !== chunkLength(t.s, batch[j])) missing.push(batch[j]) })
+      }
+      if (missing.length) return wjson({ error: "Some parts of the file did not arrive.", missing: missing.slice(0, 500) }, 409)
+      // Joining a multi-GB file can take a while: stream a space every 10s so neither Bun's idle timeout nor a
+      // proxy closes the connection, then the JSON answer (leading whitespace is valid JSON). Status is 200 from
+      // the first byte, so a failure is reported in the body ({ error }) — clients read `ref`, not the status.
+      const enc = new TextEncoder()
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          const ping = setInterval(() => { try { controller.enqueue(enc.encode(" ")) } catch { /* closed */ } }, 10_000)
+          try {
+            let job = largeUploadAssembling.get(t.u)
+            if (!job) {
+              job = assembleUploadParts(t.u, count, finalKey, t.t).finally(() => largeUploadAssembling.delete(t.u))
+              largeUploadAssembling.set(t.u, job)
+            }
+            await job
+            controller.enqueue(enc.encode(JSON.stringify({ ref: makeRef(), size: t.s })))
+          } catch (e) {
+            controller.enqueue(enc.encode(JSON.stringify({ ...oops(e, "uploads/complete"), retryable: true })))
+          } finally {
+            clearInterval(ping)
+            try { controller.close() } catch { /* already closed */ }
+          }
+        },
+      })
+      return new Response(stream, { status: 200, headers: { "content-type": "application/json", ...WIDGET_CORS } })
+    } catch (e) { return wjson(oops(e, "uploads/complete"), 500) }
+  }
+
   if (req.method === "POST" && path === "/api/feedback") {
     // Idempotent-submission bookkeeping hoisted so the failure exits can clean up: objects this request uploaded, whether a ticket
     // resulted, and the claim we own. When a request ends WITHOUT a ticket we free the claim (an immediate retry must not wait for the
@@ -6213,6 +6325,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // stored descriptor + transcript_status pipeline downstream see it as a video, not octet-stream.
         attachPlan.push({ af, uploadType: (typeIsGeneric && videoMime) ? videoMime : (af.type || "application/octet-stream"), slot: slotFor(slotMap, "files", ai) })
       }
+      // Large files uploaded beforehand through /api/uploads/* arrive as signed refs (`file_refs`). Each ref is
+      // bound to the project it was started for and names an object that is already stored, so nothing is
+      // uploaded here and the object is NOT added to createdObjectKeys (a retried submit must still find it).
+      // They share the 5-file attachment limit; the byte caps above don't apply (the size was capped at start).
+      for (const r of parseFileRefs(form.get("file_refs"), String(form.get("project_id") || ""), Math.max(0, 5 - attachFiles.length))) {
+        const ct = isVideoAttachment(r.t, r.n) ? (r.t && r.t.startsWith("video/") ? r.t : (videoMimeFromName(r.n) || "video/mp4")) : r.t
+        const desc: { key: string; filename: string; contentType: string; size: number; transcript_status?: string } = { key: r.k, filename: r.n, contentType: ct, size: r.s }
+        // Transcription reads the whole file into memory and skips anything over its 20 MB cap anyway, so a large
+        // video is marked "skipped" up front (kickTranscripts also filters by size) instead of being downloaded.
+        if (/^video\//i.test(ct)) desc.transcript_status = r.s <= LARGE_INLINE_READ_MAX_BYTES ? "pending" : "skipped"
+        attachmentDescs.push(desc)
+      }
 
       // KLAVITYKLA-438 "Record me" (Phase 1): screen+camera+mic video recordings. Uploaded PRIVATE via the
       // same uploadAttachment byte-path #425 uses, then persisted as descriptors on the feedback row
@@ -6504,8 +6628,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               json(body, status, { ...WIDGET_CORS, "Server-Timing": pt.header(), "Access-Control-Expose-Headers": "Server-Timing", ...extra })
             // Transcript + enrichment pass for videos / recordings that were attached to an existing ticket after the fact (a repair, or a
             // repeat report merged into one) — the original submit flow only starts it for rows it inserted itself.
-            const kickTranscripts = (fid: string, atts: Array<{ key: string; filename: string; contentType: string }>, recs: Array<{ id: string; key: string; contentType: string }>) => {
-              const vids = atts.filter((a) => /^video\//i.test(a.contentType || ""))
+            const kickTranscripts = (fid: string, atts: Array<{ key: string; filename: string; contentType: string; size?: number }>, recs: Array<{ id: string; key: string; contentType: string }>) => {
+              // Never pull a huge (chunk-uploaded) video into memory for STT — see LARGE_INLINE_READ_MAX_BYTES.
+              const vids = atts.filter((a) => /^video\//i.test(a.contentType || "") && !(Number(a.size) > LARGE_INLINE_READ_MAX_BYTES))
               if (!vids.length && !recs.length) return
               void (async () => {
                 const jobs: Promise<any>[] = []
@@ -16754,6 +16879,8 @@ if (db && process.env.NODE_ENV !== "test") {
   // AI touch; this batch walk re-grants idle wallets on a month rollover. Once after boot, then daily.
   setTimeout(() => { runMonthlyGrantReset().catch((e) => console.warn("credits grant-reset failed:", e?.message || e)) }, 90_000)
   setInterval(() => { runMonthlyGrantReset().catch((e) => console.warn("credits grant-reset failed:", e?.message || e)) }, 24 * 60 * 60 * 1000)
+  // Large-file uploads: delete chunks of uploads abandoned for more than 2 days (the token itself lives 24h).
+  setInterval(() => { sweepStaleUploadParts(2 * 24 * 60 * 60 * 1000).then((n) => { if (n) console.log(`[large-upload] swept ${n} stale chunk(s)`) }).catch((e) => console.warn("large-upload sweep failed:", e?.message || e)) }, 6 * 60 * 60 * 1000)
   // KLA-88: trail cron scheduler — ticks every minute, fires scheduled walks.
   startTrailScheduler()
   // KLA-55: crash reaper — sweeps stale-heartbeat walks/sessions every 60s.

@@ -205,6 +205,8 @@ export function openModal(type: ReportType = 'bug') {
     onRecord: (onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => recordMe({ onPhase }),
     // PX4 #425: allow non-image file attachments through the unified attach control (parity with widget).
     allowFileAttachments: true,
+    // Files over the single-request caps upload in chunks first (core submitReport → large-upload).
+    largeFileUploads: true,
     onSubmit: async (p) => {
       // KLA-729 full-payload parity: compress screenshots + build index-aligned thumbnails (as the widget
       // does), attach the picked-element / drawn annotations, recordings, files, the required-email gate
