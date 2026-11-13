@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Migrating from one end-to-end test runner to alternative options">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+
+  <!-- left: current runner, constrained -->
+  <rect x="48" y="96" width="228" height="228" rx="14" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="48" y="96" width="228" height="228" rx="14" fill="none" stroke="#f87171" stroke-width="1.5" opacity="0.7"/>
+  <line x1="48" y1="130" x2="276" y2="130" stroke="#f87171" stroke-width="1.2" opacity="0.5"/>
+  <circle cx="68" cy="113" r="4" fill="#f87171" opacity="0.8"/>
+
+  <!-- three blocked constraints -->
+  <rect x="72" y="152" width="180" height="40" rx="8" fill="#f87171" opacity="0.12"/>
+  <path d="M90 165l16 16M106 165l-16 16" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="120" y="166" width="118" height="5" rx="2.5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="120" y="176" width="78" height="5" rx="2.5" fill="#f5f0e8" opacity="0.18"/>
+
+  <rect x="72" y="204" width="180" height="40" rx="8" fill="#f87171" opacity="0.12"/>
+  <path d="M90 217l16 16M106 217l-16 16" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="120" y="218" width="104" height="5" rx="2.5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="120" y="228" width="92" height="5" rx="2.5" fill="#f5f0e8" opacity="0.18"/>
+
+  <rect x="72" y="256" width="180" height="40" rx="8" fill="#f87171" opacity="0.12"/>
+  <path d="M90 269l16 16M106 269l-16 16" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="120" y="270" width="128" height="5" rx="2.5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="120" y="280" width="64" height="5" rx="2.5" fill="#f5f0e8" opacity="0.18"/>
+
+  <!-- fan-out arrows to three alternatives -->
+  <path d="M292 210C340 210 346 128 394 128" fill="none" stroke="#6366f1" stroke-width="2.2"/>
+  <path d="M292 210H394" fill="none" stroke="#6366f1" stroke-width="2.2"/>
+  <path d="M292 210C340 210 346 292 394 292" fill="none" stroke="#6366f1" stroke-width="2.2"/>
+  <polyline points="386,122 396,128 386,134" fill="none" stroke="#6366f1" stroke-width="2.2" stroke-linecap="round"/>
+  <polyline points="386,204 396,210 386,216" fill="none" stroke="#6366f1" stroke-width="2.2" stroke-linecap="round"/>
+  <polyline points="386,286 396,292 386,298" fill="none" stroke="#6366f1" stroke-width="2.2" stroke-linecap="round"/>
+  <circle cx="292" cy="210" r="6" fill="#6366f1"/>
+
+  <!-- right: three passing alternatives -->
+  <rect x="412" y="98" width="336" height="60" rx="10" fill="#6366f1" opacity="0.16"/>
+  <rect x="412" y="98" width="336" height="60" rx="10" fill="none" stroke="#4ade80" stroke-width="1.4" opacity="0.8"/>
+  <polyline points="436,128 444,137 460,118" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  <rect x="480" y="116" width="150" height="6" rx="3" fill="#f5f0e8" opacity="0.5"/>
+  <rect x="480" y="131" width="228" height="6" rx="3" fill="#f5f0e8" opacity="0.2"/>
+
+  <rect x="412" y="180" width="336" height="60" rx="10" fill="#6366f1" opacity="0.16"/>
+  <rect x="412" y="180" width="336" height="60" rx="10" fill="none" stroke="#4ade80" stroke-width="1.4" opacity="0.8"/>
+  <polyline points="436,210 444,219 460,200" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  <rect x="480" y="198" width="188" height="6" rx="3" fill="#f5f0e8" opacity="0.5"/>
+  <rect x="480" y="213" width="134" height="6" rx="3" fill="#f5f0e8" opacity="0.2"/>
+
+  <rect x="412" y="262" width="336" height="60" rx="10" fill="#6366f1" opacity="0.16"/>
+  <rect x="412" y="262" width="336" height="60" rx="10" fill="none" stroke="#4ade80" stroke-width="1.4" opacity="0.8"/>
+  <polyline points="436,292 444,301 460,282" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  <rect x="480" y="280" width="124" height="6" rx="3" fill="#f5f0e8" opacity="0.5"/>
+  <rect x="480" y="295" width="208" height="6" rx="3" fill="#f5f0e8" opacity="0.2"/>
+
+  <!-- baseline accent -->
+  <rect x="48" y="358" width="244" height="8" rx="4" fill="#6366f1" opacity="0.65"/>
+</svg>

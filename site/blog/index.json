@@ -1055,5 +1055,12 @@
     "excerpt": "AI QA for Next.js apps means running AI agents against a production build, so hydration, caching and middleware bugs surface before clients do.",
     "category": "Guides",
     "date": "2026-11-12"
+  },
+  {
+    "slug": "cypress-alternatives",
+    "title": "Cypress Alternatives: 6 Options for Agencies in 2026",
+    "excerpt": "The best Cypress alternatives are Playwright for a like-for-like swap, WebdriverIO or Selenium for WebDriver, and AI QA when nobody maintains tests.",
+    "category": "Compare",
+    "date": "2026-11-13"
   }
 ]
