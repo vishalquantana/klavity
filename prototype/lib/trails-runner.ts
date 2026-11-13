@@ -34,7 +34,7 @@ import { setupReplayCapture, saveReplay, type ReplayCapture } from "./trails-rep
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { contentSigFor } from "./trails-findings-dedup"
 import { captureKrefSnapshot, stableSelectorFor, structuralPathFor, isKrefSelector, recordedStepState } from "./trails-snapshot"
-import { clickWithTransitionFallback } from "./trails-click"
+import { clickWithTransitionFallback, selectOptionAnyWidget, gotoPastRedirect } from "./trails-click"
 import { matchesMock } from "./trails-browser-page"
 import type { NetworkMock } from "./trails-browser-page"
 import { notifyWalkRed } from "./walk-red-alert"
@@ -584,7 +584,8 @@ async function defaultShotUploader(bytes: Uint8Array, contentType: string): Prom
 async function maybeCaptureShot(page: Page, opts: WalkOptions): Promise<{ bytes: Uint8Array; contentType: "image/jpeg" } | undefined> {
   if (!opts.stepShots) return undefined
   try {
-    const buf = await page.screenshot({ type: "jpeg", quality: 45 })
+    // Capped: a busy page (PX4: 10s+ screenshots) must not eat the walk deadline; skip the shot instead.
+    const buf = await page.screenshot({ type: "jpeg", quality: 45, timeout: 5_000 })
     const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf)
     return { bytes, contentType: "image/jpeg" }
   } catch {
@@ -1289,7 +1290,7 @@ async function runOneStep(
   if (step.action === "navigate") {
     // In Layer C the whole walk is scoped to fixtureUrl; re-navigate to it (origin already loaded).
     // Bound the nav at opTimeout (Plan G) so a live-network navigate step can't hang on the 30s default.
-    await page.goto(step.actionValue && /^https?:|^file:/.test(step.actionValue) ? step.actionValue : fixtureUrl, { timeout: currentTimeout })
+    await gotoPastRedirect(page, step.actionValue && /^https?:|^file:/.test(step.actionValue) ? step.actionValue : fixtureUrl, { timeout: currentTimeout })
     // KLA-790: settle after the navigate too (goto waits only for 'load'), so the NEXT step resolves
     // against a rendered page instead of tripping the drift path on async-rendered UI. Best-effort.
     await page.waitForLoadState("networkidle", { timeout: Math.min(currentTimeout, 8_000) }).catch(() => {})
@@ -1536,7 +1537,7 @@ async function runOneStep(
           await clickWithTransitionFallback(resolved.locator, actionTimeout, actionTimeout)
           break
         case "select":
-          await resolved.locator.selectOption(step.actionValue ?? "", { timeout: actionTimeout })
+          await selectOptionAnyWidget(resolved.locator, step.actionValue ?? "", actionTimeout)
           break
         case "hover":
           await resolved.locator.hover({ timeout: actionTimeout })
@@ -1865,7 +1866,7 @@ async function runVisionTier2(
             await loc.fill(val, { timeout: ACTION_TIMEOUT }); break
           }
           case "click": await clickWithTransitionFallback(loc, ACTION_TIMEOUT, ACTION_TIMEOUT); break
-          case "select": await loc.selectOption(step.actionValue ?? "", { timeout: ACTION_TIMEOUT }); break
+          case "select": await selectOptionAnyWidget(loc, step.actionValue ?? "", ACTION_TIMEOUT); break
           case "hover": await loc.hover({ timeout: ACTION_TIMEOUT }); break
           case "keyPress": await loc.press(step.actionValue ?? "Enter", { timeout: ACTION_TIMEOUT }); break
           case "clearField": await loc.clear({ timeout: ACTION_TIMEOUT }); break

@@ -11,6 +11,8 @@ export type AuthShape = "password" | "otp" | "token"
 export interface TestAccount {
   id: string; projectId: string; name: string; loginEmail: string
   authShape: AuthShape
+  /** KD-2255: AutoSim project this credential belongs to; null = shared by every AutoSim project. */
+  autosimProjectId: string | null
   createdBy: string | null; createdAt: number; updatedAt: number
 }
 
@@ -18,6 +20,7 @@ const row2acc = (r: any): TestAccount => ({
   id: String(r.id), projectId: String(r.project_id), name: String(r.name),
   loginEmail: String(r.login_email),
   authShape: (r.auth_shape === "otp" ? "otp" : r.auth_shape === "token" ? "token" : "password") as AuthShape,
+  autosimProjectId: r.autosim_project_id ? String(r.autosim_project_id) : null,
   createdBy: r.created_by ? String(r.created_by) : null,
   createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
 })
@@ -29,6 +32,8 @@ export interface CreateTestAccountInput {
   password?: string
   authShape?: AuthShape
   createdBy?: string
+  /** KD-2255: scope to an AutoSim project (caller validates it belongs to projectId). */
+  autosimProjectId?: string | null
 }
 
 export async function createTestAccount(
@@ -47,16 +52,16 @@ export async function createTestAccount(
   // OTP accounts store an empty string in password_enc (no secret to encrypt).
   const enc = (authShape === "password" || authShape === "token") ? await encryptSecret(input.password!) : ""
   await db!.execute({
-    sql: `INSERT INTO test_accounts (id,project_id,name,login_email,password_enc,auth_shape,created_by,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?)`,
-    args: [id, projectId, input.name, input.loginEmail, enc, authShape, input.createdBy ?? null, now, now],
+    sql: `INSERT INTO test_accounts (id,project_id,name,login_email,password_enc,auth_shape,created_by,created_at,updated_at,autosim_project_id)
+          VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    args: [id, projectId, input.name, input.loginEmail, enc, authShape, input.createdBy ?? null, now, now, input.autosimProjectId ?? null],
   })
   return id
 }
 
 export async function listTestAccounts(projectId: string): Promise<TestAccount[]> {
   const r = await db!.execute({
-    sql: `SELECT id,project_id,name,login_email,auth_shape,created_by,created_at,updated_at
+    sql: `SELECT id,project_id,name,login_email,auth_shape,autosim_project_id,created_by,created_at,updated_at
           FROM test_accounts WHERE project_id=? ORDER BY created_at`,
     args: [projectId],
   })
@@ -65,7 +70,7 @@ export async function listTestAccounts(projectId: string): Promise<TestAccount[]
 
 export async function getTestAccountByName(projectId: string, name: string): Promise<TestAccount | null> {
   const r = await db!.execute({
-    sql: `SELECT id,project_id,name,login_email,auth_shape,created_by,created_at,updated_at
+    sql: `SELECT id,project_id,name,login_email,auth_shape,autosim_project_id,created_by,created_at,updated_at
           FROM test_accounts WHERE project_id=? AND name=?`,
     args: [projectId, name],
   })
@@ -107,7 +112,7 @@ export async function getTestAccountSecret(
 
 export async function getTestAccountById(projectId: string, id: string): Promise<TestAccount | null> {
   const r = await db!.execute({
-    sql: `SELECT id,project_id,name,login_email,auth_shape,created_by,created_at,updated_at
+    sql: `SELECT id,project_id,name,login_email,auth_shape,autosim_project_id,created_by,created_at,updated_at
           FROM test_accounts WHERE project_id=? AND id=?`,
     args: [projectId, id],
   })
@@ -164,4 +169,16 @@ export async function isTestAccountEmail(email: string): Promise<boolean> {
     args: [email.trim().toLowerCase()],
   })
   return r.rows.length > 0
+}
+
+/** KD-2255: edit a credential's non-secret fields (login email / AutoSim project scope). The secret
+ *  is only ever changed via rotateTestAccountSecret. undefined = leave as-is; null scope = shared. */
+export async function updateTestAccount(
+  projectId: string, id: string, patch: { loginEmail?: string; autosimProjectId?: string | null },
+): Promise<boolean> {
+  const sets = ["updated_at=?"]; const args: any[] = [Date.now()]
+  if (patch.loginEmail !== undefined) { sets.push("login_email=?"); args.push(patch.loginEmail) }
+  if (patch.autosimProjectId !== undefined) { sets.push("autosim_project_id=?"); args.push(patch.autosimProjectId) }
+  const r = await db!.execute({ sql: `UPDATE test_accounts SET ${sets.join(",")} WHERE project_id=? AND id=?`, args: [...args, projectId, id] })
+  return Number(r.rowsAffected) > 0
 }

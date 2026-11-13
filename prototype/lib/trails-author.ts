@@ -12,9 +12,10 @@ import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { getTestAccountByName } from "./test-accounts"
 import { sha256hex } from "./crypto"
 import { withWalkSlot, withAuthorSlot, CHROMIUM_PROD_ARGS, setCurrentAuthorSessionId, getCurrentAuthorAbortSignal, WalkBusyError } from "./trails-browser"
-import { startLiveWatchRun, publishLiveWatchFrame, endLiveWatchRun } from "./trails-live-watch"
+import { startLiveWatchRun, publishLiveWatchFrame, publishLiveWatchStatus, endLiveWatchRun } from "./trails-live-watch"
 import { acquireBrowser, type BrowserHandle } from "./trails-browser-page"
 import { db, projectById, touchAuthorHeartbeat } from "./db"
+import { stampTrailFromAuthorSession } from "./autosim-projects"
 import { projectEntitlement } from "./entitlement"
 import { uploadScreenshotMeta } from "./s3"
 import type { AuthorModel, AuthorAction, ObjectiveVerifier, ObjectiveVerificationResult } from "./trails-author-model"
@@ -83,7 +84,7 @@ const SUBMIT_CANDIDATES = [
 /** Strip ephemeral kref attribute references from strings before persisting or adding to history.
  *  Conveys which ref failed without embedding the literal data-kref attr (which is stale by the
  *  next model call anyway since every iteration re-captures and renumbers refs). */
-const dekref = (s: string) => s.replace(/\[data-kref="(e\d+)"\]/g, "snapshot ref $1")
+const dekref = (s: string) => s.replace(/[a-z0-9-]*\[data-kref=["']?(e\d+)["']?\]/gi, "snapshot ref $1")
 
 function isAnalysisObjective(objective: string): boolean {
   return /\b(analy[sz]e|analysis|audit|review|inspect|evaluate|assess|suggest(?:[-\s_]+improvements?)?|recommend(?:ations?)?|improvements?)\b/i
@@ -101,7 +102,7 @@ function analysisCheckpointDescription(objective: string): string {
     : "Analysis objective completed"
 }
 
-export interface AuthorRequest { name: string; objective: string; baseUrl: string; viewport?: TrailViewport | string | null; testAccountName?: string; createdBy?: string; /** KLAVITYKLA-149: id of the Sim persona picked as the Trail's judge/reviewer in the wizard's "Who reviews it?" step. */ judgePersonaId?: string | null; /** File-upload fixtures available to `upload` steps: attachment NAME → storage ref. */ attachments?: AttachmentManifest | null; /** KLAVITYKLA-461: source Sim this AutoSim was converted from, stamped onto the crystallized Trail. */ sourceSimId?: string | null; /** KLAVITYKLA-461: recurring schedule (5-field cron) + IANA tz chosen at Convert-to-AutoSim time. */ schedule?: string | null; scheduleTz?: string | null }
+export interface AuthorRequest { name: string; objective: string; baseUrl: string; viewport?: TrailViewport | string | null; testAccountName?: string; createdBy?: string; /** KLAVITYKLA-149: id of the Sim persona picked as the Trail's judge/reviewer in the wizard's "Who reviews it?" step. */ judgePersonaId?: string | null; /** File-upload fixtures available to `upload` steps: attachment NAME → storage ref. */ attachments?: AttachmentManifest | null; /** KLAVITYKLA-461: source Sim this AutoSim was converted from, stamped onto the crystallized Trail. */ sourceSimId?: string | null; /** KLAVITYKLA-461: recurring schedule (5-field cron) + IANA tz chosen at Convert-to-AutoSim time. */ schedule?: string | null; scheduleTz?: string | null; /** KD-2255: AutoSim test case the crystallized Trail is filed under (validated by the route). */ testCaseId?: string | null }
 export interface AuthorStepLog { idx: number; op: string; selector: string | null; value: string | null; url: string; rationale: string; ok: boolean; error?: string; screenshotKey?: string; krefSnapshot?: string }
 export interface AuthorOutcome {
   status: "crystallized" | "stalled" | "failed" | "needs_auth"
@@ -309,6 +310,8 @@ export async function authorTrail(
      * step screenshot so the UI can show what the AI is seeing in near-real-time.
      */
     onLiveFrame?: (dataUrl: string) => void
+    /** KD-2255: the drive is done and the verification replay is starting (no more live frames). */
+    onVerifying?: () => void
     /**
      * KLA-179: called when the driver encounters an auth gate, before suspending.
      * Used to fire a throttled founder-style email + Slack alert.
@@ -470,8 +473,33 @@ export async function authorTrail(
   const extendDeadlineForPendingVerify = () => {
     deadlineAt = Date.now() + PROACTIVE_VERIFY_WINDOW_MS
   }
-  const bounded = <T>(p: Promise<T>, ms: number, what: string): Promise<T> =>
-    Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`${what} timed out after ${ms}ms`)), ms))])
+  // KD-2255: Cancel must not wait out a 2-min model call or a busy-page snapshot - every bounded wait also
+  // ends the moment the user cancels; the loop-top abort check then stalls with "cancelled by user".
+  const bounded = <T>(p: Promise<T>, ms: number, what: string): Promise<T> => {
+    const sig = opts.abortSignal
+    p.catch(() => {})   // may fail after we've given up on it (cancel/timeout closed the page): never a crash
+    if (sig?.aborted) return Promise.reject(new Error("cancelled by user"))
+    let timer: ReturnType<typeof setTimeout> | undefined, onAbort: (() => void) | undefined
+    return Promise.race([p, new Promise<never>((_, rej) => {
+      timer = setTimeout(() => rej(new Error(`${what} timed out after ${ms}ms`)), ms)
+      if (sig) { onAbort = () => rej(new Error("cancelled by user")); sig.addEventListener("abort", onAbort, { once: true }) }
+    })]).finally(() => { clearTimeout(timer); if (sig && onAbort) sig.removeEventListener("abort", onAbort) })
+  }
+  // KD-2255: heavy pages (PX4 add_new_project) keep the renderer busy for 15s+ while their scripts run; no
+  // snapshot (or screenshot) can run until it frees up, and one busy spell was killing the whole walk with
+  // "snapshot attempt hung". Give the page up to 4 rounds (~1 min) before failing. Real errors still throw.
+  const snapshotPatiently = async (pg: { krefSnapshot(): Promise<string> }, what: string): Promise<string> => {
+    for (let i = 1; ; i++) {
+      try { return await bounded(pg.krefSnapshot(), 15_000, what) }
+      catch (e) {
+        const msg = String((e as any)?.message ?? e)
+        if (i >= 4 || !/hung|timed out|Timeout/i.test(msg)) throw e
+        console.warn(`[trails-author] ${what}: page busy (${msg.split("\n")[0]}), retry ${i}/3`)
+        opts.onHeartbeat?.()
+        await new Promise((r) => setTimeout(r, 2_000))
+      }
+    }
+  }
   // KLA (BookJoy login stall): click the single most-likely submit control. Shared by the no-op
   // stagnation guard AND the repeated-`type` guard - "filled the login form but never submitted it"
   // is the classic failure (observed live: the model re-typed the email field 4 and never clicked
@@ -512,6 +540,8 @@ export async function authorTrail(
     await h.close().catch(() => {})
   }
   const stall = async (why: string, currentUrl?: string, finalStatus: "stalled" | "needs_auth" = "stalled"): Promise<AuthorOutcome> => {
+    // A user cancel can surface as any step error (bounded() rejects everywhere); report it as what it is.
+    if (opts.abortSignal?.aborted) { why = "cancelled by user"; finalStatus = "stalled" }
     // KLA-57: persist checkpoint before closing so the session is resumable.
     if (opts.onCheckpoint) {
       try { await opts.onCheckpoint(snapshotCheckpoint(currentUrl ?? req.baseUrl)) } catch {}
@@ -555,7 +585,7 @@ export async function authorTrail(
       await page.goto(req.baseUrl, 20_000)
       // Record the initial navigation as the first TrajectoryStep so the crystallized Trail starts
       // with a navigate action pointing at the baseUrl (gives the runner a concrete starting point).
-      const initSnap = await bounded(page.krefSnapshot(), 15_000, "snapshot capture")
+      const initSnap = await snapshotPatiently(page, "snapshot capture")
       traj.push({ action: "navigate", actionValue: req.baseUrl, url: page.url(), domHash: sha256hex(initSnap) })
     }
     let stepLimit = AUTHOR_MAX_STEPS
@@ -590,8 +620,14 @@ export async function authorTrail(
         }
       }
       const includeShot = !textFirst || misses > 0
+      // KD-2255: a slow page (fonts/long-running scripts on a sluggish QA server) can make a screenshot time
+      // out. The model can still act on the element snapshot alone, so continue text-only for this step
+      // instead of failing the whole recording.
       const screenshotB64 = includeShot
-        ? await bounded(page.screenshotJpeg(60, 15_000), 20_000, "screenshot")
+        ? await bounded(page.screenshotJpeg(60, 15_000), 20_000, "screenshot").catch((e) => {
+            console.warn("[trails-author] step screenshot failed, continuing without it:", String(e).split("\n")[0])
+            return ""
+          })
         : ""
       // KLA-150: publish live frame so the UI can show what the AI sees before deciding.
       // In text-first mode the model gets no screenshot (token savings), but the interactive
@@ -606,13 +642,13 @@ export async function authorTrail(
           if (liveShot) opts.onLiveFrame(`data:image/jpeg;base64,${liveShot}`)
         } catch {}
       }
-      let dom = await bounded(page.krefSnapshot(), 15_000, "snapshot capture")
+      let dom = await snapshotPatiently(page, "snapshot capture")
       // KLA (BookJoy login stall): a mid-navigation / not-yet-rendered page yields an EMPTY snapshot
       // (observed live: /v2/login captured as sha256("")). Feeding the model a blank observation makes
       // it flail. Wait a beat and re-capture ONCE before proceeding, so the model acts on real content.
       if (dom.trim().length < 8) {
         await new Promise((r) => setTimeout(r, 900))
-        dom = await bounded(page.krefSnapshot(), 15_000, "snapshot re-capture")
+        dom = await snapshotPatiently(page, "snapshot re-capture")
       }
       // KLA-786 (dialog-capture): surface any JS dialogs the previous action triggered (alert/confirm/
       // prompt). Many apps confirm a save via an alert the headless browser silently auto-dismisses
@@ -801,6 +837,7 @@ export async function authorTrail(
               if (!e.retryable) return await stall(`model auth error: ${e.message}`, page.url())
             }
             lastErr = e
+            if (opts.abortSignal?.aborted) return await stall("cancelled by user", page.url())
             if (attempt < MAX_API_RETRIES - 1) await sleepMs(MODEL_RETRY_BASE_MS * Math.pow(2, attempt))
           }
         }
@@ -1031,6 +1068,14 @@ export async function authorTrail(
           traj.push({ action: "waitForSelector", target: { resolvedSelector: persistSelector } as any, url: page.url(), domHash: sha256hex(dom) })
           entry.selector = persistSelector
         } else {
+          // The model sometimes writes Playwright-only selectors (h1:has-text("Dashboard")) despite the prompt.
+          // Plain CSS rejects them, so resolve to the single matching element's kref instead of failing on syntax.
+          if (/:(has-text|text-is|text)\(|^text=|:visible\b/.test(a.selector!) && page.krefFor) {
+            const r = await bounded(page.krefFor(a.selector!), 8_000, "text selector")
+            if (!r.selector) throw new Error(`selector "${a.selector}" matched ${r.count} elements (need exactly 1) — prefer the [data-kref] ref from the snapshot`)
+            a.selector = r.selector
+            entry.selector = r.selector
+          }
           const n = await bounded(page.count(a.selector!), 10_000, "locator.count")
           if (n !== 1) throw new Error(`selector "${a.selector}" matched ${n} elements (need exactly 1)`)
           const fp = await bounded(page.fingerprint(a.selector!), 10_000, "fingerprint capture")
@@ -1043,6 +1088,33 @@ export async function authorTrail(
           persistSelector = isKrefSelector(a.selector)
             ? (stable ?? fp.domPath ?? a.selector!)
             : (stable ?? a.selector!)
+          // HTML cross-check: the screenshot can make a nav "Projects" link look like the dropdown's "Project".
+          // Before acting, confirm the chosen element's HTML carries the label the model says it is targeting;
+          // on mismatch reject (a normal miss) and hand back the elements whose HTML does carry it.
+          if ((a.op === "click" || a.op === "hover") && a.target && page.targetCheck) {
+            const tc = await bounded(page.targetCheck(a.selector!, a.target), 8_000, "target check").catch(() => null)
+            if (tc && !tc.ok) {
+              throw new Error(
+                `target mismatch: you meant "${a.target}" but the chosen element's HTML is ${tc.html} — it does not carry that label. ` +
+                (tc.candidates.length
+                  ? `Elements whose HTML text is exactly "${a.target}": ${tc.candidates.map((c, i) => `(${i + 1}) ${c}`).join("; ")}. Pick the one matching the objective's location (find its line in the new snapshot).`
+                  : `No visible element's HTML carries "${a.target}" right now — open its container (dropdown/menu) first, or wait for it to load.`),
+              )
+            }
+          }
+          // Same HTML cross-check for dropdowns: the screenshot shows identical "Select" boxes, the HTML
+          // knows which field each one is and what options it holds.
+          if (a.op === "select" && page.selectCheck) {
+            const sc = await bounded(page.selectCheck(a.selector!, a.value ?? ""), 8_000, "select check").catch(() => null)
+            if (sc && !sc.ok) {
+              throw new Error(
+                `select mismatch: the chosen dropdown's HTML is ${sc.html} — it has no option "${a.value}". ` +
+                (sc.candidates.length
+                  ? `Dropdowns whose HTML does contain "${a.value}": ${sc.candidates.join("; ")}. Pick that dropdown's line ({field: ...}) in the new snapshot.`
+                  : `No dropdown on the page contains "${a.value}" — check the {options: ...} in the snapshot and use the exact option text.`),
+              )
+            }
+          }
           if (a.op === "click") await page.click(a.selector!, ACTION_TIMEOUT)
           else if (a.op === "type") {
             const raw = a.value ?? ""
@@ -1245,11 +1317,16 @@ export async function authorTrail(
     // Verification Walk: zero-LLM rehearsal; draft status suppresses findings (Task 4), but pass
     // the flag explicitly too - a Verification Walk never files regardless of trail status.
     const vision = opts.verificationVision === false ? undefined : (opts.verificationVision ?? configuredVisionResolver())
+    try { opts.onVerifying?.() } catch {}
     let v: Awaited<ReturnType<typeof walkTrail>>
     try {
       v = await (opts.verificationWalk ?? walkTrail)(projectId, trailId, {
         fixtureUrl: req.baseUrl, suppressFindings: true, credResolver, deadlineMs: 180_000,
         launchArgs, headless: opts.headless, replay: true,
+        // KD-2255: per-step screenshots, same as a manual Run, so the verification PDF shows each step.
+        stepShots: true,
+        // KD-2255: Cancel also stops the verification replay (it ran up to 3 min with "Cancelling…" stuck).
+        ...(opts.abortSignal ? { signal: opts.abortSignal } : {}),
         // Replay any `upload` steps against the same fixtures the drive used.
         ...(opts.fileResolver ? { fileResolver: opts.fileResolver } : {}),
         ...(vision ? { vision } : {}),
@@ -1263,6 +1340,10 @@ export async function authorTrail(
       }
       const reason = String(verificationErr?.message || verificationErr)
       return { status: "failed", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: reason, llmCalls, costUsd, objectiveVerified }
+    }
+    // Cancelled during the verification replay: keep the recorded draft (reviewable), report the cancel.
+    if (opts.abortSignal?.aborted) {
+      return { status: "stalled", trailId, verificationRunId: v.runId, verificationVerdict: null, steps: log, stallReason: "cancelled by user", llmCalls, costUsd, objectiveVerified }
     }
     // I1: skip means "inconclusive / no steps ran" - map to amber, not red, so an empty
     // Verification Walk never looks like a regression to the reviewer.
@@ -1306,9 +1387,10 @@ export async function createAuthorSession(projectId: string, req: AuthorRequest,
   const id = idOverride ?? "auth_" + crypto.randomUUID()
   const now = Date.now()
   await db!.execute({
-    sql: `INSERT INTO author_sessions (id,project_id,name,objective,base_url,test_account,status,created_by,resumed_from,created_at,updated_at,objective_verified,judge_persona_id)
-          VALUES (?,?,?,?,?,?,'running',?,?,?,?,0,?)`,
-    args: [id, projectId, req.name, req.objective, req.baseUrl, req.testAccountName ?? null, req.createdBy ?? null, resumedFrom ?? null, now, now, req.judgePersonaId ?? null],
+    // KD-2255: test_case_id — explicit on a fresh drive; a resumed session inherits its parent's.
+    sql: `INSERT INTO author_sessions (id,project_id,name,objective,base_url,test_account,status,created_by,resumed_from,created_at,updated_at,objective_verified,judge_persona_id,test_case_id)
+          VALUES (?,?,?,?,?,?,'running',?,?,?,?,0,?,COALESCE(?, (SELECT test_case_id FROM author_sessions WHERE project_id=? AND id=?)))`,
+    args: [id, projectId, req.name, req.objective, req.baseUrl, req.testAccountName ?? null, req.createdBy ?? null, resumedFrom ?? null, now, now, req.judgePersonaId ?? null, req.testCaseId ?? null, projectId, resumedFrom ?? null],
   })
   return id
 }
@@ -1328,6 +1410,9 @@ export async function updateAuthorSession(projectId: string, id: string, patch: 
   if (patch.redCause !== undefined) { sets.push("red_cause_json=?"); args.push(patch.redCause === null ? null : JSON.stringify(patch.redCause)) }
   args.push(projectId, id)
   await db!.execute({ sql: `UPDATE author_sessions SET ${sets.join(",")} WHERE project_id=? AND id=?`, args })
+  // KD-2255: a SUCCESSFULLY crystallized Trail is filed under the session's test case (replacing that
+  // test case's previous AutoSim). Stalled partial drafts are not filed — the working AutoSim stays.
+  if (patch.trailId && patch.status === "crystallized") await stampTrailFromAuthorSession(projectId, id, patch.trailId).catch((e) => console.warn("[author] test-case stamp skipped:", String(e)))
 }
 
 function rowToAuthorSession(row: any): AuthorSession {
@@ -1540,6 +1625,7 @@ export async function runAuthorNow(
         abortSignal: getCurrentAuthorAbortSignal() ?? undefined,
         // KLA-150: publish each step screenshot as a live screencast frame.
         onLiveFrame: (dataUrl) => { try { publishLiveWatchFrame(projectId, sessionId, dataUrl) } catch {} },
+        onVerifying: () => { try { publishLiveWatchStatus(projectId, sessionId, "verifying") } catch {} },
         // KLA-179: the driver hit an auth gate with no verified auth method - the outcome will be
         // `needs_auth` (paused, resumable). Fire the throttled founder-style "give it a key" alert.
         // Best-effort: a notification failure must never affect the run or its persisted status.

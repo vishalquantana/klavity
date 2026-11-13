@@ -59,6 +59,11 @@ export function publishLiveWatchFrame(projectId: string, runId: string, dataUrl:
   publish(s, { event: "frame", projectId, runId, active: true, ts: Date.now(), seq: ++s.seq, dataUrl })
 }
 
+export function publishLiveWatchStatus(projectId: string, runId: string, message: string): void {
+  const s = stateFor(projectId, runId)
+  publish(s, { event: "status", projectId, runId, active: s.active, ts: Date.now(), seq: ++s.seq, message })
+}
+
 export function endLiveWatchRun(projectId: string, runId: string, message = "ended"): void {
   const s = stateFor(projectId, runId)
   s.active = false
