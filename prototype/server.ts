@@ -18,7 +18,7 @@ import { countFoundingAccounts, liveFeedbackId, deleteTicketsBulk, invalidateDas
 import { listDeletedTickets, restoreDeletedTicket, RETENTION_DAYS as DELETED_TICKETS_RETENTION_DAYS } from "./lib/deleted-tickets"
 import { projectAccessAndRow } from "./lib/db" // KLA-833: access + project row in one DB round-trip (hot /api/projects/:id/* block)
 import { setFeedbackExtraScreenshots } from "./lib/db"
-import { runningSimIds, runSims, stopSims, clearSimRuns, SIM_RUN_ACTIONS, type SimRunAction } from "./lib/sim-run-state"
+import { runningSimIds, runSims, stopSims, clearSimRuns, lastRunOrigin, normOrigin, SIM_RUN_ACTIONS, type SimRunAction } from "./lib/sim-run-state"
 // KLA-838 (perf): batched helpers that collapse O(N-projects) per-request DB fan-out to a single query.
 import { listEnabledMonitoredUrlPatternsForProjects, countPersonasForAccount, insertTraitEvents, patternMatchesUrl } from "./lib/db"
 // #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
@@ -85,7 +85,8 @@ import { videoMimeFromName, isVideoAttachment } from "./lib/attachment-video"
 import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines, sanitizeReporter, sanitizeClientInfo, reporterLines, clientInfoLines, buildLogAttachmentText, LOG_ATTACHMENT_FILENAME, redactSensitiveUrlsInText } from "./lib/feedback"
 import { evaluateLabelRules, hostConventionEnv } from "./lib/label-rules"
 import { encryptSecret, decryptSecret, userCacheUid } from "./lib/crypto"
-import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, getTestAccountRefs, rotateTestAccountSecret } from "./lib/test-accounts"
+import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, getTestAccountRefs, rotateTestAccountSecret, updateTestAccount } from "./lib/test-accounts"
+import * as asp from "./lib/autosim-projects"
 import { assertSafeUrl } from "./lib/url-guard"
 import { genCode, isValidSlug, stampUtm, isBotRequest, hashIp } from "./lib/shortlinks"
 import { createShortLink, getShortLinkByCodeOrSlug, listShortLinks, getShortLinkDetail, updateShortLink, recordLinkClick, linkClickStats, ShortLinkConflictError, type ShortLinkRow } from "./lib/db"
@@ -4338,6 +4339,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   }
   // ── canonical AutoSims copy (KLAVITYKLA-269) — single source of truth for the hero/banner
   // strings shared by /autosims (trails.html) and the dashboard AutoSims view. ──
+  // KD-2255: AutoSim Projects UI, mounted inside the dashboard's AutoSims view.
+  if (req.method === "GET" && path === "/vendor/autosim-projects.js") {
+    return new Response(Bun.file(PUB + "/vendor/autosim-projects.js"), {
+      headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" },
+    })
+  }
   if (req.method === "GET" && path === "/vendor/autosims-copy.js") {
     return new Response(Bun.file(PUB + "/vendor/autosims-copy.js"), {
       headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=86400" },
@@ -4590,7 +4597,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     pt.mark("access")
     if (!access) return sj({ ok: false, reason: "unauthorized", error: "No access to this project." }, 403)
     const projectId = requested
-    const [personas, running] = await Promise.all([listPersonas(projectId), runningSimIds(db!, projectId, me)])
+    // The application the caller is on. Run / Stop and "running" are per application: a Sim started on px4 runs on px4 only. No origin
+    // (the Sims tab, older widgets) = every application for status / Stop, and the application last started on for Run.
+    const reqOrigin = normOrigin((req.method === "POST" ? body.origin : url.searchParams.get("origin")) || "")
+    const [personas, running] = await Promise.all([listPersonas(projectId), runningSimIds(db!, projectId, me, reqOrigin || null)])
     pt.mark("db")
     const byId = new Map(personas.map((p) => [p.id, p]))
     // A Deactivated Sim is never "running", whatever an old row says (rows are also cleared on Deactivate).
@@ -4612,7 +4622,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (action === "stop_all") {
       // The feedback card's Close: stop every Sim this user has running in this project.
       const was = [...running].filter((id) => byId.has(id))
-      await stopSims(db!, projectId, me, null)
+      await stopSims(db!, projectId, me, null, reqOrigin || null)
       pt.mark("write")
       return sj({ ok: true, action, applied: was, skipped: [], sims: describe(new Set()) })
     }
@@ -4627,11 +4637,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // Only an Activated Sim can run — Activate it on the Sims tab first. Reported in `skipped`, never applied.
       for (const id of simIds) if (byId.get(id)!.active === false) skipped.push({ simId: id, reason: "deactivated on the Sims tab — activate it there first" })
       applied = simIds.filter((id) => byId.get(id)!.active !== false && !running.has(id))
-      await runSims(db!, projectId, me, applied)
+      // A Run needs an application to run on: the page it was pressed on, else (the Sims tab) the one the user last started on.
+      const runOrigin = reqOrigin || (applied.length ? await lastRunOrigin(db!, projectId, me) : "")
+      if (applied.length && !runOrigin) {
+        for (const id of applied) skipped.push({ simId: id, reason: "open the Sims menu on the application you want them to review, then Run there" })
+        applied = []
+      }
+      await runSims(db!, projectId, me, applied, Date.now(), runOrigin)
       for (const id of applied) running.add(id)
     } else {
       applied = simIds.filter((id) => running.has(id))
-      await stopSims(db!, projectId, me, applied)
+      await stopSims(db!, projectId, me, applied, reqOrigin || null)
       for (const id of applied) running.delete(id)
     }
     pt.mark("write")
@@ -7891,7 +7907,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // from the Sims tab, Select Sims, or the card's Close — never reviews again, even from a stale tab still holding the old list.
       // Other callers (the browser extension) keep their existing behaviour.
       if (body.runScope === "widget" && db) {
-        const running = await runningSimIds(db, projectId, meR)
+        // Per application: Sims started on px4 never review Klavity's own pages (or another app) — the page being reviewed decides.
+        const running = await runningSimIds(db, projectId, meR, normOrigin(pageUrl) || null)
         targetSims = targetSims.filter((p) => running.has(p.id))
       }
 
@@ -9327,6 +9344,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   if (req.method === "GET" && /^\/autosims\/walk\/[^/]+$/.test(path)) return me ? htmlPage(PUB + "/autosims-walk.html") : loginGate(path, url.search)
   // AT2 auth setup router — "Give your Sims a key" (KLAVITYKLA-267)
   if (req.method === "GET" && path === "/autosims/auth") return me ? htmlPage(PUB + "/auth-router.html") : loginGate(path, url.search)
+  // KD-2255: AutoSim Projects (list / project detail / test case detail — client-side routed).
+  // Lives inside the dashboard's AutoSims view now; keep old links working by mapping path → query.
+  if (req.method === "GET" && (path === "/autosims/projects" || path.startsWith("/autosims/projects/"))) {
+    if (!me) return loginGate(path, url.search)
+    const [apId, kind, tcId] = path.split("/").slice(3).filter(Boolean)
+    const q = new URLSearchParams()
+    const proj = url.searchParams.get("project"); if (proj) q.set("project", proj)
+    q.set("asp", apId || "list")
+    if (kind === "test-cases" && tcId) q.set("asp_tc", tcId)
+    const tab = url.searchParams.get("tab"); if (tab) q.set("asp_tab", tab)
+    return new Response(null, { status: 302, headers: { Location: "/dashboard?" + q + "#autosims" } })
+  }
   if (req.method === "GET" && path === "/sim-runs") return me ? htmlPage(PUB + "/sim-runs.html") : loginGate(path, url.search)
   // KLAVITYKLA-201: cross-project inbox — the agency's "morning screen"
   if (req.method === "GET" && path === "/inbox") return me ? htmlPage(PUB + "/inbox.html") : loginGate(path, url.search)
@@ -11250,6 +11279,175 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     return json({ error: "Not found" }, 404)
   }
 
+  // ── KD-2255: AutoSim Projects → Test Case Groups → Test Cases → Trails. Project-scoped + authed
+  // exactly like the Trails block below (session/bearer → resolveProject(?project=) → member access;
+  // 'viewer' rows get no access). Any project member may organise, mirroring Trail authoring.
+  if (path === "/api/autosim-projects" || path.startsWith("/api/autosim-projects/")) {
+    const meA = (await sessionEmail(req)) || (await bearerEmail(req))
+    if (!meA) return json({ error: "Unauthorized" }, 401)
+    const resolvedA = await resolveProject(meA, url.searchParams.get("project"))
+    if (!resolvedA) return json({ error: "No access" }, 403)
+    const pid = resolvedA.id
+    // seg = [apId?, "groups"|"test-cases"?, childId?, "trails"?, trailId?]
+    const seg = path.split("/").slice(3).filter(Boolean).map(decodeURIComponent)
+    const body: any = req.method === "POST" || req.method === "PATCH" ? await req.json().catch(() => null) : {}
+    if (body === null || typeof body !== "object") return json({ error: "Invalid body" }, 400)
+    // Validated string field: undefined = absent, string = value, {error} = reject.
+    const text = (k: string, max: number, required: boolean): string | undefined | { error: string } => {
+      if (!(k in body)) return required ? { error: `${k} is required` } : undefined
+      const v = typeof body[k] === "string" ? body[k].trim() : body[k] == null ? "" : null
+      if (v === null) return { error: `${k} must be a string` }
+      if (required && !v) return { error: `${k} is required` }
+      if (v.length > max) return { error: `${k} must be at most ${max} characters` }
+      return v
+    }
+    const isErr = (v: any): v is { error: string } => !!v && typeof v === "object"
+    const dup = (e: any) => /UNIQUE/i.test(String(e?.message || e))
+    const nameDesc = (nameMax: number, descMax: number, required: boolean) => {
+      const name = text("name", nameMax, required), description = text("description", descMax, false)
+      if (isErr(name)) return name
+      if (isErr(description)) return description
+      if (name === "") return { error: "name is required" }
+      return { name, description }
+    }
+    try {
+      // /api/autosim-projects
+      if (seg.length === 0) {
+        if (req.method === "GET") return json({ projectId: pid, role: resolvedA.access, projects: await asp.listAutosimProjects(pid) })
+        if (req.method === "POST") {
+          const v: any = nameDesc(80, 2000, true); if (v.error) return json(v, 400)
+          try {
+            const id = await asp.createAutosimProject(pid, { name: v.name, description: v.description, createdBy: meA })
+            return json({ project: await asp.getAutosimProject(pid, id) }, 201)
+          } catch (e) { if (dup(e)) return json({ error: `A project named "${v.name}" already exists.` }, 409); throw e }
+        }
+        return json({ error: "Method not allowed" }, 405)
+      }
+      const ap = await asp.getAutosimProject(pid, seg[0])
+      if (!ap) return json({ error: "Not found" }, 404)
+      // /api/autosim-projects/:id
+      if (seg.length === 1) {
+        if (req.method === "GET") return json({ projectId: pid, role: resolvedA.access, ...(await asp.autosimProjectDetail(pid, ap.id)) })
+        if (req.method === "PATCH") {
+          const v: any = nameDesc(80, 2000, false); if (v.error) return json(v, 400)
+          try { await asp.updateAutosimProject(pid, ap.id, v) }
+          catch (e) { if (dup(e)) return json({ error: `A project named "${v.name}" already exists.` }, 409); throw e }
+          return json({ project: await asp.getAutosimProject(pid, ap.id) })
+        }
+        if (req.method === "DELETE") { await asp.deleteAutosimProject(pid, ap.id); return json({ ok: true }) }
+        return json({ error: "Method not allowed" }, 405)
+      }
+      // /api/autosim-projects/:id/groups[/:gid]
+      if (seg[1] === "groups" && seg.length <= 3) {
+        if (seg.length === 2 && req.method === "POST") {
+          const v: any = nameDesc(80, 2000, true); if (v.error) return json(v, 400)
+          try { const id = await asp.createGroup(pid, ap.id, v); return json({ group: await asp.getGroup(pid, ap.id, id) }, 201) }
+          catch (e) { if (dup(e)) return json({ error: `A group named "${v.name}" already exists.` }, 409); throw e }
+        }
+        if (seg.length === 3) {
+          if (!(await asp.getGroup(pid, ap.id, seg[2]))) return json({ error: "Not found" }, 404)
+          if (req.method === "PATCH") {
+            const v: any = nameDesc(80, 2000, false); if (v.error) return json(v, 400)
+            try { await asp.updateGroup(pid, ap.id, seg[2], v) }
+            catch (e) { if (dup(e)) return json({ error: `A group named "${v.name}" already exists.` }, 409); throw e }
+            return json({ group: await asp.getGroup(pid, ap.id, seg[2]) })
+          }
+          if (req.method === "DELETE") { await asp.deleteGroup(pid, ap.id, seg[2]); return json({ ok: true }) }
+        }
+        return json({ error: "Method not allowed" }, 405)
+      }
+      // /api/autosim-projects/:id/test-cases[/:tcid[/trails/:trailId]]
+      if (seg[1] === "test-cases" && seg.length <= 6) {
+        // POST .../test-cases/:tcid/script — import a script exported by Export script (any Klavity
+        // server) as this test case's AutoSim. Body: { script: "<file text>" }. Replaces the current one.
+        // Handled before the create/update validation below, which requires name/start_url on POST.
+        if (seg.length === 4 && seg[3] === "script" && req.method === "POST") {
+          const tcI = await asp.getTestCase(pid, seg[2])
+          if (!tcI || tcI.autosimProjectId !== ap.id) return json({ error: "Not found" }, 404)
+          const script = typeof body.script === "string" ? body.script : ""
+          if (!script || script.length > 5_000_000) return json({ error: "script file required (max 5 MB)" }, 400)
+          try {
+            return json({ trailId: await asp.importTrailScript(pid, tcI, script, meA) }, 201)
+          } catch (e) { if (e instanceof asp.ScriptImportError) return json({ error: e.message }, 400); throw e }
+        }
+        const v: any = req.method === "POST" || req.method === "PATCH" ? nameDesc(120, 4000, req.method === "POST") : {}
+        if (v.error) return json(v, 400)
+        if ("status" in body) {
+          if (!asp.TEST_CASE_STATUSES.includes(body.status)) return json({ error: `status must be one of ${asp.TEST_CASE_STATUSES.join(", ")}` }, 400)
+          v.status = body.status
+        }
+        // group_id must be a group of THIS AutoSim project; null/"" = ungrouped.
+        if ("group_id" in body) {
+          if (body.group_id && !(await asp.getGroup(pid, ap.id, String(body.group_id)))) return json({ error: "Unknown group for this project." }, 400)
+          v.groupId = body.group_id ? String(body.group_id) : null
+        }
+        // Start URL — same rule as the AutoSim wizard's base_url. Required when creating a test case.
+        if ("start_url" in body || req.method === "POST") {
+          const su = typeof body.start_url === "string" ? body.start_url.trim() : ""
+          if (!/^https?:\/\/\S+$/.test(su) || su.length > 500) return json({ error: "start_url must be an http(s) URL" }, 400)
+          v.startUrl = su
+        }
+        // Execution mode: test_account_id null/"" = run WITHOUT credentials; otherwise the credential
+        // (reference name picked in the UI) must be in this Klavity project and either belong to this
+        // AutoSim project or be shared.
+        if ("test_account_id" in body) {
+          if (body.test_account_id) {
+            const acc = await getTestAccountById(pid, String(body.test_account_id))
+            if (!acc || (acc.autosimProjectId && acc.autosimProjectId !== ap.id)) return json({ error: "Unknown credentials for this project." }, 400)
+            v.testAccountId = acc.id
+          } else v.testAccountId = null
+        }
+        if (seg.length === 2 && req.method === "POST") {
+          const id = await asp.createTestCase(pid, ap.id, { ...v, createdBy: meA })
+          return json({ testCase: await asp.getTestCase(pid, id) }, 201)
+        }
+        const tc = seg[2] ? await asp.getTestCase(pid, seg[2]) : null
+        if (!tc || tc.autosimProjectId !== ap.id) return json({ error: "Not found" }, 404)
+        if (seg.length === 3) {
+          if (req.method === "PATCH") {
+            await asp.updateTestCase(pid, ap.id, tc.id, v)
+            return json({ testCase: await asp.getTestCase(pid, tc.id) })
+          }
+          if (req.method === "DELETE") { await asp.deleteTestCase(pid, ap.id, tc.id); return json({ ok: true }) }
+        }
+        // GET .../test-cases/:tcid/runs — execution results summary (every Walk, re-recordings included).
+        if (seg.length === 4 && seg[3] === "runs" && req.method === "GET") {
+          const lim = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || 50))
+          return json({ runs: await asp.testCaseRuns(pid, tc.id, lim) })
+        }
+        // GET .../test-cases/:tcid/runs/:runId/steps — that run's step-by-step outcome (live while running).
+        if (seg.length === 6 && seg[3] === "runs" && seg[5] === "steps" && req.method === "GET") {
+          const steps = await asp.testCaseRunSteps(pid, tc.id, seg[4])
+          return steps ? json({ steps }) : json({ error: "Not found" }, 404)
+        }
+        // GET .../test-cases/:tcid/script — the Playwright script the current AutoSim replays (download).
+        if (seg.length === 4 && seg[3] === "script" && req.method === "GET") {
+          const trailId = await asp.currentTrailId(pid, tc.id)
+          const code = trailId ? await asp.trailPlaywrightScript(pid, trailId) : null
+          if (!code) return json({ error: "This test case has no AutoSim yet." }, 404)
+          const file = (tc.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "test-case") + ".spec.ts"
+          return new Response(code, { headers: { "content-type": "text/plain; charset=utf-8", "content-disposition": `attachment; filename="${file}"` } })
+        }
+        // PUT/DELETE .../test-cases/:tcid/trails/:trailId — link / unlink an existing AutoSim.
+        if (seg.length === 5 && seg[3] === "trails") {
+          if (!(await getTrail(pid, seg[4]))) return json({ error: "Trail not found" }, 404)
+          if (req.method === "PUT") {
+            const existing = await asp.currentTrailId(pid, tc.id)
+            if (existing && existing !== seg[4]) return json({ error: "This test case already has an AutoSim (one per test case). Re-record it instead." }, 409)
+            await asp.setTrailTestCase(pid, seg[4], tc); return json({ ok: true })
+          }
+          if (req.method === "DELETE") {
+            return (await asp.unlinkTrail(pid, seg[4], tc.id)) ? json({ ok: true }) : json({ error: "Trail is not in this test case" }, 409)
+          }
+        }
+        return json({ error: "Method not allowed" }, 405)
+      }
+      return json({ error: "Not found" }, 404)
+    } catch (e) {
+      return json(oops(e, "autosim-projects"), 500)
+    }
+  }
+
   // ── Klavity OS Trails (Layer E) — project-scoped, authed. Placed before the generic /api/ gate so
   // unauthenticated API calls return a JSON 401 (not a /login redirect), mirroring resolveProject usage.
   if (path === "/api/trails/dashboard" || path === "/api/trails/trends" || path === "/api/trails/walks" || path.startsWith("/api/trails/findings/") || path.startsWith("/api/trails/walks/")
@@ -11702,7 +11900,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         try { viewport = normalizeTrailViewport((body as any).viewport) }
         catch (e: any) { return json({ error: e?.message || "Invalid viewport" }, 400) }
       }
-      const testAccount = body.test_account ? String(body.test_account) : undefined
+      let testAccount = body.test_account ? String(body.test_account) : undefined
       // KLAVITYKLA-149: the wizard's "Who reviews it?" step sends the picked Sim as `sim_name`
       // (the persona's name, or id as a fallback). Resolve it to a persona id here and thread it
       // through so it lands on the crystallized Trail as its judge persona — previously this field
@@ -11735,6 +11933,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (objective.length < 10) return json({ error: "objective must be at least 10 characters" }, 400)
       if (!/^https?:\/\//.test(baseUrl) || baseUrl.length > 500) return json({ error: "base_url must be an http(s) URL" }, 400)
       if (testAccount && !(await getTestAccountByName(projectId, testAccount))) return json({ error: `unknown test account "${testAccount}"` }, 400)
+      // KD-2255: optional test case to file the new AutoSim under. Looked up scoped to THIS project, so
+      // a test case id from another project is simply "unknown" (no cross-project association).
+      const testCaseId = body.test_case_id ? String(body.test_case_id) : null
+      const authorTc = testCaseId ? await asp.getTestCase(projectId, testCaseId) : null
+      if (testCaseId && !authorTc) return json({ error: "unknown test case" }, 400)
+      // One AutoSim per test case: once recorded, it is RUN (deterministic replay), not re-generated.
+      // Re-recording must be explicit ({replace:true}); the old AutoSim is archived only when the new
+      // recording succeeds (lib/autosim-projects.ts stampTrailFromAuthorSession).
+      if (authorTc && body.replace !== true && (await asp.currentTrailId(projectId, authorTc.id))) {
+        return json({ error: "This test case already has an AutoSim. Run it, or re-record to replace its script." }, 409)
+      }
+      // A test case set to "run with credentials" logs in with its credential unless the wizard picked one.
+      if (authorTc?.testAccountId && !testAccount) {
+        const tcAcc = await getTestAccountById(projectId, authorTc.testAccountId)
+        if (tcAcc) testAccount = tcAcc.name
+      }
       // KLAVITYKLA-365: configured-flow quota. Authoring is the ONLY path that creates a Trail
       // (runAuthorNow → lib/trails-crystallize.ts createTrail), so gating here gates creation
       // without touching any run/schedule path — existing flows are unaffected by construction.
@@ -11747,7 +11961,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
       }
       try {
-        const { sessionId } = await runAuthorNow(projectId, { name, objective, baseUrl, viewport, testAccountName: testAccount, createdBy: meT, judgePersonaId, attachments })
+        const { sessionId } = await runAuthorNow(projectId, { name, objective, baseUrl, viewport, testAccountName: testAccount, createdBy: meT, judgePersonaId, attachments, testCaseId })
         return json({ sessionId }, 202)
       } catch (e) {
         if (e instanceof WalkBusyError) return json({ error: "An AutoSim is already running — try again shortly." }, 409)
@@ -15231,7 +15445,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (authShape === "password" && (!password || password.length > 200)) return json({ error: "password required (max 200 chars)" }, 400)
           if (authShape === "token" && (!password || password.length > 2000)) return json({ error: "token required (max 2000 chars)" }, 400)
           if (await getTestAccountByName(pid, name)) return json({ error: `A test account named "${name}" already exists.` }, 409)
-          const id = await createTestAccount(pid, { name, loginEmail, password: (authShape === "password" || authShape === "token") ? password : undefined, authShape: authShape as "password" | "otp" | "token", createdBy: me })
+          // KD-2255: optional AutoSim project scope — must belong to THIS Klavity project.
+          const autosimProjectId = body.autosim_project_id ? String(body.autosim_project_id) : null
+          if (autosimProjectId && !(await asp.getAutosimProject(pid, autosimProjectId))) return json({ error: "Unknown AutoSim project." }, 400)
+          const id = await createTestAccount(pid, { name, loginEmail, password: (authShape === "password" || authShape === "token") ? password : undefined, authShape: authShape as "password" | "otp" | "token", createdBy: me, autosimProjectId })
           const account = await getTestAccountById(pid, id)
           if (!account) return json({ error: "Internal error: account vanished after insert" }, 500)
           return json({ account }, 201)
@@ -15251,6 +15468,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               refs: trailNames,
             }, 409)
           }
+          // KD-2255: also blocked while a test case is set to execute with these credentials.
+          const tcNames = await asp.testCasesUsingAccount(pid, accId)
+          if (tcNames.length > 0) {
+            return json({ error: `Cannot delete: test case${tcNames.length !== 1 ? "s" : ""} ${tcNames.slice(0, 3).map((n) => `"${n}"`).join(", ")}${tcNames.length > 3 ? "…" : ""} run with these credentials. Switch them to another login or to "without credentials" first.`, refs: tcNames }, 409)
+          }
           const ok = await deleteTestAccount(pid, accId)
           return ok ? json({ ok: true }) : json({ error: "Not found" }, 404)
         }
@@ -15258,13 +15480,30 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (access !== "admin") return json({ error: "Only project admins can manage test accounts." }, 403)
           const accId = sub.slice("/test-accounts/".length)
           const body = await req.json().catch(() => ({}))
-          const newSecret = body.password !== undefined ? String(body.password) : ""
-          if (!newSecret || newSecret.length > 2000) return json({ error: "password required (max 2000 chars)" }, 400)
           const acc = await getTestAccountById(pid, accId)
           if (!acc) return json({ error: "Not found" }, 404)
-          if (acc.authShape === "otp") return json({ error: "OTP accounts have no stored secret to rotate." }, 400)
-          const ok = await rotateTestAccountSecret(pid, accId, newSecret)
-          return ok ? json({ ok: true }) : json({ error: "Not found" }, 404)
+          // KD-2255: non-secret edits (login email / AutoSim project scope). Body without these keys
+          // keeps the original rotate-only contract (password required).
+          const meta: { loginEmail?: string; autosimProjectId?: string | null } = {}
+          if ("login_email" in body) {
+            const le = String(body.login_email || "").trim()
+            if (!le || le.length > 200 || !le.includes("@")) return json({ error: "login_email must be a valid email" }, 400)
+            meta.loginEmail = le
+          }
+          if ("autosim_project_id" in body) {
+            const ap = body.autosim_project_id ? String(body.autosim_project_id) : null
+            if (ap && !(await asp.getAutosimProject(pid, ap))) return json({ error: "Unknown AutoSim project." }, 400)
+            meta.autosimProjectId = ap
+          }
+          const hasMeta = Object.keys(meta).length > 0
+          if (body.password !== undefined || !hasMeta) {
+            const newSecret = body.password !== undefined ? String(body.password) : ""
+            if (!newSecret || newSecret.length > 2000) return json({ error: "password required (max 2000 chars)" }, 400)
+            if (acc.authShape === "otp") return json({ error: "OTP accounts have no stored secret to rotate." }, 400)
+            if (!(await rotateTestAccountSecret(pid, accId, newSecret))) return json({ error: "Not found" }, 404)
+          }
+          if (hasMeta && !(await updateTestAccount(pid, accId, meta))) return json({ error: "Not found" }, 404)
+          return json({ ok: true })
         }
         return json({ error: "Method not allowed" }, 405)
       }
@@ -16579,6 +16818,12 @@ async function handleVoiceStreamUpgrade(
   if (upgraded) return undefined // handed off to the websocket handler
   return wjson({ error: "upgrade failed" }, 400)
 }
+
+// KD-2255: one stray background rejection (a browser op that fails after its AutoSim was cancelled and the
+// browser closed) used to exit the whole server, and the container (restart: no) stayed down. Log it instead.
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection] kept server alive:", String((reason as any)?.stack || reason).split("\n").slice(0, 4).join(" | "))
+})
 
 Bun.serve({
   port: PORT,

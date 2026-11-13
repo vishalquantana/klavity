@@ -9,7 +9,7 @@
 // hands Playwright the resolved devtools endpoint. See acquirePlaywrightBrowser + createSteelSession.
 import type { Fingerprint, NetworkMock as TrailNetworkMock, TrailViewport } from "./trails-types"
 import { KREF_SNAPSHOT_CAP } from "./trails-snapshot"
-import { clickWithTransitionFallback } from "./trails-click"
+import { clickWithTransitionFallback, selectOptionAnyWidget, gotoPastRedirect } from "./trails-click"
 // KLA-786 (dialog-capture): keep at most the last N captured dialogs per page so an alert-spamming page
 // can't grow the buffer unbounded between drains. The author loop drains every loop-top, so N need only
 // cover a burst within one action.
@@ -82,7 +82,7 @@ export function matchesMock(pattern: string | RegExp, requestUrl: string): boole
 // ── Page-context evaluate bodies (run in the browser; NO module-scope closures). Shared verbatim by
 //    both drivers — Playwright and Puppeteer both serialize a function to the page identically. ──────
 /* eslint-disable */
-function krefSnapshotBody(): string {
+export function krefSnapshotBody(): string {
   document.querySelectorAll("[data-kref]").forEach((el) => el.removeAttribute("data-kref"))
   let n = 0
   const lines: string[] = []
@@ -147,7 +147,58 @@ function krefSnapshotBody(): string {
     if (t === "option") return "option"
     if (/^h[1-6]$/.test(t)) return "heading"
     if (t === "img" && el.getAttribute("alt")) return "img"
+    // Dropdown panel without ARIA (Bootstrap "dropdown-menu", CSS-module "_add_dropdown_menu_x1y2"):
+    // emit it as a container so its items nest under it.
+    if (/dropdown[-_]?menu/i.test(el.getAttribute("class") || "")) return "menu"
     return null
+  }
+  // Clickable elements with no semantic role (<a> without href, <div onclick>, Bootstrap data-toggle,
+  // React onClick divs). Without a ref the model cannot target them and picks a look-alike (PX4: nav
+  // "Projects" instead of the header Add menu's "Project"). Wrappers of other clickables are skipped.
+  const CLICKABLE_INSIDE = "a,button,input,select,textarea,[role],[onclick],[data-toggle],[data-bs-toggle],[tabindex]"
+  const reactClick = (el: Element): boolean => {
+    for (const k of Object.keys(el)) {
+      if (k.startsWith("__reactProps$") || k.startsWith("__reactEventHandlers$")) {
+        const p = (el as any)[k]
+        return !!(p && (p.onClick || p.onMouseDown || p.onPointerDown))
+      }
+    }
+    return false
+  }
+  const handlers = new Set<Element>()
+  const wrappers = new Set<Element>()
+  if (document.body) {
+    document.body.querySelectorAll("*").forEach((el) => { if (reactClick(el)) handlers.add(el) })
+    for (const el of [...Array.from(handlers), ...Array.from(document.body.querySelectorAll(CLICKABLE_INSIDE))]) {
+      for (let p = el.parentElement; p && !wrappers.has(p); p = p.parentElement) wrappers.add(p)
+    }
+  }
+  const isPointer = (el: Element | null) => { try { return !!el && getComputedStyle(el as HTMLElement).cursor === "pointer" } catch { return false } }
+  const isUntypedClickable = (el: Element): boolean => {
+    if (wrappers.has(el)) return false
+    const t = el.tagName.toLowerCase()
+    const explicit = t === "a" || handlers.has(el) || el.hasAttribute("onclick") || el.hasAttribute("data-toggle") ||
+      el.hasAttribute("data-bs-toggle") || el.hasAttribute("aria-haspopup") ||
+      (el.hasAttribute("tabindex") && el.getAttribute("tabindex") !== "-1")
+    return explicit || (isPointer(el) && !isPointer(el.parentElement)) // cursor is inherited: outermost only
+  }
+  const inMenu = (el: Element) => !!el.closest('[class*="dropdown-menu"],[class*="dropdown_menu"],[class*="dropdownMenu"],[role="menu"],[role="listbox"]')
+  const LABEL_TAGS = new Set(["span", "div", "i", "b", "strong", "small", "em", "font"])
+  const ownText = (el: Element): string => Array.from(el.childNodes)
+    .filter((c) => c.nodeType === 3).map((c) => c.textContent || "").join(" ").trim().replace(/\s+/g, " ")
+  // Compact HTML identity so the model can check WHICH element a label belongs to (nav link vs dropdown item),
+  // not just what it looks like in the screenshot.
+  const htmlHint = (el: Element): string => {
+    let h = "<" + el.tagName.toLowerCase()
+    const cls = (el.getAttribute("class") || "").trim().split(/\s+/).filter(Boolean).slice(0, 2).map((c) => c.slice(0, 28))
+    if (cls.length) h += "." + cls.join(".")
+    const href = el.getAttribute("href")
+    if (href && !/^javascript:|^#$/i.test(href)) {
+      let p = href
+      try { const u = new URL(href, location.href); p = u.origin === location.origin ? u.pathname + u.search : u.host + u.pathname } catch {}
+      h += ` href=${p.slice(0, 50)}`
+    }
+    return clean(h + ">")
   }
   const labelFor = (el: Element): string => {
     const id = el.getAttribute("id")
@@ -171,15 +222,47 @@ function krefSnapshotBody(): string {
         el.getAttribute("name") || el.getAttribute("title") || ""
     return clean(cand.replace(/\s+/g, " ").slice(0, 80))
   }
-  const walk = (el: Element, depth: number) => {
+  // Dropdown HTML: select2/chosen hide the real <select> (field label + options) behind a span that just
+  // reads "Select", so two dropdowns look identical. Read the backing <select> and expose its field and
+  // options. Same resolution as selectCheckBody / trails-click selectOptionAnyWidget (page bodies can't share).
+  const backingSelect = (el: Element): HTMLSelectElement | null => {
+    if (el.tagName === "SELECT") return el as HTMLSelectElement
+    const inner = el.querySelector("select"); if (inner) return inner
+    const prev = el.closest(".select2-container, .chosen-container")?.previousElementSibling
+    if (prev?.tagName === "SELECT") return prev as HTMLSelectElement
+    for (const id of [el.id, el.getAttribute("aria-labelledby"), el.querySelector("[id^='select2-']")?.id]) {
+      const m = id?.match(/^select2-(.+)-container$/); const s = m && document.getElementById(m[1])
+      if (s?.tagName === "SELECT") return s as HTMLSelectElement
+    }
+    return null
+  }
+  const fieldOf = (s: Element): string => {
+    let t = labelFor(s) || s.getAttribute("aria-label") || ""
+    for (let p = s.parentElement, i = 0; !t && p && i < 3; p = p.parentElement, i++) t = (p.querySelector("label")?.textContent || "").trim()
+    return clean((t || s.getAttribute("name") || s.id || "").replace(/\s+/g, " ").slice(0, 60))
+  }
+  const dropdownInfo = (el: Element): string => {
+    const s = backingSelect(el); if (!s) return ""
+    const opts = Array.from(s.options).map((o) => clean((o.text || "").trim().replace(/\s+/g, " ").slice(0, 40))).filter(Boolean)
+    const field = fieldOf(s)
+    return (field && field !== nameOf(el) ? ` {field: "${field}"}` : "") +
+      (opts.length ? ` {options: ${opts.slice(0, 15).map((o) => `"${o}"`).join(" | ")}${opts.length > 15 ? ` | …+${opts.length - 15} more` : ""}}` : "")
+  }
+  const walk = (el: Element, depth: number, inCtl = false) => {
     if (truncated) return
     for (const child of Array.from(el.children)) {
       if (truncated) return
       const t = child.tagName.toLowerCase()
       if (SKIP.has(t)) continue
       let emitted = false
+      let refd = false
       if (visible(child)) {
-        const role = roleOf(child)
+        let role = roleOf(child)
+        let clickable = false
+        if (!role && isUntypedClickable(child) && nameOf(child)) {
+          role = inMenu(child) ? "menuitem" : "button"
+          clickable = true
+        }
         const indent = "  ".repeat(Math.min(depth, 6))
         if (role) {
           let line = `${indent}${clean(role.replace(/\s+/g, " "))} "${nameOf(child)}"`
@@ -197,13 +280,24 @@ function krefSnapshotBody(): string {
             }
             else if (typeof iv.value === "string" && iv.value.length) line += ` {filled: ${iv.value.length} chars}`
           }
-          if (INTERACTIVE.has(t) || child.getAttribute("role")) {
+          if (role === "combobox" || role === "listbox") line += dropdownInfo(child)
+          if (clickable || INTERACTIVE.has(t) || child.getAttribute("role")) {
             const ref = `e${++n}`
             child.setAttribute("data-kref", ref)
             line += ` [ref=${ref}]`
+            refd = true
+            if (clickable || t === "a") line += " " + htmlHint(child)
           }
           push(line)
           emitted = true
+        } else if (!inCtl && LABEL_TAGS.has(t) && /^.{2,30}$/.test(ownText(child)) && !inNoticeContext(child)) {
+          // Short visible label in a generic container whose click handler we cannot see (jQuery/delegated
+          // listeners): give it a ref so the model can click it like a person; the click bubbles to the handler.
+          const ref = `e${++n}`
+          child.setAttribute("data-kref", ref)
+          push(`${indent}text "${clean(ownText(child))}" [ref=${ref}] ${htmlHint(child)}`)
+          emitted = true
+          refd = true
         } else {
           const isNotice = inNoticeContext(child)
           if (TEXTUAL.has(t) || isNotice) {
@@ -215,13 +309,148 @@ function krefSnapshotBody(): string {
           }
         }
       }
-      walk(child, emitted ? depth + 1 : depth)
+      walk(child, emitted ? depth + 1 : depth, inCtl || refd)
     }
   }
   // Mid-navigation the new document can exist before <body> is parsed; emit an empty snapshot so the author
   // loop's empty-snapshot re-capture kicks in instead of throwing "Cannot read properties of null".
   if (document.body) walk(document.body, 0)
   return lines.join("\n")
+}
+
+export type TargetCheck = { ok: boolean; html: string; candidates: string[] }
+/**
+ * HTML cross-check before a click: does the element the model picked actually carry the label it
+ * says it is clicking? Compares normalized visible text / aria-label / title / value / alt / own label
+ * EXACTLY (so "Projects" ≠ "Project"); on mismatch returns the element's HTML plus the visible
+ * elements whose HTML text IS that label, with their location, so the model can re-pick.
+ */
+export function targetCheckBody(arg: { selector: string; label: string }): TargetCheck {
+  const norm = (s: string | null | undefined) => (s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
+  const want = norm(arg.label)
+  const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + "…" : s).replace(/<<<|>>>/g, "·")
+  const describe = (el: Element): string => {
+    // Never leak field contents (passwords, OTPs) into model context: drop value/style attrs, no text for fields.
+    const shell = el.cloneNode(false) as Element
+    for (const a of ["value", "style", "srcdoc"]) shell.removeAttribute(a)
+    const open = shell.outerHTML.replace(/<\/[^>]+>$/, "")
+    const isField = /^(input|textarea|select)$/i.test(el.tagName)
+    const txt = isField ? "" : ((el as HTMLElement).innerText || el.textContent || "").trim().replace(/\s+/g, " ")
+    const r = el.getBoundingClientRect()
+    const where = r.top < window.innerHeight * 0.15 ? "top" : r.top > window.innerHeight * 0.85 ? "bottom" : "middle"
+    const side = r.left < window.innerWidth * 0.33 ? "left" : r.left > window.innerWidth * 0.66 ? "right" : "center"
+    const ctx: string[] = []
+    for (let p = el.parentElement, i = 0; p && p !== document.body && i < 3; p = p.parentElement, i++) {
+      const c = (p.getAttribute("class") || "").trim().split(/\s+/)[0]
+      ctx.push(p.tagName.toLowerCase() + (p.id ? "#" + p.id : c ? "." + c.slice(0, 28) : ""))
+    }
+    return `${clip(open, 160)}${clip(txt, 40)} (${where}-${side}${ctx.length ? ", inside " + ctx.join(" < ") : ""})`
+  }
+  const names = (el: Element): string[] => {
+    const h = el as HTMLElement & { value?: string; alt?: string }
+    const out = [h.innerText, el.textContent, el.getAttribute("aria-label"), el.getAttribute("title"), h.value, h.alt, el.getAttribute("placeholder")]
+    // multi-line innerText (icon line + label line, badge counts): any single line may be the label
+    for (const line of (h.innerText || "").split("\n")) out.push(line)
+    for (const n of Array.from(el.childNodes)) if (n.nodeType === 3) out.push(n.textContent)
+    if (el.id) { try { out.push(document.querySelector(`label[for="${CSS.escape(el.id)}"]`)?.textContent) } catch {} }
+    out.push(el.closest("label")?.textContent)
+    // KD-2255: a form field is also known by its name/id and by the unlinked <label> beside it in its own
+    // field group (PX4: <label>Project Name</label><input name="project_name">). select2 boxes answer for the
+    // hidden <select> behind them. A group with more than one field is skipped so a neighbour's label can't match.
+    let ctl: Element | null = /^(input|textarea|select)$/i.test(el.tagName) ? el : null
+    if (!ctl && (el.getAttribute("role") === "combobox" || /select2-selection/.test(el.getAttribute("class") || ""))) {
+      const prev = el.closest(".select2-container")?.previousElementSibling
+      if (prev?.tagName === "SELECT") ctl = prev
+    }
+    if (ctl) {
+      out.push(ctl.getAttribute("name"), ctl.id)
+      for (let p = ctl.parentElement, i = 0; p && i < 3; p = p.parentElement, i++) {
+        if (p.querySelectorAll("input:not([type=hidden]),select,textarea").length > 1) break
+        const l = p.querySelector("label"); if (l) { out.push(l.textContent); break }
+      }
+    }
+    return out.map(norm).filter(Boolean)
+  }
+  const el = document.querySelector(arg.selector)
+  if (!el) return { ok: true, html: "", candidates: [] }
+  if (!want || names(el).includes(want)) return { ok: true, html: "", candidates: [] }
+  const visible = (e: Element) => {
+    const r = e.getBoundingClientRect(); if (r.width === 0 || r.height === 0) return false
+    const s = getComputedStyle(e); return s.display !== "none" && s.visibility !== "hidden" && s.opacity !== "0"
+  }
+  const cands: string[] = []
+  const all = Array.from(document.body.querySelectorAll("*"))
+  for (const c of all) {
+    if (cands.length >= 6) break
+    if (c === el || !visible(c) || /^(script|style|svg|path|html|body)$/i.test(c.tagName)) continue
+    if (!names(c).includes(want)) continue
+    // innermost match only (skip ancestors whose child also matches)
+    if (Array.from(c.children).some((k) => visible(k) && names(k).includes(want))) continue
+    cands.push(describe(c))
+  }
+  return { ok: false, html: describe(el), candidates: cands }
+}
+
+/**
+ * HTML cross-check before a `select`: does the chosen dropdown (or the hidden <select> behind a select2/chosen
+ * widget) really contain the option? On mismatch, name the chosen field, its closest options, and the fields
+ * whose HTML does contain it. Custom widgets with no <select> can't be verified here and pass.
+ */
+export function selectCheckBody(arg: { selector: string; value: string }): TargetCheck {
+  const ok = { ok: true, html: "", candidates: [] as string[] }
+  const backingSelect = (el: Element): HTMLSelectElement | null => {
+    if (el.tagName === "SELECT") return el as HTMLSelectElement
+    const inner = el.querySelector("select"); if (inner) return inner
+    const prev = el.closest(".select2-container, .chosen-container")?.previousElementSibling
+    if (prev?.tagName === "SELECT") return prev as HTMLSelectElement
+    for (const id of [el.id, el.getAttribute("aria-labelledby"), el.querySelector("[id^='select2-']")?.id]) {
+      const m = id?.match(/^select2-(.+)-container$/); const s = m && document.getElementById(m[1])
+      if (s?.tagName === "SELECT") return s as HTMLSelectElement
+    }
+    return null
+  }
+  const fieldOf = (s: Element): string => {
+    let t = ""
+    if (s.id) { try { t = (document.querySelector(`label[for="${CSS.escape(s.id)}"]`)?.textContent || "").trim() } catch {} }
+    t = t || (s.closest("label")?.textContent || "").trim() || s.getAttribute("aria-label") || ""
+    for (let p = s.parentElement, i = 0; !t && p && i < 3; p = p.parentElement, i++) t = (p.querySelector("label")?.textContent || "").trim()
+    return (t || s.getAttribute("name") || s.id || "?").replace(/\s+/g, " ").slice(0, 60).replace(/<<<|>>>/g, "·")
+  }
+  const texts = (s: HTMLSelectElement) => Array.from(s.options).map((o) => (o.text || "").trim().replace(/\s+/g, " "))
+  const want = arg.value.trim()
+  const has = (s: HTMLSelectElement) => Array.from(s.options).some((o) => (o.text || "").trim().replace(/\s+/g, " ") === want || o.value === want)
+  const el = document.querySelector(arg.selector)
+  const s = el && backingSelect(el)
+  if (!s || has(s)) return ok
+  const norm = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "")
+  const near = texts(s).filter((t) => t && (norm(t).includes(norm(want)) || norm(want).includes(norm(t)))).slice(0, 5)
+  const html = `field "${fieldOf(s)}" (options: ${texts(s).filter(Boolean).slice(0, 10).map((t) => `"${t.slice(0, 40)}"`).join(", ")})` +
+    (near.length ? `; closest options here: ${near.map((t) => `"${t}"`).join(", ")} — use the exact text` : "")
+  const candidates = Array.from(document.querySelectorAll("select")).filter((x) => x !== s && has(x)).slice(0, 5).map((x) => `field "${fieldOf(x)}"`)
+  return { ok: false, html, candidates }
+}
+
+const freshKref = () => `e${90000 + Math.floor(Math.random() * 9999)}` // outside the e1… range a snapshot assigns
+
+/** Page-side (Puppeteer has no Playwright engine): resolve `base:has-text("T")`, `:text("T")`, `text=T`
+ *  (plus a trailing `:visible`) to its single visible match and tag it with `data-kref`. */
+function pwSelectorKrefBody(arg: { selector: string; id: string }): { selector: string | null; count: number } {
+  let sel = arg.selector.trim().replace(/:visible\b/g, "")
+  let base = "*", want = "", exact = false
+  const t = sel.match(/^text=(["']?)(.*)\1$/s)
+  const m = sel.match(/^(.*?):(has-text|text-is|text)\((["'])(.*)\3\)\s*$/s)
+  if (t) { want = t[2]; exact = !!t[1] } else if (m) { base = m[1].trim() || "*"; want = m[4]; exact = m[2] === "text-is" } else return { selector: null, count: 0 }
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase()
+  const w = norm(want)
+  const hit = (el: Element) => { const x = norm((el as HTMLElement).innerText ?? el.textContent ?? ""); return exact ? x === w : x.includes(w) }
+  const visible = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden" }
+  let els: Element[]
+  try { els = Array.from(document.querySelectorAll(base)).filter(hit) } catch { return { selector: null, count: 0 } }
+  if (base === "*") els = els.filter((e) => !Array.from(e.children).some(hit)) // innermost element carrying the text
+  if (els.length > 1) { const v = els.filter(visible); if (v.length) els = v }
+  if (els.length !== 1) return { selector: null, count: els.length }
+  els[0].setAttribute("data-kref", arg.id)
+  return { selector: `[data-kref="${arg.id}"]`, count: 1 }
 }
 
 function fingerprintBody(el: Element): Fingerprint {
@@ -323,7 +552,10 @@ export async function retryNavRace<T>(fn: () => Promise<T>, tries = 4, attemptMs
   for (let i = 1; ; i++) {
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      return await Promise.race([fn(), new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error("snapshot attempt hung")), attemptMs) })])
+      // The losing attempt keeps running; when it later fails (e.g. the browser was closed by a cancel)
+      // nothing awaits it any more - mark it handled so it can't crash the server (KD-2255).
+      const attempt = fn(); attempt.catch(() => {})
+      return await Promise.race([attempt, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error("snapshot attempt hung")), attemptMs) })])
     } catch (e) {
       if (i >= tries || !NAV_RACE_RE.test(String((e as any)?.message ?? e))) throw e
       await new Promise((r) => setTimeout(r, 750))
@@ -348,6 +580,12 @@ export interface BrowserPage {
   pageElements?(opts?: { fullPage?: boolean }): Promise<unknown>
   count(selector: string): Promise<number>
   fingerprint(selector: string): Promise<Fingerprint>
+  /** HTML cross-check that `selector`'s element carries `label` (see targetCheckBody). Optional for fakes. */
+  targetCheck?(selector: string, label: string): Promise<TargetCheck>
+  /** HTML cross-check that `selector`'s dropdown contains option `value` (see selectCheckBody). Optional for fakes. */
+  selectCheck?(selector: string, value: string): Promise<TargetCheck>
+  /** Resolve a Playwright-only selector (`:has-text`, `text=`…) to a `[data-kref="eN"]` on its one match; null if not exactly 1. */
+  krefFor?(selector: string): Promise<{ selector: string | null; count: number }>
   stableSelector(selector: string): Promise<string | null>
   click(selector: string, timeoutMs: number): Promise<void>
   fill(selector: string, value: string, timeoutMs: number, sensitive?: boolean): Promise<void>
@@ -438,12 +676,24 @@ class PlaywrightPage implements BrowserPage {
   }
   drainDialogs() { const out = this.dialogs; this.dialogs = []; return out }
   url() { return this.page.url() }
-  async goto(url: string, timeoutMs: number) { await this.page.goto(url, { timeout: timeoutMs, waitUntil: "domcontentloaded" }) }
+  async goto(url: string, timeoutMs: number) { await gotoPastRedirect(this.page, url, { timeout: timeoutMs, waitUntil: "domcontentloaded" }) }
   async screenshotJpeg(quality: number, timeoutMs: number, opts?: { fullPage?: boolean }) { return (await this.page.screenshot({ type: "jpeg", quality, timeout: timeoutMs, fullPage: !!opts?.fullPage })).toString("base64") }
   async krefSnapshot(capChars = KREF_SNAPSHOT_CAP) { return cap(await retryNavRace(() => this.page.evaluate(krefSnapshotBody)), capChars) }
   async pageElements(opts?: { fullPage?: boolean }) { return await this.page.evaluate(pageElementsBody, !!opts?.fullPage) }
   async count(selector: string) { return await this.page.locator(selector).count() }
   async fingerprint(selector: string) { return await this.page.locator(selector).first().evaluate(fingerprintBody) }
+  async targetCheck(selector: string, label: string) { return await this.page.evaluate(targetCheckBody, { selector, label }) }
+  async selectCheck(selector: string, value: string) { return await this.page.evaluate(selectCheckBody, { selector, value }) }
+  async krefFor(selector: string) {
+    // Playwright's own engine understands :has-text / text= etc.; prefer the visible match when several exist.
+    let loc = this.page.locator(selector)
+    let count = await loc.count()
+    if (count > 1) { const vis = loc.filter({ visible: true }); if (await vis.count() === 1) { loc = vis; count = 1 } }
+    if (count !== 1) return { selector: null, count }
+    const id = freshKref()
+    await loc.evaluate((el: Element, v: string) => el.setAttribute("data-kref", v), id)
+    return { selector: `[data-kref="${id}"]`, count }
+  }
   async stableSelector(selector: string) { try { return await this.page.locator(selector).first().evaluate(stableSelectorBody) } catch { return null } }
   async click(selector: string, timeoutMs: number) { await clickWithTransitionFallback(this.page.locator(selector), timeoutMs) }
   async fill(selector: string, value: string, timeoutMs: number, sensitive = false) {
@@ -451,7 +701,7 @@ class PlaywrightPage implements BrowserPage {
     await loc.fill(value, { timeout: timeoutMs })
     if (sensitive) await loc.first().evaluate((el) => el.setAttribute("data-autosim-sensitive", "1")).catch(() => {})
   }
-  async selectOption(selector: string, value: string, timeoutMs: number) { await this.page.locator(selector).selectOption(value, { timeout: timeoutMs }) }
+  async selectOption(selector: string, value: string, timeoutMs: number) { await selectOptionAnyWidget(this.page.locator(selector), value, timeoutMs) }
   async hover(selector: string, timeoutMs: number) { await this.page.locator(selector).hover({ timeout: timeoutMs }) }
   async keyPress(selector: string, key: string, timeoutMs: number) { await this.page.locator(selector).press(key, { timeout: timeoutMs }) }
   async clearField(selector: string, timeoutMs: number) { await this.page.locator(selector).clear({ timeout: timeoutMs }) }
@@ -604,6 +854,9 @@ class PuppeteerPage implements BrowserPage {
   async pageElements(opts?: { fullPage?: boolean }) { return await this.page.evaluate(pageElementsBody, !!opts?.fullPage) }
   async count(selector: string) { return await this.page.evaluate((s: string) => document.querySelectorAll(s).length, selector) }
   async fingerprint(selector: string) { return await this.page.$eval(selector, fingerprintBody) }
+  async targetCheck(selector: string, label: string) { return await this.page.evaluate(targetCheckBody, { selector, label }) }
+  async selectCheck(selector: string, value: string) { return await this.page.evaluate(selectCheckBody, { selector, value }) }
+  async krefFor(selector: string) { return await this.page.evaluate(pwSelectorKrefBody, { selector, id: freshKref() }) }
   async stableSelector(selector: string) { try { return await this.page.$eval(selector, stableSelectorBody) } catch { return null } }
   async click(selector: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }); await this.page.click(selector) }
   async fill(selector: string, value: string, timeoutMs: number, sensitive = false) {

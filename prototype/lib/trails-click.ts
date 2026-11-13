@@ -110,6 +110,65 @@ async function readPageState(page: Page): Promise<string | null> {
 }
 
 /**
+ * KD-2255: goto that tolerates the app's own redirect. PX4 sends the browser to /Resources by script
+ * right after the company pick; a goto issued meanwhile fails with "interrupted by another navigation"
+ * and crashed the whole replay. Let the app's navigation land, then go where the step says (2 retries).
+ */
+export async function gotoPastRedirect(page: Page, url: string, opts: { timeout: number; waitUntil?: "load" | "domcontentloaded" }): Promise<void> {
+  const where = (u: string) => { try { const x = new URL(u); return x.origin + x.pathname.replace(/\/+$/, "") } catch { return u } }
+  const settle = () => page.waitForLoadState("load", { timeout: Math.min(opts.timeout, 15_000) }).catch(() => {})
+  for (let i = 0; ; i++) {
+    let resp: Awaited<ReturnType<Page["goto"]>> = null
+    try { resp = await page.goto(url, opts) }
+    catch (e) {
+      if (i >= 2 || !/interrupted by another navigation/i.test(String((e as Error)?.message ?? e))) throw e
+      await settle(); continue
+    }
+    // The server served the page we asked for, but the app's own script then sent us elsewhere (a silent
+    // bounce, no error): let it land and go back. A server-side redirect (resp URL differs) is honored.
+    const serverRedirected = !!resp && where(resp.url()) !== where(url)
+    if (i >= 2 || serverRedirected || where(page.url()) === where(url)) return
+    await settle()
+  }
+}
+
+/**
+ * KD-2255: `select` on a styled dropdown (select2 / chosen / a wrapper div). The visible element is a
+ * <span role="combobox">, not a <select>, so Playwright's selectOption throws "Element is not a <select>
+ * element" and the walk stalls after 3 identical misses. Resolve the hidden native <select> behind the
+ * widget and set it there (the widget listens for its `change` event); with no backing <select>, open
+ * the widget and click the visible option.
+ */
+export async function selectOptionAnyWidget(locator: Locator, value: string, timeoutMs: number): Promise<void> {
+  const target = locator.first()
+  const backing = (await target.evaluateHandle((el: Element) => {
+    if (el.tagName === "SELECT") return el
+    const inner = el.querySelector("select")
+    if (inner) return inner
+    const prev = el.closest(".select2-container, .chosen-container")?.previousElementSibling
+    if (prev?.tagName === "SELECT") return prev
+    const ids = [el.id, el.getAttribute("aria-labelledby"), el.querySelector("[id^='select2-']")?.id]
+    for (const id of ids) {
+      const m = id?.match(/^select2-(.+)-container$/)
+      const s = m && document.getElementById(m[1])
+      if (s?.tagName === "SELECT") return s
+    }
+    return null
+  }, undefined, { timeout: timeoutMs })).asElement()
+  if (backing) {
+    // Widget-hidden <select> never becomes "visible", so skip actionability checks for it only.
+    await backing.selectOption(value, { timeout: timeoutMs, force: !(await backing.isVisible()) })
+    return
+  }
+  await clickWithTransitionFallback(target, timeoutMs)
+  const page = target.page()
+  await page.getByRole("option", { name: value, exact: true })
+    .or(page.getByText(value, { exact: true }))
+    .filter({ visible: true }).first()
+    .click({ timeout: timeoutMs })
+}
+
+/**
  * Playwright's real click remains the primary action. Some Klavity shell pages use inline
  * `go(N)` / `setView(...)` transition handlers; in headless walks those clicks have been observed
  * to complete without the transition taking effect. For those known idempotent transitions, verify
@@ -135,6 +194,17 @@ export async function clickWithTransitionFallback(
     await target.click({ timeout: timeoutMs })
   } catch (e) {
     clickError = e
+  }
+
+  // KD-2255: the target exists and is enabled but another element is drawn on top of it (overlapping
+  // header on a narrow window, sticky bar, transparent overlay) or it sits outside the viewport.
+  // A real mouse click would hit the cover, so click the element itself. Disabled/missing targets
+  // still fail as before.
+  if (clickError && /intercepts pointer events|outside of the viewport/i.test(String((clickError as Error)?.message ?? clickError))) {
+    try {
+      await target.evaluate((el) => { (el as HTMLElement).scrollIntoView({ block: "center" }); (el as HTMLElement).click() }, undefined, { timeout: 2_000 })
+      clickError = null
+    } catch { /* keep the original, more descriptive error */ }
   }
 
   if (clickError && !canRecoverSideEffect) throw clickError

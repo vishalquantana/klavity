@@ -24,6 +24,7 @@
   <script src="/vendor/driver.min.js" defer></script>
   <!-- KLAVITYKLA-269: canonical AutoSims copy shared with the standalone /autosims page -->
   <script src="/vendor/autosims-copy.js"></script>
+  <script src="/vendor/autosim-projects.js" defer></script>
   <script src="/icons.generated.js"></script>
   <style>
     :root {
@@ -20227,6 +20228,12 @@
 
       <!-- ── AutoSims view — native in-shell (KLA-147: replaced iframe so modals cover full viewport) ── -->
       <div class="card full autosims-card" data-view="autosims">
+        <!-- KD-2255: AutoSims sub-tabs. "Projects & Test Cases" is rendered by /vendor/autosim-projects.js into #aspRoot. -->
+        <div class="asp-switch"><div class="seg" role="tablist" aria-label="AutoSims sections">
+          <button type="button" role="tab" class="active" aria-selected="true" data-asp-switch="autosims">AutoSims</button>
+          <button type="button" role="tab" aria-selected="false" data-asp-switch="projects">Projects &amp; Test Cases</button>
+        </div></div>
+        <div class="autosims-wrap" id="aspRoot"><nav class="asp-crumbs" id="aspCrumbs" aria-label="Breadcrumb"></nav><div id="aspMain" aria-live="polite"></div></div>
         <div class="autosims-wrap">
           <div class="head" style="margin-bottom:24px">
             <div>
@@ -35706,12 +35713,14 @@
                 if (!window.__klavTktBootKeepUrl) try {
                   var _u = new URL(location.href);
                   if (v !== 'tickets') _u.searchParams.delete('ticket');
+                  // KD-2255: the Projects & Test Cases sub-tab's state belongs to the AutoSims view only.
+                  if (v !== 'autosims') ['asp', 'asp_tc', 'asp_tab'].forEach(function (k) { _u.searchParams.delete(k) });
                   history.replaceState(null, '', v === 'overview' ? (_u.pathname + _u.search) : (_u.pathname + _u.search + '#' + v));
                 } catch (e) { }
                 window.scrollTo(0, 0);
                 if (v === 'triage') { if (typeof renderTriage === 'function') renderTriage(); }
                 if (v === 'recurring') { if (typeof renderRecurringIssues === 'function') renderRecurringIssues(); }
-                if (v === 'autosims') { if (typeof window.initTrailsView === 'function') window.initTrailsView(); }
+                if (v === 'autosims') { if (typeof window.initTrailsView === 'function') window.initTrailsView(); if (window.klavAsp) window.klavAsp.sync(); }
                 if (v === 'tickets') { if (typeof renderTicketsView === 'function') renderTicketsView(); }
                 if (v === 'snap') { if (typeof window.renderSnapView === 'function') window.renderSnapView(); }
                 // Returning to Overview re-runs the checklist so the widget-status poll restarts (it self-stops on other views).
@@ -38870,13 +38879,26 @@
             }
             // KLA-150: author live-view SSE management
             var _ntSse = null; var _ntSseSid = null;
+            // KD-2255: the 2s poll rebuilds the progress box, so keep the last frame + phase here and render
+            // from them (otherwise every poll reset the view to "Waiting for the live browser…").
+            var _ntLiveSid = null, _ntLastFrame = "", _ntVerifying = false
+            function liveViewHtml(sid) {
+              if (_ntLiveSid !== sid) { _ntLiveSid = sid; _ntLastFrame = ""; _ntVerifying = false }
+              var msg = _ntVerifying ? "All steps recorded — replaying them to verify the AutoSim…" : "Waiting for the live browser…"
+              return '<div class="nt-live-view"><div class="nt-live-ph" id="ntLivePh"' + (_ntLastFrame && !_ntVerifying ? ' style="display:none"' : '') + '><div class="nt-live-spin"></div><div>' + msg + '</div></div>'
+                + '<img id="ntLiveFrame" alt="Live view"' + (_ntLastFrame && !_ntVerifying ? ' src="' + esc(_ntLastFrame) + '"' : ' style="display:none"') + ' /></div>'
+            }
+            function paintLiveView() { var v = document.querySelector(".nt-live-view"); if (v && _ntLiveSid) v.outerHTML = liveViewHtml(_ntLiveSid) }
             function startAuthorLive(sid) {
               if (_ntSse && _ntSseSid === sid) return; stopAuthorLive()
               _ntSseSid = sid
               try {
                 _ntSse = new EventSource("/api/trails/author/" + encodeURIComponent(sid) + "/live" + projQ())
                 _ntSse.addEventListener("frame", function (e) {
-                  try { var d = JSON.parse(e.data); if (d.dataUrl) { var el = document.getElementById("ntLiveFrame"); if (el) { el.src = d.dataUrl; el.style.display = ""; var ph = document.getElementById("ntLivePh"); if (ph) ph.style.display = "none" } } } catch { }
+                  try { var d = JSON.parse(e.data); if (d.dataUrl && _ntLiveSid === sid) { _ntLastFrame = d.dataUrl; paintLiveView() } } catch { }
+                })
+                _ntSse.addEventListener("status", function (e) {
+                  try { var d = JSON.parse(e.data); if (d.message === "verifying" && _ntLiveSid === sid) { _ntVerifying = true; paintLiveView() } } catch { }
                 })
                 _ntSse.addEventListener("end", stopAuthorLive)
                 _ntSse.onerror = function () { stopAuthorLive() }
@@ -38899,8 +38921,18 @@
               return reason
             }
             function fmtSec(sec) { var m = Math.floor(sec / 60), s = sec % 60; return m ? m + "m" + (s ? " " + s + "s" : "") : s + "s" }
+            // KD-2255: while an AutoSim is being created, the form's Create AutoSim + Cancel are locked; the run's
+            // own Cancel (in the progress box) is the way out. Unlocked again when the run ends.
+            function ntBusy(on) {
+              // Hidden (not just disabled - a disabled button still looked clickable) while the run is in progress.
+              ;[document.getElementById("ntGo"), document.getElementById("ntCancel")].forEach(function (b) {
+                if (b) { b.disabled = !!on; b.style.display = on ? "none" : "" }
+              })
+            }
             async function pollAuthor(sessionId, box) {
               var ntFailCount = 0
+              var ntCancelling = false   // survives the 2s re-render, so the button can't snap back to "Cancel"
+              ntBusy(true)
               for (var i = 0; i < 200; i++) {
                 await new Promise(function (res) { setTimeout(res, 2000) })
                 var r; try { r = await fetch("/api/trails/author/" + sessionId + projQ()) } catch (e) { ntFailCount++; if (ntFailCount < 6) { await new Promise(function (res) { setTimeout(res, ntFailCount * 1000) }); continue } break }
@@ -38912,14 +38944,26 @@
                   var ntLimit = s.limitMs ? fmtSec(Math.round(s.limitMs / 1000)) : "";
                   var ntTimeStr = ntElapsed ? (ntElapsed + (ntLimit ? " / " + ntLimit + " max" : "")) : "";
                   box.innerHTML = html
-                    + '<div class="nt-live-view"><div class="nt-live-ph" id="ntLivePh"><div class="nt-live-spin"></div><div>Waiting for the live browser…</div></div><img id="ntLiveFrame" alt="Live view" style="display:none" /></div>'
-                    + '<div class="nt-live">AutoSim is driving…' + (ntTimeStr ? ' <span class="muted" style="font-size:11px">(' + esc(ntTimeStr) + ')</span>' : '') + '</div>'
-                    + '<div style="margin-top:6px"><button class="btn btn-ghost" id="ntCancelRun" style="font-size:11px;padding:3px 10px">Cancel</button></div>'
+                    + liveViewHtml(sessionId)
+                    + '<div class="nt-live">' + (_ntVerifying ? 'AutoSim is verifying…' : 'AutoSim is driving…') + (ntTimeStr ? ' <span class="muted" style="font-size:11px">(' + esc(ntTimeStr) + ')</span>' : '') + '</div>'
+                    + '<div style="margin-top:6px"><button class="btn btn-ghost" id="ntCancelRun" style="font-size:11px;padding:3px 10px"' + (ntCancelling ? ' disabled>Cancelling…' : '>Cancel') + '</button></div>'
                   startAuthorLive(sessionId)
-                  var ntCb = document.getElementById("ntCancelRun"); if (ntCb) { ntCb.addEventListener("click", async function () { ntCb.disabled = true; ntCb.textContent = "Cancelling…"; await fetch("/api/trails/author/" + encodeURIComponent(sessionId) + "/cancel" + projQ(), { method: "POST" }) }) }
+                  var ntCb = document.getElementById("ntCancelRun")
+                  if (ntCb && !ntCancelling) {
+                    ntCb.addEventListener("click", async function () {
+                      ntCancelling = true; ntCb.disabled = true; ntCb.textContent = "Cancelling…"
+                      try {
+                        var cr = await fetch("/api/trails/author/" + encodeURIComponent(sessionId) + "/cancel" + projQ(), { method: "POST" })
+                        var cd = await cr.json().catch(function () { return {} })
+                        // 409 = already finished (next poll shows the result). A 200 with ok:false = the server
+                        // couldn't signal this run, so don't sit on "Cancelling…" forever: let them retry.
+                        if ((!cr.ok && cr.status !== 409) || (cr.ok && cd.ok === false)) { ntCancelling = false; ntCb.disabled = false; ntCb.textContent = "Cancel" }
+                      } catch (e) { ntCancelling = false; ntCb.disabled = false; ntCb.textContent = "Cancel" }
+                    })
+                  }
                   continue
                 }
-                stopAuthorLive()
+                stopAuthorLive(); ntBusy(false)
                 if (s.status === "crystallized") {
                   var vRunId = s.verificationRunId || ""
                   var pdfLink = vRunId ? ('<a class="walk-pdf-btn" href="' + esc("/api/trails/walks/" + encodeURIComponent(vRunId) + "/report.pdf" + projQ()) + '" target="_blank" rel="noopener" style="margin-left:8px">' + kicon("file-text", { size: 10 }) + " PDF</a>") : "";
@@ -38933,7 +38977,7 @@
                   ap.addEventListener("click", async function () {
                     ap.disabled = true; ap.textContent = "Activating..."
                     var ar = await fetch("/api/trails/" + encodeURIComponent(ap.dataset.trail) + "/approve" + projQ(), { method: "POST" })
-                    if (ar.ok) { document.getElementById("ntBg").classList.remove("show"); await render(await loadData()) }
+                    if (ar.ok) { closeNtDialog(); await render(await loadData()) }
                     else { ap.disabled = false; ap.textContent = "Looks right - activate" }
                   })
                   return
@@ -38950,7 +38994,7 @@
                 if (ntD) { ntD.addEventListener("click", function () { openDraftReview(s.trailId) }) }
                 document.getElementById("ntGo").disabled = false; return
               }
-              document.getElementById("ntGo").disabled = false
+              ntBusy(false)
               var stallDiv = document.createElement("div"); stallDiv.className = "nt-stall"
               stallDiv.textContent = "Timed out — the AutoSim may still be running. Reopen this page shortly."
               box.appendChild(stallDiv)
@@ -38973,6 +39017,31 @@
               wizRender(); loadWizSims()
             }
             function closeWizard() { document.getElementById("wizBg").classList.remove("show") }
+            // KD-2255: "+ Create AutoSim" on a test case starts recording IMMEDIATELY from the test case's own
+            // details (name, start URL, execution steps → objective, its credentials) — same POST
+            // /api/trails/author as the wizard — and shows the usual live-progress dialog (#ntBg/pollAuthor).
+            // The server files the new AutoSim under the test case and picks its login. Throws on a rejected
+            // start (validation, plan limit, another AutoSim running) so the caller can show the message.
+            var ntTestCaseId = null
+            // Opens the New AutoSim form pre-filled from the test case. Nothing starts until the user clicks
+            // Create AutoSim there (the ntGo handler files it under ntTestCaseId).
+            async function startAutosimForTestCase(ctx) {
+              ntTestCaseId = ctx.id
+              document.getElementById("ntName").value = String(ctx.name || "").slice(0, 80)
+              document.getElementById("ntUrl").value = ctx.url
+              document.getElementById("ntObj").value = ctx.objective
+              try { await loadAccounts() } catch (e) { }
+              var acc = document.getElementById("ntAcc"); if (acc) acc.value = ctx.cred && ctx.cred !== "-" ? ctx.cred : ""
+              ntBusy(false)
+              document.getElementById("ntProgress").innerHTML = ""
+              document.getElementById("ntBg").classList.add("show")
+            }
+            function closeNtDialog() {
+              document.getElementById("ntBg").classList.remove("show")
+              // Back on the test case page → refresh so the new AutoSim shows up there.
+              if (ntTestCaseId && window.klavAsp) window.klavAsp.refresh()
+              ntTestCaseId = null
+            }
             function wizRender() {
               var LABELS = ["Name this AutoSim", "Where does it start?", "Describe the objective", "Who reviews it?", "Ready to go"]
               document.getElementById("wizTitle").textContent = LABELS[wizStep - 1]
@@ -39032,8 +39101,8 @@
                   var wzLimit = s.limitMs ? fmtSec(Math.round(s.limitMs / 1000)) : "";
                   var wzTimeStr = wzElapsed ? (wzElapsed + (wzLimit ? " / " + wzLimit + " max" : "")) : "";
                   box.innerHTML = html
-                    + '<div class="nt-live-view"><div class="nt-live-ph" id="ntLivePh"><div class="nt-live-spin"></div><div>Waiting for the live browser…</div></div><img id="ntLiveFrame" alt="Live view" style="display:none" /></div>'
-                    + '<div class="nt-live">AutoSim is driving…' + (wzTimeStr ? ' <span class="muted" style="font-size:11px">(' + esc(wzTimeStr) + ')</span>' : '') + '</div>'
+                    + liveViewHtml(sessionId)
+                    + '<div class="nt-live">' + (_ntVerifying ? 'AutoSim is verifying…' : 'AutoSim is driving…') + (wzTimeStr ? ' <span class="muted" style="font-size:11px">(' + esc(wzTimeStr) + ')</span>' : '') + '</div>'
                     + '<div style="margin-top:6px"><button class="btn btn-ghost" id="wizCancelRun" style="font-size:11px;padding:3px 10px">Cancel</button></div>'
                   startAuthorLive(sessionId)
                   var wzCb = document.getElementById("wizCancelRun"); if (wzCb) { wzCb.addEventListener("click", async function () { wzCb.disabled = true; wzCb.textContent = "Cancelling…"; await fetch("/api/trails/author/" + encodeURIComponent(sessionId) + "/cancel" + projQ(), { method: "POST" }) }) }
@@ -39401,24 +39470,29 @@
               })
               // new trail button & modal
               document.getElementById("newTrailBtn").addEventListener("click", openWizard)
-              document.getElementById("ntCancel").addEventListener("click", function () { document.getElementById("ntBg").classList.remove("show") })
+              document.getElementById("ntCancel").addEventListener("click", closeNtDialog)
               document.getElementById("ntGo").addEventListener("click", async function () {
-                var btn = this; btn.disabled = true
-                var box = document.getElementById("ntProgress"); box.innerHTML = ""
+                var btn = this; ntBusy(true)
+                var box = document.getElementById("ntProgress"); box.innerHTML = '<div class="nt-live">Starting AutoSim…</div>'
                 var body = { name: document.getElementById("ntName").value.trim(), objective: document.getElementById("ntObj").value.trim(), base_url: document.getElementById("ntUrl").value.trim(), viewport: document.getElementById("ntViewport").value || "desktop", test_account: document.getElementById("ntAcc").value || undefined }
+                // KD-2255: a retry stays filed under the test case; the user already chose to (re-)record it.
+                if (ntTestCaseId) { body.test_case_id = ntTestCaseId; body.replace = true; body.viewport = { preset: "desktop", width: 1920, height: 1080 } }
                 try {
                   var r = await fetch("/api/trails/author" + projQ(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-                  if (!r.ok) { var e = await r.json().catch(function () { return {} }); box.innerHTML = '<div class="nt-stall">' + esc(e.error || r.statusText) + "</div>"; btn.disabled = false; return }
+                  if (!r.ok) { var e = await r.json().catch(function () { return {} }); box.innerHTML = '<div class="nt-stall">' + esc(e.error || r.statusText) + "</div>"; ntBusy(false); return }
                   var d = await r.json(); pollAuthor(d.sessionId, box)
                 } catch (e) {
                   box.innerHTML = '<div class="nt-stall">Network error starting AutoSim.</div>'
-                  btn.disabled = false
+                  ntBusy(false)
                 }
               })
-              document.getElementById("ntBg").addEventListener("click", function (e) { if (e.target === this) this.classList.remove("show") })
+              document.getElementById("ntBg").addEventListener("click", function (e) { if (e.target === this) closeNtDialog() })
 
               // kick off data load
               loadAccounts(); load(); loadExpectations(); reattachActiveAuthorSession(); loadResumableDrafts()
+
+              // KD-2255: "+ Create AutoSim" on a test case (Projects & Test Cases sub-tab).
+              window.klavStartAutosimForTestCase = startAutosimForTestCase
             }
             // KLAVITYKLA-198 / KLA-173: "+ New ticket" button + its compose modal. This wiring used to sit
             // INSIDE initTrailsView, which only runs when the AutoSims view is opened — so on a normal visit
