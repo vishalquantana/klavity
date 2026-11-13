@@ -285,19 +285,26 @@ describe("Select Sims modal — Sims Deactivated on the Sims tab", () => {
 describe("createSelectSimsApi", () => {
   it("sends project + bearer + action and surfaces server errors", async () => {
     const f = vi.fn(async (_u: string, _i?: RequestInit) => new Response(JSON.stringify({ ok: false, error: "nope" }), { status: 400 }))
-    const api = createSelectSimsApi({ backendUrl: "https://k.test", projectId: "p1", getToken: () => "tok", fetch: f })
+    const api = createSelectSimsApi({ backendUrl: "https://k.test", projectId: "p1", getToken: () => "tok", fetch: f, origin: "https://px4.test" })
     await expect(api.act("run", ["s1"])).rejects.toThrow("nope")
     const [url, init] = f.mock.calls[0]
     expect(url).toBe("https://k.test/api/widget/sim-deployments")
     expect((init!.headers as any).authorization).toBe("Bearer tok")
-    expect(JSON.parse(String(init!.body))).toEqual({ project: "p1", action: "run", simIds: ["s1"] })
+    expect(JSON.parse(String(init!.body))).toEqual({ project: "p1", action: "run", simIds: ["s1"], origin: "https://px4.test" })
   })
 
   it("stop_all sends no Sim ids (the card's Close)", async () => {
     const f = vi.fn(async (_u: string, _i?: RequestInit) => new Response(JSON.stringify({ ok: true, applied: [], skipped: [], sims: [] }), { status: 200 }))
     const api = createSelectSimsApi({ backendUrl: "https://k.test", projectId: "p1", getToken: () => "", fetch: f })
     await api.act("stop_all")
-    expect(JSON.parse(String(f.mock.calls[0][1]!.body))).toEqual({ project: "p1", action: "stop_all" })
+    // No Sim ids; the page's own origin tells the server which application to stop them on (jsdom: location.origin).
+    expect(JSON.parse(String(f.mock.calls[0][1]!.body))).toEqual({ project: "p1", action: "stop_all", origin: location.origin })
+  })
+
+  it("KD-origin: load asks for this application's state only (origin on the query)", async () => {
+    const f = vi.fn(async (_u: string, _i?: RequestInit) => new Response(JSON.stringify({ ok: true, sims: [] }), { status: 200 }))
+    await createSelectSimsApi({ backendUrl: "https://k.test", projectId: "p1", getToken: () => "", fetch: f, origin: "https://px4.test" }).load()
+    expect(f.mock.calls[0][0]).toBe("https://k.test/api/widget/sim-deployments?project=p1&origin=https%3A%2F%2Fpx4.test")
   })
 
   it("explains a server without the endpoint instead of a bare 'Not found'", async () => {

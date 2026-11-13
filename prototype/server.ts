@@ -18,7 +18,7 @@ import { countFoundingAccounts, liveFeedbackId, deleteTicketsBulk, invalidateDas
 import { listDeletedTickets, restoreDeletedTicket, RETENTION_DAYS as DELETED_TICKETS_RETENTION_DAYS } from "./lib/deleted-tickets"
 import { projectAccessAndRow } from "./lib/db" // KLA-833: access + project row in one DB round-trip (hot /api/projects/:id/* block)
 import { setFeedbackExtraScreenshots } from "./lib/db"
-import { runningSimIds, runSims, stopSims, clearSimRuns, SIM_RUN_ACTIONS, type SimRunAction } from "./lib/sim-run-state"
+import { runningSimIds, runSims, stopSims, clearSimRuns, lastRunOrigin, normOrigin, SIM_RUN_ACTIONS, type SimRunAction } from "./lib/sim-run-state"
 // KLA-838 (perf): batched helpers that collapse O(N-projects) per-request DB fan-out to a single query.
 import { listEnabledMonitoredUrlPatternsForProjects, countPersonasForAccount, insertTraitEvents, patternMatchesUrl } from "./lib/db"
 // #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
@@ -4579,7 +4579,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     pt.mark("access")
     if (!access) return sj({ ok: false, reason: "unauthorized", error: "No access to this project." }, 403)
     const projectId = requested
-    const [personas, running] = await Promise.all([listPersonas(projectId), runningSimIds(db!, projectId, me)])
+    // The application the caller is on. Run / Stop and "running" are per application: a Sim started on px4 runs on px4 only. No origin
+    // (the Sims tab, older widgets) = every application for status / Stop, and the application last started on for Run.
+    const reqOrigin = normOrigin((req.method === "POST" ? body.origin : url.searchParams.get("origin")) || "")
+    const [personas, running] = await Promise.all([listPersonas(projectId), runningSimIds(db!, projectId, me, reqOrigin || null)])
     pt.mark("db")
     const byId = new Map(personas.map((p) => [p.id, p]))
     // A Deactivated Sim is never "running", whatever an old row says (rows are also cleared on Deactivate).
@@ -4601,7 +4604,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (action === "stop_all") {
       // The feedback card's Close: stop every Sim this user has running in this project.
       const was = [...running].filter((id) => byId.has(id))
-      await stopSims(db!, projectId, me, null)
+      await stopSims(db!, projectId, me, null, reqOrigin || null)
       pt.mark("write")
       return sj({ ok: true, action, applied: was, skipped: [], sims: describe(new Set()) })
     }
@@ -4616,11 +4619,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // Only an Activated Sim can run — Activate it on the Sims tab first. Reported in `skipped`, never applied.
       for (const id of simIds) if (byId.get(id)!.active === false) skipped.push({ simId: id, reason: "deactivated on the Sims tab — activate it there first" })
       applied = simIds.filter((id) => byId.get(id)!.active !== false && !running.has(id))
-      await runSims(db!, projectId, me, applied)
+      // A Run needs an application to run on: the page it was pressed on, else (the Sims tab) the one the user last started on.
+      const runOrigin = reqOrigin || (applied.length ? await lastRunOrigin(db!, projectId, me) : "")
+      if (applied.length && !runOrigin) {
+        for (const id of applied) skipped.push({ simId: id, reason: "open the Sims menu on the application you want them to review, then Run there" })
+        applied = []
+      }
+      await runSims(db!, projectId, me, applied, Date.now(), runOrigin)
       for (const id of applied) running.add(id)
     } else {
       applied = simIds.filter((id) => running.has(id))
-      await stopSims(db!, projectId, me, applied)
+      await stopSims(db!, projectId, me, applied, reqOrigin || null)
       for (const id of applied) running.delete(id)
     }
     pt.mark("write")
@@ -7773,7 +7782,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // from the Sims tab, Select Sims, or the card's Close — never reviews again, even from a stale tab still holding the old list.
       // Other callers (the browser extension) keep their existing behaviour.
       if (body.runScope === "widget" && db) {
-        const running = await runningSimIds(db, projectId, meR)
+        // Per application: Sims started on px4 never review Klavity's own pages (or another app) — the page being reviewed decides.
+        const running = await runningSimIds(db, projectId, meR, normOrigin(pageUrl) || null)
         targetSims = targetSims.filter((p) => running.has(p.id))
       }
 
