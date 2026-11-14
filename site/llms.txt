@@ -3,7 +3,7 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
-
+- [What Is AI Slop Code? Definition, Signs, and Fixes](https://klavity.in/blog/what-is-ai-slop-code) — AI slop code is AI-generated code that looks correct and compiles but was never verified against a real requirement. Here is how to spot and fix it.
 - [Cypress Alternatives: 6 Options for Agencies in 2026](https://klavity.in/blog/cypress-alternatives) — The best Cypress alternatives are Playwright for a like-for-like swap, WebdriverIO or Selenium for WebDriver, and AI QA when nobody maintains tests.
 - [AI QA for Next.js Apps: Catch Bugs Before Your Client](https://klavity.in/blog/ai-qa-for-nextjs-apps) — AI QA for Next.js apps means running AI agents against a production build, so hydration, caching and middleware bugs surface before clients do.
 - [Figma Make Testing: How to QA Your Prompt-Built App](https://klavity.in/blog/figma-make-testing) — Figma Make testing starts below the UI: auth and data boundaries, server-side validation, and failure states — before you share the link.
@@ -158,7 +158,6 @@
 - [How to write a bug report developers will actually act on](https://klavity.in/blog/how-to-write-a-bug-report-developers-act-on) — A bug report gets fixed fast when it carries three things: exact steps, the environment, and evidence (screenshot + console + network). Here's the format.
 
 ## Product
-
 - [Snap — in-app bug reporting](https://klavity.in/snap)
 - [Sims — AI persona testing](https://klavity.in/sims)
 - [AutoSim — self-healing E2E tests](https://klavity.in/autosim)

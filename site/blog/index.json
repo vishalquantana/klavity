@@ -1062,5 +1062,12 @@
     "excerpt": "The best Cypress alternatives are Playwright for a like-for-like swap, WebdriverIO or Selenium for WebDriver, and AI QA when nobody maintains tests.",
     "category": "Compare",
     "date": "2026-11-13"
+  },
+  {
+    "slug": "what-is-ai-slop-code",
+    "title": "What Is AI Slop Code? Definition, Signs, and Fixes",
+    "excerpt": "AI slop code is AI-generated code that looks correct and compiles but was never verified against a real requirement. Here is how to spot and fix it.",
+    "category": "Learn",
+    "date": "2026-11-14"
   }
 ]

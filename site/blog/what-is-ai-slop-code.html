@@ -1,0 +1,194 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Is AI Slop Code? Definition, Signs, and Fixes · Klavity</title>
+<meta name="description" content="AI slop code is AI-generated code that looks correct and compiles but was never verified against a real requirement. Here is how to spot and fix it.">
+<link rel="canonical" href="https://klavity.in/blog/what-is-ai-slop-code">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="What Is AI Slop Code? Definition, Signs, and Fixes"><meta property="og:description" content="AI slop code is AI-generated code that looks correct and compiles but was never verified against a real requirement. Here is how to spot and fix it.">
+<meta property="og:url" content="https://klavity.in/blog/what-is-ai-slop-code"><meta property="og:image" content="https://klavity.in/blog/what-is-ai-slop-code.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="What Is AI Slop Code? Definition, Signs, and Fixes"><meta name="twitter:description" content="AI slop code is AI-generated code that looks correct and compiles but was never verified against a real requirement. Here is how to spot and fix it."><meta name="twitter:image" content="https://klavity.in/blog/what-is-ai-slop-code.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"What Is AI Slop Code? Definition, Signs, and Fixes","description":"AI slop code is AI-generated code that looks correct and compiles but was never verified against a real requirement. Here is how to spot and fix it.","datePublished":"2026-11-14","dateModified":"2026-11-14","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/what-is-ai-slop-code.svg"}},"mainEntityOfPage":"https://klavity.in/blog/what-is-ai-slop-code","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is AI Slop Code? Definition, Signs, and Fixes","item":"https://klavity.in/blog/what-is-ai-slop-code"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-ai-slop-code"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is AI slop code?","acceptedAnswer":{"@type":"Answer","text":"AI slop code is AI-generated code that compiles and looks correct but was never verified against a real requirement. Typical signs are invented library APIs, near-duplicate helper functions, happy-path-only flows, authorisation checked only in the UI, and tests that mock the thing they test and so can never fail."}},{"@type":"Question","name":"Is AI slop code the same as technical debt?","acceptedAnswer":{"@type":"Answer","text":"No. Deliberate technical debt is a documented shortcut someone chose, so it can be estimated and scheduled. AI slop is undocumented and reads as finished work, so it cannot be triaged by reading — you have to exercise the behaviour before you can judge or prioritise it."}},{"@type":"Question","name":"How do you detect AI slop code?","acceptedAnswer":{"@type":"Answer","text":"Run the flow as a user rather than as the author: submit twice, refresh mid-request, load it logged out and as the wrong user. Then check every new library call against the installed version's docs, read the tests to confirm they can actually fail, and verify each new endpoint enforces permissions on the server."}},{"@type":"Question","name":"Does AI slop code mean you should stop using AI coding tools?","acceptedAnswer":{"@type":"Answer","text":"No. Slop comes from accepting output without acceptance criteria, not from the tools themselves. Write the pass/fail criteria for revenue-critical flows first, cover those flows with end-to-end tests, and the same tools become safe to ship from."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-11-14</div>
+    <h1>What Is AI Slop Code? Definition, Signs, and Fixes</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI-generated code that looks clean on the surface but hides invented APIs, duplicate helpers and missing error paths">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="660" cy="70" r="150" fill="#6366f1" opacity="0.07"/>
+  <line x1="400" y1="40" x2="400" y2="380" stroke="#f5f0e8" stroke-opacity="0.12" stroke-width="1" stroke-dasharray="5 7"/>
+
+  <rect x="60" y="70" width="280" height="280" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.55" stroke-width="1.5"/>
+  <line x1="60" y1="104" x2="340" y2="104" stroke="#6366f1" stroke-opacity="0.45" stroke-width="1.5"/>
+  <circle cx="80" cy="87" r="4.5" fill="#6366f1" opacity="0.8"/>
+  <circle cx="96" cy="87" r="4.5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="84" y="128" width="150" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.34"/>
+  <rect x="84" y="152" width="208" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.26"/>
+  <rect x="100" y="176" width="124" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.26"/>
+  <rect x="100" y="200" width="172" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.26"/>
+  <rect x="84" y="224" width="140" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.34"/>
+  <rect x="84" y="248" width="196" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.26"/>
+  <rect x="100" y="272" width="110" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.26"/>
+  <path d="M112 318 l10 10 l20 -22" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="158" y="313" width="104" height="9" rx="4.5" fill="#4ade80" fill-opacity="0.4"/>
+
+  <path d="M352 210 l44 0 M386 198 l12 12 l-12 12" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="460" y="70" width="280" height="280" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#f87171" stroke-opacity="0.5" stroke-width="1.5"/>
+  <line x1="460" y1="104" x2="740" y2="104" stroke="#f87171" stroke-opacity="0.4" stroke-width="1.5"/>
+  <circle cx="480" cy="87" r="4.5" fill="#f87171" opacity="0.85"/>
+  <circle cx="496" cy="87" r="4.5" fill="#f5f0e8" opacity="0.3"/>
+
+  <circle cx="496" cy="136" r="9" fill="none" stroke="#f87171" stroke-width="2.2"/>
+  <line x1="496" y1="131" x2="496" y2="137" stroke="#f87171" stroke-width="2.2" stroke-linecap="round"/>
+  <circle cx="496" cy="141" r="1.4" fill="#f87171"/>
+  <rect x="516" y="131" width="150" height="9" rx="4.5" fill="#f87171" fill-opacity="0.38"/>
+
+  <rect x="488" y="172" width="86" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.28"/>
+  <rect x="582" y="172" width="86" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.28"/>
+  <rect x="488" y="192" width="86" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.28"/>
+
+  <path d="M492 238 l0 -12 a10 10 0 0 1 20 0 l0 12 z" fill="none" stroke="#f87171" stroke-width="2.2" stroke-linejoin="round"/>
+  <rect x="486" y="238" width="32" height="24" rx="5" fill="none" stroke="#f87171" stroke-width="2.2"/>
+  <path d="M532 250 l44 0" stroke="#f87171" stroke-width="2.2" stroke-dasharray="4 5" stroke-linecap="round"/>
+  <rect x="586" y="245" width="82" height="9" rx="4.5" fill="#f87171" fill-opacity="0.3"/>
+
+  <path d="M488 300 l36 36 M524 300 l-36 36" stroke="#f87171" stroke-width="3" stroke-linecap="round"/>
+  <rect x="542" y="313" width="126" height="9" rx="4.5" fill="#f87171" fill-opacity="0.34"/>
+
+  <rect x="60" y="376" width="110" height="5" rx="2.5" fill="#4ade80" fill-opacity="0.55"/>
+  <rect x="460" y="376" width="200" height="5" rx="2.5" fill="#f87171" fill-opacity="0.55"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI slop code is AI-generated code that looks correct, compiles, and demos fine, but was never verified against a real requirement. It is a provenance problem, not a syntax problem: slop reads like senior-engineer work while hiding invented APIs, duplicated helpers, missing error paths, and tests that cannot fail. Because it is built to survive reading, you can only find it by running the flows.</div>
+    <div class="prose"><p><strong>AI slop code is AI-generated code that looks correct, compiles, and demos fine, but was never verified against a real requirement</strong> — so it carries invented APIs, duplicated logic, missing error paths, and tests that prove nothing. The term describes a <em>provenance</em> problem, not a syntax problem: slop is not ugly code, it is unverified code that arrived faster than anyone could check it. That is what makes it dangerous — it passes a glance, a build, and often a code review, and fails on the first real user.</p>
+
+<h2>What is AI slop code, exactly?</h2>
+<p>"Slop" originally described low-effort AI-generated text and images flooding the internet. Applied to software, AI slop code is output from a coding assistant or agent — Cursor, Claude Code, Copilot, Bolt, Lovable, v0, Replit — that was accepted into the codebase on the strength of looking plausible rather than on evidence that it works.</p>
+<p>The distinction matters because slop is not the same as a beginner's messy code. Messy human code is usually <em>locally honest</em>: it does what the author understood, badly. Slop is <em>locally confident</em>: it reads like a senior engineer wrote it, with clean naming and tidy structure, while the behaviour underneath was never checked. Reviewers trust the surface and skip the verification, which is exactly the failure mode. If you are new to the category, our primer on <a href="/blog/what-is-vibe-coding">what vibe coding is</a> covers the workflow that produces it.</p>
+
+<h2>What does AI slop code look like in a real codebase?</h2>
+<p>Slop has recognisable fingerprints. These are the ones worth memorising, because you can scan a diff for all of them in a few minutes:</p>
+<ul>
+<li><strong>Invented APIs and parameters.</strong> A method, option, or config key that does not exist in the library's current version — the model produced a shape that <em>should</em> exist. This is the clearest tell, and it is why pinned dependency versions matter.</li>
+<li><strong>Near-duplicate helpers.</strong> Three variations of <code>formatDate</code>, <code>formatDateTime</code>, and <code>dateFormat</code> in different files, because each prompt generated its own instead of finding the existing one.</li>
+<li><strong>Tautological tests.</strong> A test that mocks the thing it is testing and then asserts the mock was called. It is green forever and detects nothing.</li>
+<li><strong>Happy-path-only flows.</strong> The success case is complete; empty states, network failure, permission denial, and duplicate submissions are missing or stubbed with a comment.</li>
+<li><strong>Client-side-only authorisation.</strong> The UI hides the admin button, but the endpoint never checks who is calling. This is the slop pattern with real security consequences, and it maps directly onto OWASP's broken-access-control category.</li>
+<li><strong>Hardcoded values in place of config.</strong> Live keys, test email addresses, and a client's staging URL frozen into the source.</li>
+</ul>
+
+<h2>Why does AI-generated code turn into slop?</h2>
+<p>Three mechanics drive it, and none of them are about model quality.</p>
+<p>First, <strong>no spec means no pass/fail</strong>. If the only acceptance criterion is "it ran", everything that runs gets merged. Writing the criteria first is the cheapest fix available — see <a href="/blog/what-is-spec-driven-development">spec-driven development</a>.</p>
+<p>Second, <strong>limited context breeds duplication</strong>. An assistant that cannot see your whole repository will rebuild rather than reuse, and each rebuild is a new place for behaviour to drift.</p>
+<p>Third, <strong>generation is faster than verification</strong>. A human can produce a week of code in an afternoon but cannot review a week of code in an afternoon. The backlog of unverified code is the slop. This is the structural pain both agency teams and solo founders share, and it compounds into <a href="/blog/ai-technical-debt">AI technical debt</a>.</p>
+
+<h2>How is AI slop code different from technical debt?</h2>
+<p>They are often conflated, and treating them the same way is why cleanups stall. Deliberate debt is a known trade-off you can schedule. Slop is an unknown liability you cannot even triage.</p>
+<table>
+<tr><th></th><th>Deliberate technical debt</th><th>AI slop code</th></tr>
+<tr><td><strong>Origin</strong></td><td>A conscious shortcut, taken to hit a date</td><td>Unreviewed generated output, accepted on plausibility</td></tr>
+<tr><td><strong>Intent</strong></td><td>Someone knows why it is like that</td><td>Nobody knows why it is like that</td></tr>
+<tr><td><strong>Documentation</strong></td><td>A TODO, ticket, or ADR exists</td><td>None — it reads as finished work</td></tr>
+<tr><td><strong>Tests</strong></td><td>Usually thin but meaningful</td><td>Absent, or green and meaningless</td></tr>
+<tr><td><strong>Risk</strong></td><td>Bounded and estimable</td><td>Unbounded until something is exercised</td></tr>
+<tr><td><strong>Fix</strong></td><td>Refactor on a planned sprint</td><td>Verify behaviour first, then refactor</td></tr>
+</table>
+<p>The practical consequence: you cannot prioritise slop by reading it, because reading is what it is built to survive. You have to run it.</p>
+
+<h2>How do you spot AI slop code before it ships?</h2>
+<p>Work in this order — cheapest signal first:</p>
+<ol>
+<li><strong>Exercise the flow as a user, not as the author.</strong> Submit the form twice. Refresh mid-request. Load the page as a logged-out visitor and as the wrong user. Slop survives reading and dies on interaction.</li>
+<li><strong>Grep the diff for invented surface area.</strong> Check every library call that is new in this change against the installed version's documentation, not against memory.</li>
+<li><strong>Read the tests before the code.</strong> If a test cannot fail, delete it — a false green is worse than no test, because it stops anyone looking.</li>
+<li><strong>Walk the non-happy paths explicitly.</strong> Empty, loading, error, unauthorised, offline, and "too much data" states. Ask for each one by name.</li>
+<li><strong>Verify authorisation on the server.</strong> For every new endpoint, confirm the permission check exists in the handler, not only in the component that renders the button.</li>
+</ol>
+<p>Our walkthrough on <a href="/blog/how-to-review-ai-generated-code">how to review AI-generated code</a> expands each of these into a reviewable checklist.</p>
+
+<h2>How do you clean up AI slop code without a rewrite?</h2>
+<p>A rewrite is almost never the right answer, because you would be rewriting code whose required behaviour nobody has written down yet. Instead:</p>
+<ul>
+<li><strong>Pin the behaviour you actually want.</strong> Write the acceptance criteria for the flows that earn money — signup, checkout, contact, login. Those become your regression suite.</li>
+<li><strong>Cover those flows with real end-to-end tests</strong> that drive a browser and assert what the user sees. <a href="/autosim">AutoSim</a> generates and self-heals these, so a selector change does not turn into a weekend of red builds.</li>
+<li><strong>Exercise the app the way strangers will.</strong> <a href="/sims">Sims</a> runs AI personas through your flows and reports what breaks, which surfaces exactly the non-happy paths slop skips.</li>
+<li><strong>Make reporting frictionless for whoever finds the rest.</strong> <a href="/snap">Snap</a> turns a right-click into a bug report with console logs, network activity, and reproduction steps attached — so the ones your client finds arrive actionable instead of as "the site is broken".</li>
+<li><strong>Delete, don't document, the duplicates.</strong> Collapse the three date helpers into one before adding a fourth feature on top of them.</li>
+</ul>
+
+<h2>What does AI slop code mean for agencies and solo founders?</h2>
+<p>For an agency, slop is a margin problem disguised as a quality problem. Code that passed review and failed in the client's hands turns a fixed-price build into unbilled rework, and the client's trust is spent before the invoice clears. For a non-technical founder, slop is a ceiling: the app works in the demo you gave yourself and breaks for the tenth real user, with nobody on the team able to tell which half of the codebase to trust.</p>
+<p>Both problems have the same root — code is shipping faster than anyone can verify it — and the same fix, which is to make verification automatic rather than heroic. That is the whole argument of our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>Try Klavity free</h2>
+<p>If you are shipping AI-generated code without a QA layer underneath it, start by finding out what is already broken. <a href="/onboarding">Scan your next client site free</a> — Klavity runs AI personas through your real flows, files reproducible bug reports, and keeps the end-to-end tests green as the code changes.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Define pass/fail criteria before you accept generated code</li><li>Check every new library call against the installed version</li><li>Delete tests that mock what they test — they cannot fail</li><li>Cover revenue-critical flows with real end-to-end tests</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is AI slop code?</summary><p>AI slop code is AI-generated code that compiles and looks correct but was never verified against a real requirement. Typical signs are invented library APIs, near-duplicate helper functions, happy-path-only flows, authorisation checked only in the UI, and tests that mock the thing they test and so can never fail.</p></details><details><summary>Is AI slop code the same as technical debt?</summary><p>No. Deliberate technical debt is a documented shortcut someone chose, so it can be estimated and scheduled. AI slop is undocumented and reads as finished work, so it cannot be triaged by reading — you have to exercise the behaviour before you can judge or prioritise it.</p></details><details><summary>How do you detect AI slop code?</summary><p>Run the flow as a user rather than as the author: submit twice, refresh mid-request, load it logged out and as the wrong user. Then check every new library call against the installed version's docs, read the tests to confirm they can actually fail, and verify each new endpoint enforces permissions on the server.</p></details><details><summary>Does AI slop code mean you should stop using AI coding tools?</summary><p>No. Slop comes from accepting output without acceptance criteria, not from the tools themselves. Write the pass/fail criteria for revenue-critical flows first, cover those flows with end-to-end tests, and the same tools become safe to ship from.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
