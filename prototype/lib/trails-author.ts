@@ -84,6 +84,21 @@ export async function withHeartbeat<T>(
   }
   try { return await fn() } finally { stop() }
 }
+/**
+ * Resume opens a FRESH browser straight on the checkpoint's last URL. For apps with session login (everything except
+ * mint_link) that page bounces to the login gate, and the model - whose history says it already logged in - re-types
+ * the email over and over until the progress guard stalls ("'type' repeated 4x without state change").
+ * True when the resumed page landed on an auth page it was not supposed to be on.
+ */
+export function resumeLostSession(expectedUrl: string, actualUrl: string): boolean {
+  const AUTH = /(log-?in|sign-?in|auth|verification|verify|sso|session|select-company)/i
+  try {
+    const e = new URL(expectedUrl), a = new URL(actualUrl)
+    if (a.origin === e.origin && a.pathname === e.pathname) return false
+    return AUTH.test(a.pathname) && !AUTH.test(e.pathname)
+  } catch { return false }
+}
+
 /** Re-capture until the snapshot has real content (>= 8 chars) or the bounded retries run out. */
 export async function recaptureUntilContent(
   first: string,
@@ -626,6 +641,12 @@ export async function authorTrail(
       // KLA-57: resume - navigate to where the prior drive stalled. The traj/history are already
       // pre-populated from the checkpoint; we skip re-recording the initial navigate step.
       await page.goto(cp.lastUrl, 20_000)
+      if (autosimAuth?.method !== "mint_link" && resumeLostSession(cp.lastUrl, page.url())) {
+        return await stall(
+          `Resume can't restore the logged-in session: the app sent the fresh browser back to its login page (${page.url()}). Start a new run of this AutoSim instead.`,
+          cp.lastUrl,
+        )
+      }
     } else {
       await page.goto(req.baseUrl, 20_000)
       // Record the initial navigation as the first TrajectoryStep so the crystallized Trail starts

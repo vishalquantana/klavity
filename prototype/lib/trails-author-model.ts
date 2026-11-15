@@ -188,6 +188,21 @@ const OPS = new Set(["navigate", "click", "type", "select", "assert", "wait", "w
 const STALL = (why: string): AuthorAction =>
   ({ op: "stall", selector: null, value: null, url: null, checkpoint: null, rationale: why, parseError: true })
 
+/**
+ * The prompt asks for [data-kref="eN"], but models often echo the snapshot marker in other shapes:
+ * [ref="e6"], [ref=e6], ref=e6, "ref e6", "snapshot ref e6", "@e6", or a bare "e6". None of those match an element, so
+ * 3 in a row stalled the run ("selector ... matched 0 elements"; seen on the PX4 "Project Creation" AutoSim).
+ * Map exactly those whole-string shapes to the real marker; anything else (real CSS) is returned untouched.
+ */
+export function normalizeRefSelector(selector: string): string {
+  const s = selector.trim()
+  const m =
+    s.match(/^\[\s*ref\s*=\s*["']?(e\d+)["']?\s*\]$/i) ||
+    s.match(/^(?:snapshot\s+)?ref\s*[=:]?\s*["']?(e\d+)["']?$/i) ||
+    s.match(/^@?(e\d+)$/i)
+  return m ? `[data-kref="${m[1].toLowerCase()}"]` : selector
+}
+
 export function parseAuthorAction(content: string): AuthorAction {
   const cleaned = content.replace(/<think[\s\S]*?<\/think>/gi, "").replace(/```(?:json)?/gi, "").replace(/```/g, "").trim()
   const m = cleaned.match(/\{[\s\S]*\}/)
@@ -197,7 +212,7 @@ export function parseAuthorAction(content: string): AuthorAction {
   if (!OPS.has(op)) return STALL(`model returned unknown op "${op}"`)
   const a: AuthorAction = {
     op: op as AuthorAction["op"],
-    selector: typeof obj.selector === "string" && obj.selector.trim() ? obj.selector.trim() : null,
+    selector: typeof obj.selector === "string" && obj.selector.trim() ? normalizeRefSelector(obj.selector.trim()) : null,
     value: typeof obj.value === "string" ? obj.value : null,
     url: typeof obj.url === "string" && obj.url.trim() ? obj.url.trim() : null,
     checkpoint: typeof obj.checkpoint === "string" && obj.checkpoint.trim() ? obj.checkpoint.trim() : null,

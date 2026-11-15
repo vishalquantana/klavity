@@ -60,3 +60,40 @@ describe("withHeartbeat cap", () => {
     expect(atEnd).toBeLessThanOrEqual(6) // ~40ms / 10ms, not ~12 beats for the full 120ms
   })
 })
+
+// "Project Creation" AutoSim: the model echoed snapshot markers as [ref="e6"] / "snapshot ref e6", which match nothing.
+import { normalizeRefSelector, parseAuthorAction } from "./trails-author-model"
+import { resumeLostSession } from "./trails-author"
+describe("normalizeRefSelector", () => {
+  const K = (n: string) => `[data-kref="${n}"]`
+  test("maps every echoed marker shape to the real data-kref selector", () => {
+    for (const s of [`[ref="e6"]`, `[ref=e6]`, `[ref='e6']`, `[ ref = "e6" ]`, "ref=e6", "ref e6", "ref: e6", "snapshot ref e6", "Snapshot Ref e6", "@e6", "e6", "E6"]) {
+      expect(normalizeRefSelector(s)).toBe(K("e6"))
+    }
+  })
+  test("leaves real selectors alone", () => {
+    for (const s of [K("e6"), "#email", "button.primary", "[data-testid=ref]", 'a[href="/e6"]', "div > e6x", "[ref=e6] > span", "e6 button"]) {
+      expect(normalizeRefSelector(s)).toBe(s)
+    }
+  })
+  test("parseAuthorAction applies it", () => {
+    const a = parseAuthorAction(JSON.stringify({ op: "click", selector: 'snapshot ref e12', value: null, url: null, rationale: "x" }))
+    expect(a.selector).toBe(K("e12"))
+    const b = parseAuthorAction(JSON.stringify({ op: "type", selector: '[ref="e3"]', value: "{{cred:a:password}}", rationale: "x" }))
+    expect(b.selector).toBe(K("e3"))
+  })
+})
+
+describe("resumeLostSession", () => {
+  test("flags a resume that was bounced to a login/verification page", () => {
+    expect(resumeLostSession("https://qa2.px4app.com/index.php/Actions/completed_project_actions_table/789", "https://qa2.px4app.com/app/login")).toBe(true)
+    expect(resumeLostSession("https://x.com/dashboard", "https://x.com/auth/verification-code")).toBe(true)
+  })
+  test("does not flag normal landings", () => {
+    expect(resumeLostSession("https://x.com/dashboard", "https://x.com/dashboard")).toBe(false)
+    expect(resumeLostSession("https://x.com/dashboard", "https://x.com/dashboard/")).toBe(false) // trailing-slash redirect is not an auth gate
+    expect(resumeLostSession("https://x.com/login", "https://x.com/login")).toBe(false)           // the checkpoint was ON the login page
+    expect(resumeLostSession("https://x.com/signin", "https://x.com/verification")).toBe(false)    // expected page is itself an auth page
+    expect(resumeLostSession("not a url", "also not")).toBe(false)
+  })
+})
