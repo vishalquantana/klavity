@@ -1,0 +1,200 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Form Testing: Catch Broken Forms Before Clients Do · Klavity</title>
+<meta name="description" content="AI form testing uses AI agents to fill, submit and verify your forms end to end, catching silent submit failures before a client finds them.">
+<link rel="canonical" href="https://klavity.in/blog/ai-form-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI Form Testing: Catch Broken Forms Before Clients Do"><meta property="og:description" content="AI form testing uses AI agents to fill, submit and verify your forms end to end, catching silent submit failures before a client finds them.">
+<meta property="og:url" content="https://klavity.in/blog/ai-form-testing"><meta property="og:image" content="https://klavity.in/blog/ai-form-testing.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI Form Testing: Catch Broken Forms Before Clients Do"><meta name="twitter:description" content="AI form testing uses AI agents to fill, submit and verify your forms end to end, catching silent submit failures before a client finds them."><meta name="twitter:image" content="https://klavity.in/blog/ai-form-testing.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI Form Testing: Catch Broken Forms Before Clients Do","description":"AI form testing uses AI agents to fill, submit and verify your forms end to end, catching silent submit failures before a client finds them.","datePublished":"2026-11-15","dateModified":"2026-11-15","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-form-testing.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-form-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI Form Testing: Catch Broken Forms Before Clients Do","item":"https://klavity.in/blog/ai-form-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-form-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is AI form testing?","acceptedAnswer":{"@type":"Answer","text":"AI form testing is using AI agents to fill in, submit and verify a web form the way a real visitor would, then assert the submission arrived at its destination. It covers client-side validation, submit handling, server-side enforcement and the round trip to an inbox, CRM or database, rather than only checking that a success message appeared."}},{"@type":"Question","name":"Why do web forms break without any code change?","acceptedAnswer":{"@type":"Answer","text":"Forms depend on things outside the repository. An expired API key, a missing production environment variable, a changed recipient address, a security plugin that starts dropping submissions, or an auto-updated form embed can all break a form while the page still renders perfectly and uptime monitors report 200 OK."}},{"@type":"Question","name":"Does AI form testing replace Playwright or Cypress tests?","acceptedAnswer":{"@type":"Answer","text":"No. Scripted tests give deterministic regression gates for your critical path; AI form testing finds the cases nobody hand-wrote. The practical pattern is to let AI exploration surface failures, then promote each confirmed failure into a deterministic test so it cannot come back."}},{"@type":"Question","name":"What is the single most important form assertion to automate?","acceptedAnswer":{"@type":"Answer","text":"The round trip. Confirm the submission reached its real destination with its fields intact. It is the only check that fails when an integration quietly stops working, and it is the one most teams never automate."}},{"@type":"Question","name":"Will spam protection block automated form tests?","acceptedAnswer":{"@type":"Answer","text":"Often, yes. Honeypot fields, rate limits, CAPTCHAs and WAF rules are designed to stop exactly what a test agent does. Whitelist the test path or use a dedicated test route, otherwise you get false failures and learn to ignore the results."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-11-15</div>
+    <h1>AI Form Testing: Catch Broken Forms Before Clients Do</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI form testing: an AI agent fills a form, the submission passes validation but fails before reaching its destination">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="660" cy="70" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="110" cy="360" r="120" fill="#6366f1" opacity="0.05"/>
+
+  <rect x="56" y="78" width="250" height="264" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="56" y="78" width="250" height="264" rx="12" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <line x1="56" y1="108" x2="306" y2="108" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <circle cx="72" cy="93" r="4" fill="#f87171" opacity="0.7"/>
+
+  <rect x="80" y="130" width="70" height="7" rx="3.5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="80" y="145" width="202" height="26" rx="5" fill="#6366f1" opacity="0.16"/>
+  <rect x="80" y="145" width="202" height="26" rx="5" fill="none" stroke="#4ade80" stroke-width="1.5"/>
+  <polyline points="88,159 93,164 103,153" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+
+  <rect x="80" y="188" width="56" height="7" rx="3.5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="80" y="203" width="202" height="26" rx="5" fill="#6366f1" opacity="0.16"/>
+  <rect x="80" y="203" width="202" height="26" rx="5" fill="none" stroke="#f87171" stroke-width="1.5"/>
+  <line x1="90" y1="211" x2="98" y2="221" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="98" y1="211" x2="90" y2="221" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="80" y="236" width="118" height="6" rx="3" fill="#f87171" opacity="0.55"/>
+
+  <rect x="80" y="262" width="88" height="7" rx="3.5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="80" y="277" width="202" height="42" rx="5" fill="#6366f1" opacity="0.12"/>
+
+  <path d="M318 196 L392 196" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M384 189 L392 196 L384 203" fill="none" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+
+  <rect x="404" y="150" width="150" height="48" rx="8" fill="#4ade80" opacity="0.14"/>
+  <rect x="404" y="150" width="150" height="48" rx="8" fill="none" stroke="#4ade80" stroke-width="1.6"/>
+  <polyline points="422,174 431,183 448,163" fill="none" stroke="#4ade80" stroke-width="2.8" stroke-linecap="round"/>
+  <rect x="462" y="167" width="72" height="7" rx="3.5" fill="#4ade80" opacity="0.5"/>
+  <rect x="462" y="180" width="48" height="5" rx="2.5" fill="#f5f0e8" opacity="0.25"/>
+
+  <path d="M566 174 L640 174" stroke="#f87171" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="7 6"/>
+  <line x1="596" y1="156" x2="614" y2="192" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+  <line x1="614" y1="156" x2="596" y2="192" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+
+  <rect x="652" y="138" width="104" height="72" rx="9" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="652" y="138" width="104" height="72" rx="9" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.8"/>
+  <path d="M668 160 L704 182 L740 160" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
+
+  <rect x="404" y="258" width="352" height="84" rx="10" fill="#6366f1" opacity="0.09"/>
+  <rect x="404" y="258" width="352" height="84" rx="10" fill="none" stroke="#6366f1" stroke-width="1.4" opacity="0.55"/>
+  <circle cx="440" cy="300" r="17" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <circle cx="440" cy="300" r="6" fill="#6366f1"/>
+  <rect x="474" y="284" width="150" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="474" y="300" width="248" height="6" rx="3" fill="#f5f0e8" opacity="0.18"/>
+  <rect x="474" y="314" width="196" height="6" rx="3" fill="#f5f0e8" opacity="0.18"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI form testing uses AI agents to fill in, submit and verify web forms, then confirm the submission reached its real destination. Forms are the most common silent failure on a client site because they break when API keys, env vars or spam rules change, with no error anywhere. The highest-value assertion is the round trip: verify the inbox, CRM record or database row, not the thank-you screen.</div>
+    <div class="prose"><p><strong>AI form testing</strong> is the practice of using AI agents to fill in, submit, and verify a web form the way a real visitor would, then assert that the submission actually arrived at its destination. It differs from a conventional scripted test in what it proves: a scripted test usually confirms that a success message rendered, while AI form testing exercises the whole chain — field validation, the submit handler, the backend integration, and the inbox, CRM record, or database row at the end. That distinction matters because a broken form is the most common silent failure on a client website: the visitor sees "Thanks, we'll be in touch," the agency sees no errors, and the lead quietly goes nowhere.</p>
+
+<h2>What does AI form testing actually do?</h2>
+<p>An AI form test starts from the rendered page rather than from a hand-written script. The agent reads the live DOM, works out what each field means from its label, placeholder, type, and surrounding copy, and then generates inputs that fit — a real-looking email in the email field, a valid phone format for the region, a sensible message body, a plausible file for an upload.</p>
+<p>From there it does three things a typical happy-path script does not:</p>
+<ul>
+<li><strong>It probes the edges.</strong> Empty required fields, an email without a domain, a 2,000-character message, an unsupported file type, a double-click on submit, a back-button return to a half-filled form.</li>
+<li><strong>It follows the whole flow.</strong> Multi-step forms, conditional fields that appear only after a selection, and the confirmation screen or redirect that follows submission.</li>
+<li><strong>It verifies the result, not the appearance.</strong> The success state is treated as a claim to be checked, not as the pass condition.</li>
+</ul>
+<p>This is the same approach behind <a href="/sims">Klavity Sims</a>, which drives a site as a set of AI personas instead of a fixed script, so the test adapts when the form does.</p>
+
+<h2>Why do forms break more often than the rest of a site?</h2>
+<p>Because forms are the part of a site that depends most heavily on things that live outside the repository. A static page breaks when someone changes the code. A form can break when nobody touched the code at all:</p>
+<ul>
+<li>An API key or access token for the email service, CRM, or form backend expires or is rotated.</li>
+<li>An environment variable is missing or misnamed in the production environment but present locally.</li>
+<li>A recipient address changes, or the person who received the notifications leaves the client's company.</li>
+<li>A spam filter, security plugin, or CDN rule starts silently dropping submissions it judges automated.</li>
+<li>A third-party embed or form plugin auto-updates and changes its markup or its validation behaviour.</li>
+</ul>
+<p>Each of those is invisible to the checks most agencies actually run. Uptime monitors report 200 OK. Error trackers see no exception, because nothing threw. Visual regression tools see an unchanged page. The form looks fine from every angle except the one that matters, which is whether anything came out the other end.</p>
+<p>That is also why forms deserve their own test layer rather than being folded into general <a href="/blog/ai-qa-for-ecommerce-websites">site-wide QA coverage</a>: the failure mode is not a visible break, it is a successful-looking non-event.</p>
+
+<h2>What should an AI form test check?</h2>
+<p>A useful way to scope the test is to treat a form as four independent layers and require evidence from each. A test that only covers the first two can pass while the form is completely non-functional.</p>
+<ol>
+<li><strong>Client-side validation.</strong> Required fields are enforced, formats are checked, error messages appear next to the field they describe, and the errors are announced to assistive technology rather than only shown in red.</li>
+<li><strong>Submit handling.</strong> The button disables or shows progress during submission, a double submit does not create two records, and a network failure produces a visible error rather than a hung spinner or a false success.</li>
+<li><strong>Server-side enforcement.</strong> Every rule the UI claims is also enforced by the backend. This is the layer where AI-generated code most often diverges from requirements: the field is marked <em>required</em> in the markup, but the handler accepts the request without it.</li>
+<li><strong>Round trip.</strong> The submission reaches its real destination — the inbox, the CRM, the webhook endpoint, the table — and arrives with its fields intact and mapped to the right columns.</li>
+</ol>
+<p>If you only have time to add one assertion, make it the round trip. It is the only check that fails when the integration quietly stops working, and it is the one almost nobody automates.</p>
+
+<h2>How is AI form testing different from writing Playwright tests for forms?</h2>
+<p>They solve different halves of the problem, and the honest answer is that mature projects want both. Scripted tests give you precision and a permanent regression gate; AI form testing gives you coverage you were never going to hand-write.</p>
+<table>
+<thead><tr><th>Dimension</th><th>Scripted test (Playwright, Cypress)</th><th>AI form testing</th></tr></thead>
+<tbody>
+<tr><td>Setup cost</td><td>You write a selector and an assertion for every field and every case</td><td>The agent derives fields and cases from the live page</td></tr>
+<tr><td>Input variety</td><td>Whatever fixtures you thought to write, usually one happy path</td><td>Generated valid and adversarial inputs per field type</td></tr>
+<tr><td>When the form changes</td><td>Selectors break; the test needs editing</td><td>The agent re-reads the form; only intent needs restating</td></tr>
+<tr><td>Round-trip verification</td><td>Possible, but you must build the backend check yourself</td><td>Treated as the primary assertion</td></tr>
+<tr><td>Determinism</td><td>High — the same steps every run, ideal for CI gates</td><td>Lower by design; it explores rather than repeats</td></tr>
+<tr><td>Best used for</td><td>Locking in the critical path you must never regress</td><td>Finding the cases nobody wrote a test for</td></tr>
+</tbody>
+</table>
+<p>A practical split: let AI exploration find the failures, then promote each confirmed failure into a deterministic test so it can never come back. <a href="/autosim">AutoSim</a> exists for that second step — it keeps the resulting E2E tests running as the markup shifts underneath them, which is usually why hand-written form tests get deleted.</p>
+
+<h2>How do you add AI form testing to a client project?</h2>
+<ol>
+<li><strong>Inventory the forms.</strong> Most agency sites have more than the team remembers: contact, quote request, newsletter, careers, support, checkout, account signup, password reset. Every one is a revenue or trust path.</li>
+<li><strong>Give each form a real destination you can check.</strong> A test mailbox, a tagged CRM record, or a test row. If you cannot observe the destination, you cannot verify the round trip.</li>
+<li><strong>Whitelist the test agent.</strong> Honeypot fields, rate limits, CAPTCHAs, and WAF rules are designed to stop exactly what your test does. Allow the test path explicitly or you will get false failures and, worse, learn to ignore them.</li>
+<li><strong>Run after every deploy, not just before launch.</strong> Form breakage is mostly post-launch and mostly not caused by your own commits, so a one-off pre-launch pass is the wrong shape for it.</li>
+<li><strong>Make reports reproducible.</strong> Whoever fixes it needs the inputs used, the network calls, and the console state. <a href="/snap">Snap</a> captures that context so a form bug arrives as evidence rather than as "the contact form is broken."</li>
+</ol>
+
+<h2>What are the limits of AI form testing?</h2>
+<p>It will not tell you whether a field should exist, which is a product decision. It cannot verify destinations it has no visibility into, so a form posting to a client-owned system you cannot observe still needs a human to confirm receipt. It is weaker than a scripted test as a hard CI gate, because an exploratory run is not identical from one execution to the next. And it cannot substitute for real submissions in a legally sensitive flow — payment capture, consent collection, regulated data — where you need a verified transaction rather than a plausible one.</p>
+<p>The right expectation is coverage of the cases you never scripted, not a replacement for the deliberate tests around your critical path. For how the pieces fit together across a whole project, see our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>, and for the broader pattern of letting agents drive a site as users, <a href="/blog/what-is-synthetic-user-testing">what synthetic user testing is</a>.</p>
+
+<h2>Try AI form testing on your next build</h2>
+<p>If you ship client sites or an AI-built app, the contact form is the single highest-consequence thing on it and usually the least tested. Point Klavity at your forms, let AI personas submit them, and find out what is actually arriving at the other end before a client tells you nothing is.</p>
+<p><strong><a href="/onboarding">Scan your next client site free →</a></strong></p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Inventory every form on the site, not just the contact page</li><li>Assert the round trip: inbox, CRM record or database row</li><li>Test all four layers, not just client-side validation</li><li>Run form checks after every deploy, not only pre-launch</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is AI form testing?</summary><p>AI form testing is using AI agents to fill in, submit and verify a web form the way a real visitor would, then assert the submission arrived at its destination. It covers client-side validation, submit handling, server-side enforcement and the round trip to an inbox, CRM or database, rather than only checking that a success message appeared.</p></details><details><summary>Why do web forms break without any code change?</summary><p>Forms depend on things outside the repository. An expired API key, a missing production environment variable, a changed recipient address, a security plugin that starts dropping submissions, or an auto-updated form embed can all break a form while the page still renders perfectly and uptime monitors report 200 OK.</p></details><details><summary>Does AI form testing replace Playwright or Cypress tests?</summary><p>No. Scripted tests give deterministic regression gates for your critical path; AI form testing finds the cases nobody hand-wrote. The practical pattern is to let AI exploration surface failures, then promote each confirmed failure into a deterministic test so it cannot come back.</p></details><details><summary>What is the single most important form assertion to automate?</summary><p>The round trip. Confirm the submission reached its real destination with its fields intact. It is the only check that fails when an integration quietly stops working, and it is the one most teams never automate.</p></details><details><summary>Will spam protection block automated form tests?</summary><p>Often, yes. Honeypot fields, rate limits, CAPTCHAs and WAF rules are designed to stop exactly what a test agent does. Whitelist the test path or use a dedicated test route, otherwise you get false failures and learn to ignore the results.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

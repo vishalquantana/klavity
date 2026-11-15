@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI form testing: an AI agent fills a form, the submission passes validation but fails before reaching its destination">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="660" cy="70" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="110" cy="360" r="120" fill="#6366f1" opacity="0.05"/>
+
+  <rect x="56" y="78" width="250" height="264" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="56" y="78" width="250" height="264" rx="12" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <line x1="56" y1="108" x2="306" y2="108" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <circle cx="72" cy="93" r="4" fill="#f87171" opacity="0.7"/>
+
+  <rect x="80" y="130" width="70" height="7" rx="3.5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="80" y="145" width="202" height="26" rx="5" fill="#6366f1" opacity="0.16"/>
+  <rect x="80" y="145" width="202" height="26" rx="5" fill="none" stroke="#4ade80" stroke-width="1.5"/>
+  <polyline points="88,159 93,164 103,153" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+
+  <rect x="80" y="188" width="56" height="7" rx="3.5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="80" y="203" width="202" height="26" rx="5" fill="#6366f1" opacity="0.16"/>
+  <rect x="80" y="203" width="202" height="26" rx="5" fill="none" stroke="#f87171" stroke-width="1.5"/>
+  <line x1="90" y1="211" x2="98" y2="221" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="98" y1="211" x2="90" y2="221" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="80" y="236" width="118" height="6" rx="3" fill="#f87171" opacity="0.55"/>
+
+  <rect x="80" y="262" width="88" height="7" rx="3.5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="80" y="277" width="202" height="42" rx="5" fill="#6366f1" opacity="0.12"/>
+
+  <path d="M318 196 L392 196" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M384 189 L392 196 L384 203" fill="none" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+
+  <rect x="404" y="150" width="150" height="48" rx="8" fill="#4ade80" opacity="0.14"/>
+  <rect x="404" y="150" width="150" height="48" rx="8" fill="none" stroke="#4ade80" stroke-width="1.6"/>
+  <polyline points="422,174 431,183 448,163" fill="none" stroke="#4ade80" stroke-width="2.8" stroke-linecap="round"/>
+  <rect x="462" y="167" width="72" height="7" rx="3.5" fill="#4ade80" opacity="0.5"/>
+  <rect x="462" y="180" width="48" height="5" rx="2.5" fill="#f5f0e8" opacity="0.25"/>
+
+  <path d="M566 174 L640 174" stroke="#f87171" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="7 6"/>
+  <line x1="596" y1="156" x2="614" y2="192" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+  <line x1="614" y1="156" x2="596" y2="192" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+
+  <rect x="652" y="138" width="104" height="72" rx="9" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="652" y="138" width="104" height="72" rx="9" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.8"/>
+  <path d="M668 160 L704 182 L740 160" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
+
+  <rect x="404" y="258" width="352" height="84" rx="10" fill="#6366f1" opacity="0.09"/>
+  <rect x="404" y="258" width="352" height="84" rx="10" fill="none" stroke="#6366f1" stroke-width="1.4" opacity="0.55"/>
+  <circle cx="440" cy="300" r="17" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <circle cx="440" cy="300" r="6" fill="#6366f1"/>
+  <rect x="474" y="284" width="150" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="474" y="300" width="248" height="6" rx="3" fill="#f5f0e8" opacity="0.18"/>
+  <rect x="474" y="314" width="196" height="6" rx="3" fill="#f5f0e8" opacity="0.18"/>
+</svg>

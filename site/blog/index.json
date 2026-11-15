@@ -1069,5 +1069,12 @@
     "excerpt": "AI slop code is AI-generated code that looks correct and compiles but was never verified against a real requirement. Here is how to spot and fix it.",
     "category": "Learn",
     "date": "2026-11-14"
+  },
+  {
+    "slug": "ai-form-testing",
+    "title": "AI Form Testing: Catch Broken Forms Before Clients Do",
+    "excerpt": "AI form testing uses AI agents to fill, submit and verify your forms end to end, catching silent submit failures before a client finds them.",
+    "category": "Guides",
+    "date": "2026-11-15"
   }
 ]
