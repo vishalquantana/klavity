@@ -92,6 +92,12 @@ export interface WalkOptions {
    */
   deadlineMs?: number
   /**
+   * Treat `deadlineMs` as the MINIMUM budget and grow it with the trail's step count (see scaledWalkDeadlineMs).
+   * Opt-in so the engine suite's tiny test deadlines are unaffected; the real callers (manual/scheduled walks and
+   * the AutoSim Verification Walk) set it. A 17-step PX4 flow needs more than a flat 120-180s on a slow QA site.
+   */
+  scaleDeadlineWithSteps?: boolean
+  /**
    * Plan G — trigger reconciliation. When present, the runner ADOPTS this pre-created Walk row (from
    * runWalkNow's startWalk) instead of calling startWalk itself, so the run_steps / replay / verdict
    * all land on the runId the caller already holds. Absent (every existing caller) → unchanged: the
@@ -707,6 +713,17 @@ async function applyNetworkMocks(page: Page, mocks: NetworkMock[]) {
  * Opens the page once, replays each step (Tier 0 cache -> Tier 1 heal), evaluates checkpoints,
  * writes run_steps + the Walk verdict via Layer A, returns a summary. Zero LLM.
  */
+/** Per-walk budget model: a fixed setup allowance plus time per step, never below the caller's floor, capped. */
+const WALK_DEADLINE_FIXED_MS = 60_000
+const WALK_DEADLINE_PER_STEP_MS = 12_000
+const WALK_DEADLINE_MAX_MS = Number(process.env.AUTOSIM_WALK_MAX_MS) || 600_000
+export function scaledWalkDeadlineMs(baseMs: number, stepCount: number): number {
+  if (!(baseMs > 0)) return baseMs
+  const steps = Number.isFinite(stepCount) ? Math.max(0, stepCount) : 0
+  const scaled = WALK_DEADLINE_FIXED_MS + WALK_DEADLINE_PER_STEP_MS * steps
+  return Math.max(baseMs, Math.min(WALK_DEADLINE_MAX_MS, scaled))
+}
+
 export async function walkTrail(projectId: string, trailId: string, opts: WalkOptions): Promise<WalkSummary> {
   const trail = await getTrail(projectId, trailId)
   if (!trail) throw new Error(`trail ${trailId} not found in project ${projectId}`)
@@ -774,7 +791,8 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   // Walk summary is never silent. Reasons accumulate per-step and are surfaced in `finishWalk` below.
   const redReasons: string[] = []
   // Plan G hard per-walk deadline: a wall-clock budget checked at the top of each step. Infinity = off.
-  const deadline = opts.deadlineMs ? Date.now() + opts.deadlineMs : Infinity
+  const deadlineBudgetMs = opts.deadlineMs && opts.scaleDeadlineWithSteps ? scaledWalkDeadlineMs(opts.deadlineMs, steps.length) : opts.deadlineMs
+  const deadline = deadlineBudgetMs ? Date.now() + deadlineBudgetMs : Infinity
   let deadlineHit = false
   let cancelledBySignal = false
   // KLAVITYKLA-397..401: set when a step fails because the browser/CDP connection dropped mid-walk (an

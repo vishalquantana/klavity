@@ -77,7 +77,7 @@ const realWalk: WalkFn = async (projectId, trailId, runId) => {
   const vision = configuredVisionResolver()
   const signal = getCurrentWalkAbortSignal() ?? undefined
   const s = await walkTrail(projectId, trailId, {
-    fixtureUrl: trail.baseUrl, replay: true, launchArgs: CHROMIUM_PROD_ARGS, deadlineMs: WALK_DEADLINE_MS, runId,
+    fixtureUrl: trail.baseUrl, replay: true, launchArgs: CHROMIUM_PROD_ARGS, deadlineMs: WALK_DEADLINE_MS, scaleDeadlineWithSteps: true, runId,
     stepShots: true, signal, liveWatch: true,
     ...(vision ? { vision } : {}),
   })

@@ -7,7 +7,7 @@
 import { crystallize, type Trajectory, type TrajectoryStep } from "./trails-crystallize"
 import { deleteTrail, setTrailStatus } from "./trails"
 import { ToolError } from "./mcp/tool-error"
-import { walkTrail } from "./trails-runner"
+import { walkTrail, scaledWalkDeadlineMs } from "./trails-runner"
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { getTestAccountByName } from "./test-accounts"
 import { sha256hex } from "./crypto"
@@ -64,13 +64,14 @@ const EMPTY_SNAPSHOT_RECAPTURE_MS = 1_000
 // (last beat +87s, swept +267s). Pulse the heartbeat while the replay runs.
 const VERIFY_HEARTBEAT_MS = 30_000
 // The replay's own deadline is 180s (+ browser launch/teardown); stop pulsing after that plus a grace window.
-const VERIFY_HEARTBEAT_MAX_MS = 180_000 + 90_000
+const VERIFY_WALK_DEADLINE_MS = 180_000 // floor; walkTrail grows it with the step count (scaleDeadlineWithSteps)
+const VERIFY_HEARTBEAT_GRACE_MS = 90_000
 /** Run `fn` while calling `beat` every `everyMs`; always stops the pulse (even if `fn` throws). */
 export async function withHeartbeat<T>(
   fn: () => Promise<T>,
   beat: (() => void | Promise<void>) | undefined,
   everyMs = VERIFY_HEARTBEAT_MS,
-  maxMs = VERIFY_HEARTBEAT_MAX_MS,
+  maxMs = scaledWalkDeadlineMs(VERIFY_WALK_DEADLINE_MS, 0) + VERIFY_HEARTBEAT_GRACE_MS,
 ): Promise<T> {
   const startedAt = Date.now()
   let timer: ReturnType<typeof setInterval> | null = null
@@ -1385,7 +1386,7 @@ export async function authorTrail(
     let v: Awaited<ReturnType<typeof walkTrail>>
     try {
       v = await withHeartbeat(() => (opts.verificationWalk ?? walkTrail)(projectId, trailId, {
-        fixtureUrl: req.baseUrl, suppressFindings: true, credResolver, deadlineMs: 180_000,
+        fixtureUrl: req.baseUrl, suppressFindings: true, credResolver, deadlineMs: VERIFY_WALK_DEADLINE_MS, scaleDeadlineWithSteps: true,
         launchArgs, headless: opts.headless, replay: true,
         // KD-2255: per-step screenshots, same as a manual Run, so the verification PDF shows each step.
         stepShots: true,
@@ -1394,7 +1395,7 @@ export async function authorTrail(
         // Replay any `upload` steps against the same fixtures the drive used.
         ...(opts.fileResolver ? { fileResolver: opts.fileResolver } : {}),
         ...(vision ? { vision } : {}),
-      }), opts.onHeartbeat)
+      }), opts.onHeartbeat, VERIFY_HEARTBEAT_MS, scaledWalkDeadlineMs(VERIFY_WALK_DEADLINE_MS, traj.length) + VERIFY_HEARTBEAT_GRACE_MS)
     } catch (verificationErr: any) {
       try {
         await deleteTrail(projectId, trailId)
