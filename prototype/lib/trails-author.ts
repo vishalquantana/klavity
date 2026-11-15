@@ -53,6 +53,51 @@ const ACTION_TIMEOUT = 10_000
 // in-flight network to settle so the NEXT snapshot reflects the AJAX result. Bounded so a long-poll/websocket
 // site can't stall the walk. Mirrors the replay runner's post-action networkidle wait.
 const POST_ACTION_SETTLE_MS = 4_000
+// AutoSim "PX4 Valid Login": after selecting a company PX4 routes to /Resources and its React dashboard needs
+// several seconds to render; ONE 900ms re-capture still saw an empty snapshot and the model stalled with "cannot
+// confirm the dashboard loaded". Re-capture on a short interval for up to ~8s before handing the model a blank page.
+const EMPTY_SNAPSHOT_RECAPTURES = 8
+const EMPTY_SNAPSHOT_RECAPTURE_MS = 1_000
+// AutoSim "PX4 Valid Login": the drive loop beats the author-session heartbeat once per iteration, but the
+// Verification Walk that follows (up to 180s, zero iterations) never did - and the stale reaper's window is also
+// 180s - so a slow replay got the session swept to "failed: stale heartbeat" while it was still working
+// (last beat +87s, swept +267s). Pulse the heartbeat while the replay runs.
+const VERIFY_HEARTBEAT_MS = 30_000
+// The replay's own deadline is 180s (+ browser launch/teardown); stop pulsing after that plus a grace window.
+const VERIFY_HEARTBEAT_MAX_MS = 180_000 + 90_000
+/** Run `fn` while calling `beat` every `everyMs`; always stops the pulse (even if `fn` throws). */
+export async function withHeartbeat<T>(
+  fn: () => Promise<T>,
+  beat: (() => void | Promise<void>) | undefined,
+  everyMs = VERIFY_HEARTBEAT_MS,
+  maxMs = VERIFY_HEARTBEAT_MAX_MS,
+): Promise<T> {
+  const startedAt = Date.now()
+  let timer: ReturnType<typeof setInterval> | null = null
+  const stop = () => { if (timer) { clearInterval(timer); timer = null } }
+  if (beat) {
+    timer = setInterval(() => {
+      // Cap the pulse: a replay that is truly hung must go stale and be reaped, not look alive forever.
+      if (Date.now() - startedAt > maxMs) { stop(); return }
+      try { void Promise.resolve(beat()).catch(() => {}) } catch {}
+    }, everyMs)
+  }
+  try { return await fn() } finally { stop() }
+}
+/** Re-capture until the snapshot has real content (>= 8 chars) or the bounded retries run out. */
+export async function recaptureUntilContent(
+  first: string,
+  capture: () => Promise<string>,
+  tries = EMPTY_SNAPSHOT_RECAPTURES,
+  delayMs = EMPTY_SNAPSHOT_RECAPTURE_MS,
+): Promise<string> {
+  let dom = first
+  for (let i = 0; i < tries && dom.trim().length < 8; i++) {
+    await new Promise((r) => setTimeout(r, delayMs))
+    dom = await capture()
+  }
+  return dom
+}
 // KLA-129: stall if the exact same action (op+selector+value+url) fires this many consecutive
 // times without a different action in between - the model is stuck re-doing the same step.
 const LOOP_STALL_N = 3
@@ -646,10 +691,7 @@ export async function authorTrail(
       // KLA (BookJoy login stall): a mid-navigation / not-yet-rendered page yields an EMPTY snapshot
       // (observed live: /v2/login captured as sha256("")). Feeding the model a blank observation makes
       // it flail. Wait a beat and re-capture ONCE before proceeding, so the model acts on real content.
-      if (dom.trim().length < 8) {
-        await new Promise((r) => setTimeout(r, 900))
-        dom = await snapshotPatiently(page, "snapshot re-capture")
-      }
+      if (dom.trim().length < 8) dom = await recaptureUntilContent(dom, () => snapshotPatiently(page, "snapshot re-capture"))
       // KLA-786 (dialog-capture): surface any JS dialogs the previous action triggered (alert/confirm/
       // prompt). Many apps confirm a save via an alert the headless browser silently auto-dismisses
       // (BookJoy: "Customer notes updated"), leaving no DOM trace - so the loop couldn't tell the save
@@ -1318,9 +1360,10 @@ export async function authorTrail(
     // the flag explicitly too - a Verification Walk never files regardless of trail status.
     const vision = opts.verificationVision === false ? undefined : (opts.verificationVision ?? configuredVisionResolver())
     try { opts.onVerifying?.() } catch {}
+    opts.onHeartbeat?.() // reset the stale clock right as the (up to 180s) replay starts
     let v: Awaited<ReturnType<typeof walkTrail>>
     try {
-      v = await (opts.verificationWalk ?? walkTrail)(projectId, trailId, {
+      v = await withHeartbeat(() => (opts.verificationWalk ?? walkTrail)(projectId, trailId, {
         fixtureUrl: req.baseUrl, suppressFindings: true, credResolver, deadlineMs: 180_000,
         launchArgs, headless: opts.headless, replay: true,
         // KD-2255: per-step screenshots, same as a manual Run, so the verification PDF shows each step.
@@ -1330,7 +1373,7 @@ export async function authorTrail(
         // Replay any `upload` steps against the same fixtures the drive used.
         ...(opts.fileResolver ? { fileResolver: opts.fileResolver } : {}),
         ...(vision ? { vision } : {}),
-      })
+      }), opts.onHeartbeat)
     } catch (verificationErr: any) {
       try {
         await deleteTrail(projectId, trailId)

@@ -834,8 +834,24 @@ class PlaywrightHandle implements BrowserHandle {
   }
 }
 
+/**
+ * Runs IN the page (serialized by puppeteer's evaluate, so it must stay self-contained): focus the field and
+ * select ALL of its current text, so the next type() REPLACES it - what Playwright's fill() does. The old
+ * triple-click did not select anything on some React inputs (PX4's pre-filled login "identity" field), so a
+ * re-typed email was APPENDED ("a@b.coa@b.co") and Login failed.
+ */
+export function selectAllBody(node: any): void {
+  node.focus?.()
+  if (typeof node.select === "function") { node.select(); return }
+  const r = document.createRange()
+  r.selectNodeContents(node)
+  const s = getSelection()
+  s?.removeAllRanges()
+  s?.addRange(r)
+}
+
 // ── Puppeteer-over-CDP impl — remote browser (Steel). Actionability re-added via waitForSelector. ──
-class PuppeteerPage implements BrowserPage {
+export class PuppeteerPage implements BrowserPage {
   // KLA-786 (dialog-capture): mirror PlaywrightPage — capture JS dialog text before closing it. Puppeteer
   // does NOT auto-dismiss by default (a dialog can hang the page), so a handler is doubly important here.
   private dialogs: { type: string; message: string }[] = []
@@ -861,7 +877,7 @@ class PuppeteerPage implements BrowserPage {
   async click(selector: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }); await this.page.click(selector) }
   async fill(selector: string, value: string, timeoutMs: number, sensitive = false) {
     const el = await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs })
-    await el.click({ clickCount: 3 }).catch(() => {}) // select existing text so type() replaces it (mirrors fill)
+    await el.evaluate(selectAllBody).catch(() => {}) // select existing text so type() replaces it (mirrors fill)
     await el.type(value)
     if (sensitive) await el.evaluate((node: Element) => node.setAttribute("data-autosim-sensitive", "1")).catch(() => {})
   }
@@ -870,7 +886,7 @@ class PuppeteerPage implements BrowserPage {
   async keyPress(selector: string, key: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }); await this.page.focus(selector); await this.page.keyboard.press(key) }
   async clearField(selector: string, timeoutMs: number) {
     const el = await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs })
-    await el.click({ clickCount: 3 }).catch(() => {})
+    await el.evaluate(selectAllBody).catch(() => {})
     await this.page.keyboard.press("Backspace")
   }
   async setInputFiles(selector: string, files: string[], timeoutMs: number) {
@@ -991,6 +1007,29 @@ export class BrowserLaunchError extends Error {
     super(message)
     this.name = "BrowserLaunchError"
   }
+}
+
+/**
+ * The walk browser launch/connect never returned. Seen with Playwright's Chromium under Bun on Windows (the
+ * pipe/WebSocket transport hangs), which left the Verification Walk stuck BEFORE its first step with no heartbeat
+ * until the stale reaper killed the AutoSim as "stale heartbeat". A hung launch is not transient, so it is NOT retried.
+ */
+export class BrowserAcquireTimeoutError extends BrowserLaunchError {
+  constructor(readonly timeoutMs: number) {
+    super(
+      `The walk browser did not start within ${Math.round(timeoutMs / 1000)}s. Playwright's Chromium can hang on launch under Bun on Windows; ` +
+      `run the server where Playwright works (Linux/Node), or set AUTOSIM_CDP_URL to a remote browser. Override the wait with AUTOSIM_BROWSER_ACQUIRE_TIMEOUT_MS.`,
+    )
+    this.name = "BrowserAcquireTimeoutError"
+  }
+}
+
+/** Reject with BrowserAcquireTimeoutError if `p` has not settled within `ms` (the pending launch is abandoned). */
+export async function withAcquireTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([p, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new BrowserAcquireTimeoutError(ms)), ms) })])
+  } finally { if (timer) clearTimeout(timer) }
 }
 
 const REMOTE_HINT =
@@ -1325,6 +1364,8 @@ export interface WalkBrowserRetryOptions {
   attempts?: number
   /** Base backoff in ms for the jittered exponential backoff between attempts. Default 500. */
   baseDelayMs?: number
+  /** Per-attempt wall-clock limit for the launch/connect. Default 45s, or AUTOSIM_BROWSER_ACQUIRE_TIMEOUT_MS. */
+  attemptTimeoutMs?: number
   /** Injectable sleep (tests pass a no-op so retries are instant). */
   sleep?: (ms: number) => Promise<void>
   /** Injectable jitter source (tests). Default Math.random. */
@@ -1354,12 +1395,16 @@ export async function acquireWalkBrowser(
   const sleep = retry.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)))
   const rand = retry.rand ?? Math.random
   const acquire = retry.acquire ?? acquirePlaywrightBrowser
+  const envTimeout = Number(process.env.AUTOSIM_BROWSER_ACQUIRE_TIMEOUT_MS)
+  const attemptTimeoutMs = retry.attemptTimeoutMs ?? (Number.isFinite(envTimeout) && envTimeout > 0 ? envTimeout : 45_000)
   let lastErr: unknown
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      return await acquire(opts, retry.deps)
+      return await withAcquireTimeout(acquire(opts, retry.deps), attemptTimeoutMs)
     } catch (e) {
       lastErr = e
+      // A launch that hangs is not transient - fail fast instead of burning attempts x timeout.
+      if (e instanceof BrowserAcquireTimeoutError) break
       // Stop when we're out of attempts, or the failure is NOT a transient transport error.
       if (attempt >= attempts || !isInfraTransportError(e)) break
       // Jittered exponential backoff: base * 2^(attempt-1) * (0.5..1.5). Bounded — never unbounded.
