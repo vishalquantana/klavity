@@ -3,6 +3,7 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
+- [How to Add Tests to a Vibe-Coded App: A 6-Step Guide](https://klavity.in/blog/how-to-add-tests-to-a-vibe-coded-app) — Start with the two or three flows that cost you money if they break, write one end-to-end test each, and run them on every deploy.
 - [AI Form Testing: Catch Broken Forms Before Clients Do](https://klavity.in/blog/ai-form-testing) — AI form testing uses AI agents to fill, submit and verify your forms end to end, catching silent submit failures before a client finds them.
 - [What Is AI Slop Code? Definition, Signs, and Fixes](https://klavity.in/blog/what-is-ai-slop-code) — AI slop code is AI-generated code that looks correct and compiles but was never verified against a real requirement. Here is how to spot and fix it.
 - [Cypress Alternatives: 6 Options for Agencies in 2026](https://klavity.in/blog/cypress-alternatives) — The best Cypress alternatives are Playwright for a like-for-like swap, WebdriverIO or Selenium for WebDriver, and AI QA when nobody maintains tests.

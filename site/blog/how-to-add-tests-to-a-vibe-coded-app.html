@@ -1,0 +1,214 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Add Tests to a Vibe-Coded App: A 6-Step Guide · Klavity</title>
+<meta name="description" content="Start with the two or three flows that cost you money if they break, write one end-to-end test each, and run them on every deploy.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-add-tests-to-a-vibe-coded-app">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Add Tests to a Vibe-Coded App: A 6-Step Guide"><meta property="og:description" content="Start with the two or three flows that cost you money if they break, write one end-to-end test each, and run them on every deploy.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-add-tests-to-a-vibe-coded-app"><meta property="og:image" content="https://klavity.in/blog/how-to-add-tests-to-a-vibe-coded-app.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Add Tests to a Vibe-Coded App: A 6-Step Guide"><meta name="twitter:description" content="Start with the two or three flows that cost you money if they break, write one end-to-end test each, and run them on every deploy."><meta name="twitter:image" content="https://klavity.in/blog/how-to-add-tests-to-a-vibe-coded-app.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Add Tests to a Vibe-Coded App: A 6-Step Guide","description":"Start with the two or three flows that cost you money if they break, write one end-to-end test each, and run them on every deploy.","datePublished":"2026-11-16","dateModified":"2026-11-16","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/how-to-add-tests-to-a-vibe-coded-app.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-add-tests-to-a-vibe-coded-app","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Add Tests to a Vibe-Coded App: A 6-Step Guide","item":"https://klavity.in/blog/how-to-add-tests-to-a-vibe-coded-app"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-add-tests-to-a-vibe-coded-app"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How many tests does a vibe-coded app actually need?","acceptedAnswer":{"@type":"Answer","text":"For a small app, a defensible bar is one happy-path test per money path, one test per bug you have already fixed, and a suite that runs on every deploy in a few minutes. That is usually ten to twenty tests. Chasing a coverage percentage is the wrong goal, because coverage measures how much code runs during tests, not how much risk they remove."}},{"@type":"Question","name":"Should I write unit tests or end-to-end tests first?","acceptedAnswer":{"@type":"Answer","text":"End-to-end tests first. In a vibe-coded app, risk is concentrated in the glue between pieces: form submits that silently fail, auth redirects that loop, database writes that never land. Unit tests on helper functions are easier to write but least likely to catch the failures that reach users."}},{"@type":"Question","name":"Can I ask Cursor or Claude to write the tests for me?","acceptedAnswer":{"@type":"Answer","text":"Yes, but never let the same prompt write the feature and judge it. A model asked to add tests for existing code often asserts what the code currently does, bug included. Describe the expected behaviour in your own words from the user's point of view, ask for a test of that sentence, then read what comes back and reject tests that mock away the network or wait on fixed timers."}},{"@type":"Question","name":"My tests break every time I re-prompt. What am I doing wrong?","acceptedAnswer":{"@type":"Answer","text":"Usually the tests target markup rather than behaviour. Select elements by visible text, labels and roles instead of CSS classes or element paths, and assert on outcomes the user can see rather than on internal function calls. AI regenerates class names freely but rarely renames a button."}},{"@type":"Question","name":"What if I cannot write test code at all?","acceptedAnswer":{"@type":"Answer","text":"Two options beat nothing: a fixed written checklist you run against the deployed URL before every release, or AI persona testing that clicks the flows for you and reports what broke with reproduction steps."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-11-16</div>
+    <h1>How to Add Tests to a Vibe-Coded App: A 6-Step Guide</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="A vibe-coded app window above three end-to-end test lanes, two passing and one catching a bug">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="650" cy="80" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="120" cy="360" r="110" fill="#6366f1" opacity="0.05"/>
+
+  <rect x="56" y="44" width="300" height="150" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="56" y="44" width="300" height="150" rx="12" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+  <line x1="56" y1="74" x2="356" y2="74" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <circle cx="74" cy="59" r="4" fill="#f87171" opacity="0.8"/>
+  <circle cx="90" cy="59" r="4" fill="#f5f0e8" opacity="0.4"/>
+  <circle cx="106" cy="59" r="4" fill="#f5f0e8" opacity="0.4"/>
+  <rect x="78" y="96" width="150" height="9" rx="4" fill="#6366f1" opacity="0.75"/>
+  <rect x="78" y="118" width="210" height="8" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="78" y="136" width="180" height="8" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="78" y="158" width="92" height="20" rx="6" fill="#6366f1" opacity="0.85"/>
+
+  <path d="M372 120 H430" stroke="#6366f1" stroke-width="2" opacity="0.8"/>
+  <path d="M422 113 L432 120 L422 127 Z" fill="#6366f1"/>
+
+  <rect x="446" y="44" width="300" height="150" rx="12" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="446" y="44" width="300" height="150" rx="12" fill="none" stroke="#f5f0e8" stroke-width="1.2" opacity="0.28"/>
+  <path d="M470 78 l-14 14 l14 14" stroke="#4ade80" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M496 78 l14 14 l-14 14" stroke="#4ade80" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="528" y="86" width="140" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="470" y="118" width="200" height="8" rx="4" fill="#4ade80" opacity="0.55"/>
+  <rect x="470" y="138" width="152" height="8" rx="4" fill="#4ade80" opacity="0.35"/>
+  <rect x="470" y="158" width="118" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+
+  <rect x="56" y="240" width="690" height="46" rx="10" fill="#f5f0e8" opacity="0.045"/>
+  <circle cx="92" cy="263" r="13" fill="#4ade80" opacity="0.2"/>
+  <path d="M85 263 l5 5 l10 -11" stroke="#4ade80" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="124" y="259" width="420" height="8" rx="4" fill="#f5f0e8" opacity="0.25"/>
+  <rect x="660" y="255" width="56" height="16" rx="8" fill="#4ade80" opacity="0.3"/>
+
+  <rect x="56" y="298" width="690" height="46" rx="10" fill="#f5f0e8" opacity="0.045"/>
+  <circle cx="92" cy="321" r="13" fill="#4ade80" opacity="0.2"/>
+  <path d="M85 321 l5 5 l10 -11" stroke="#4ade80" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="124" y="317" width="330" height="8" rx="4" fill="#f5f0e8" opacity="0.25"/>
+  <rect x="660" y="313" width="56" height="16" rx="8" fill="#4ade80" opacity="0.3"/>
+
+  <rect x="56" y="356" width="690" height="46" rx="10" fill="#f87171" opacity="0.1"/>
+  <circle cx="92" cy="379" r="13" fill="#f87171" opacity="0.25"/>
+  <path d="M86 373 l12 12 M98 373 l-12 12" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+  <rect x="124" y="375" width="256" height="8" rx="4" fill="#f87171" opacity="0.5"/>
+  <rect x="660" y="371" width="56" height="16" rx="8" fill="#f87171" opacity="0.4"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>To add tests to a vibe-coded app, cover your money paths first: one end-to-end test per critical flow, driving the real UI and asserting the result the user sees. Skip unit tests until the end-to-end layer is covered, and add a test every time you fix a bug. Ten to twenty tests that run on every deploy will catch the regressions that re-prompting causes.</div>
+    <div class="prose"><p><strong>To add tests to a vibe-coded app, start with the two or three flows that would cost you money if they broke — signup, checkout, the main form — and cover each one with a single end-to-end test that drives the real UI.</strong> You do not need unit tests, a coverage target, or a testing framework decision before you start. The fastest path is: list your money paths, write one smoke test per path, run it on every deploy, and only then go deeper. An app built with Cursor, Lovable, Bolt, v0 or Replit usually has zero tests because the generator was never asked for them — not because the code resists testing. Adding the first three tests takes an afternoon and catches the class of bug that embarrasses you in front of users.</p>
+
+<h2>Why do vibe-coded apps end up with no tests at all?</h2>
+
+<p>AI coding tools optimise for a working screen, not a verified one. When you prompt "build me a booking page", the model produces the page; it does not produce the test that proves the booking actually saves. Unless you explicitly ask for tests, you get features only — and because each screen looks right in the preview, there is no moment where the absence of tests feels like a problem.</p>
+
+<p>The gap shows up later, in a specific way. Vibe-coded apps are built in long chains of re-prompts: you ask for a change, the model rewrites a chunk of code, and the screen you were looking at still works. The screen you <em>weren't</em> looking at is the one that broke. That is regression — exactly what tests exist to catch, and why "I clicked through it and it seemed fine" stops scaling after about the fifth re-prompt.</p>
+
+<h2>How do you add tests to a vibe-coded app that has none?</h2>
+
+<p>Work outside-in. The common mistake is starting with unit tests on helper functions — the easiest things to test, and the least likely to break your product. In a vibe-coded app the risk is concentrated in the glue: form submits that silently fail, auth redirects that loop, database writes that never land, API keys that work locally and not in production. All of that lives at the end-to-end layer.</p>
+
+<p>Here is the order that gets you protection fastest:</p>
+
+<ol>
+  <li><strong>List your money paths.</strong> Write down every flow where a failure costs you a user, a payment, or a client call. For most small apps that is three to five flows, not thirty.</li>
+  <li><strong>Write one happy-path test per flow.</strong> Load the page, fill the form the way a real user would, submit, and assert that the <em>result</em> appeared — the confirmation message, the new row in the list, the redirect. Asserting on the result, not on a spinner, is what makes the test meaningful.</li>
+  <li><strong>Add the obvious unhappy path.</strong> One test per flow that submits bad input and asserts a clear error shows. AI-generated forms very often validate on the client and forget the server, so this test earns its keep immediately.</li>
+  <li><strong>Wire the tests into your deploy.</strong> A test suite that only runs when you remember it is a document, not a safety net. Run it on every push, before the deploy completes.</li>
+  <li><strong>Add a test every time you fix a bug.</strong> This is the single highest-leverage habit. The bug you just fixed is, by definition, a bug your app is capable of having; a test pins it shut.</li>
+  <li><strong>Only then go narrower.</strong> Once the end-to-end layer is covered, unit tests on pricing maths, date handling and permission checks are worth writing — those are the places where a wrong answer looks like a right one.</li>
+</ol>
+
+<h2>Which flows should you test first?</h2>
+
+<p>If you are not sure which flows qualify, this is a reasonable default ranking for a small app:</p>
+
+<table>
+  <thead>
+    <tr><th>Flow</th><th>What breaks silently</th><th>Test first?</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Signup / login</td><td>Redirect loops, session not persisting, OAuth callback misconfigured in production</td><td>Yes — nothing else matters if users can't get in</td></tr>
+    <tr><td>Checkout / payment</td><td>Webhook not handled, order created but never marked paid</td><td>Yes</td></tr>
+    <tr><td>Primary form (contact, booking, upload)</td><td>Submit returns 200 but nothing is written; email never sends</td><td>Yes</td></tr>
+    <tr><td>Data list / dashboard</td><td>Empty state shown to users who do have data; wrong user's data shown</td><td>Second pass</td></tr>
+    <tr><td>Settings, profile edits</td><td>Save appears to work, value reverts on reload</td><td>Second pass</td></tr>
+    <tr><td>Marketing pages</td><td>Broken links, dead CTAs</td><td>Cheap to check, low severity</td></tr>
+  </tbody>
+</table>
+
+<p>Note what is missing from the top of that list: styling, responsive layout, animation. Those matter, but they fail <em>visibly</em>. Tests are most valuable where failure is invisible.</p>
+
+<h2>Should you ask the AI to write the tests for you?</h2>
+
+<p>Yes, with one rule: never let the same prompt write the feature and judge the feature. If you ask a model to "add tests for this page", it will frequently write tests that assert what the code currently does — including the bug. A test generated from the implementation is a screenshot of the implementation, not a specification.</p>
+
+<p>The way to get useful tests out of an AI tool is to describe the behaviour in your own words first, from the user's point of view, and ask it to write a test for that sentence. "When a logged-out visitor submits the contact form with a valid email, they see a confirmation message and a row appears in the submissions table" is a testable specification. "Add tests for ContactForm.tsx" is not.</p>
+
+<p>Then read what comes back. A test that passes because it asserts <code>true</code>, mocks the entire network layer, or waits for a fixed two seconds is worse than no test, because it buys false confidence. We cover the review habits that catch this in <a href="/blog/how-to-review-ai-generated-code">how to review AI-generated code</a>.</p>
+
+<h2>How do you keep tests from breaking every time you re-prompt?</h2>
+
+<p>This is the real objection, and it is a fair one. If your workflow is "re-prompt until it looks right", a brittle test suite will break constantly and you will delete it within a week. Three things make tests survive re-prompting:</p>
+
+<ul>
+  <li><strong>Select by what the user sees, not by how the markup is built.</strong> Target visible text, labels and roles — "the button that says Book now" — rather than CSS classes or deep element paths. AI regenerates class names freely; it rarely renames the button.</li>
+  <li><strong>Assert on outcomes, not on internals.</strong> A test that checks "the confirmation text appeared" survives a rewrite of the component. A test that checks which function was called does not.</li>
+  <li><strong>Keep the suite small on purpose.</strong> Five tests you trust and maintain beat fifty you ignore. Every test you add is a thing that can break for the wrong reason.</li>
+</ul>
+
+<p>If your selectors still break every other deploy, that is the problem self-healing tests exist to solve — <a href="/autosim">AutoSim</a> re-anchors a test to the element a human would have clicked instead of failing the run, so a renamed class doesn't read as a product bug.</p>
+
+<h2>What if you can't write test code at all?</h2>
+
+<p>Plenty of people shipping vibe-coded apps are not going to open a test file, and that is a legitimate position. You still have two options that are strictly better than nothing.</p>
+
+<p>The first is a written manual pass: a short, fixed list of steps you run before every deploy, in the same order, on the deployed URL rather than localhost. Slow and boring, but repeatable — which is the property that matters. Our <a href="/blog/vibe-coding-qa-checklist">vibe coding QA checklist</a> is a ready-made version.</p>
+
+<p>The second is to let AI personas do the clicking. <a href="/sims">Sims</a> runs your flows as simulated users against the live site — filling forms, following links, trying paths you didn't think to try — and reports what broke, with steps to reproduce. It covers the same ground as a smoke suite without you writing one. And when a user does hit something, <a href="/snap">Snap</a> turns their right-click into a bug report that already carries the console errors, network calls and environment details.</p>
+
+<h2>What does "enough tests" look like for a small app?</h2>
+
+<p>For a solo founder or a small agency build, a defensible bar is: every money path has a happy-path test, every bug you have ever fixed has a test, and the suite runs on every deploy in a few minutes. That is maybe ten to twenty tests. It will not catch everything — it will catch the regressions that come from re-prompting, which is the failure mode that actually affects you.</p>
+
+<p>Chasing a coverage percentage is the wrong goal. Coverage measures how much code your tests execute, not how much risk they remove — and in an AI-generated codebase full of boilerplate, a high number is easy to reach and tells you almost nothing. For the broader picture, see <a href="/blog/testing-ai-generated-code">testing AI-generated code</a> or our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>Start with one test today</h2>
+
+<p>Pick the flow that would be most embarrassing to break. Write one test that proves it works. Run it on your next deploy. That single test puts you ahead of most vibe-coded apps in production, and it makes the second one easier to write.</p>
+
+<p>If you would rather have the clicking done for you, <a href="/onboarding"><strong>try Klavity free</strong></a> — point it at your app and get a list of what's broken before your users find it.</p>
+</div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>List your money paths and write one end-to-end test for each before anything else</li><li>Assert on the result the user sees, not on spinners or internal function calls</li><li>Add a regression test every time you fix a bug — that habit compounds fastest</li><li>Select elements by visible text and roles so tests survive re-prompting</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>How many tests does a vibe-coded app actually need?</summary><p>For a small app, a defensible bar is one happy-path test per money path, one test per bug you have already fixed, and a suite that runs on every deploy in a few minutes. That is usually ten to twenty tests. Chasing a coverage percentage is the wrong goal, because coverage measures how much code runs during tests, not how much risk they remove.</p></details><details><summary>Should I write unit tests or end-to-end tests first?</summary><p>End-to-end tests first. In a vibe-coded app, risk is concentrated in the glue between pieces: form submits that silently fail, auth redirects that loop, database writes that never land. Unit tests on helper functions are easier to write but least likely to catch the failures that reach users.</p></details><details><summary>Can I ask Cursor or Claude to write the tests for me?</summary><p>Yes, but never let the same prompt write the feature and judge it. A model asked to add tests for existing code often asserts what the code currently does, bug included. Describe the expected behaviour in your own words from the user's point of view, ask for a test of that sentence, then read what comes back and reject tests that mock away the network or wait on fixed timers.</p></details><details><summary>My tests break every time I re-prompt. What am I doing wrong?</summary><p>Usually the tests target markup rather than behaviour. Select elements by visible text, labels and roles instead of CSS classes or element paths, and assert on outcomes the user can see rather than on internal function calls. AI regenerates class names freely but rarely renames a button.</p></details><details><summary>What if I cannot write test code at all?</summary><p>Two options beat nothing: a fixed written checklist you run against the deployed URL before every release, or AI persona testing that clicks the flows for you and reports what broke with reproduction steps.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

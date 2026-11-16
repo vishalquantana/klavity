@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="A vibe-coded app window above three end-to-end test lanes, two passing and one catching a bug">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="650" cy="80" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="120" cy="360" r="110" fill="#6366f1" opacity="0.05"/>
+
+  <rect x="56" y="44" width="300" height="150" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="56" y="44" width="300" height="150" rx="12" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+  <line x1="56" y1="74" x2="356" y2="74" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <circle cx="74" cy="59" r="4" fill="#f87171" opacity="0.8"/>
+  <circle cx="90" cy="59" r="4" fill="#f5f0e8" opacity="0.4"/>
+  <circle cx="106" cy="59" r="4" fill="#f5f0e8" opacity="0.4"/>
+  <rect x="78" y="96" width="150" height="9" rx="4" fill="#6366f1" opacity="0.75"/>
+  <rect x="78" y="118" width="210" height="8" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="78" y="136" width="180" height="8" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="78" y="158" width="92" height="20" rx="6" fill="#6366f1" opacity="0.85"/>
+
+  <path d="M372 120 H430" stroke="#6366f1" stroke-width="2" opacity="0.8"/>
+  <path d="M422 113 L432 120 L422 127 Z" fill="#6366f1"/>
+
+  <rect x="446" y="44" width="300" height="150" rx="12" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="446" y="44" width="300" height="150" rx="12" fill="none" stroke="#f5f0e8" stroke-width="1.2" opacity="0.28"/>
+  <path d="M470 78 l-14 14 l14 14" stroke="#4ade80" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M496 78 l14 14 l-14 14" stroke="#4ade80" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="528" y="86" width="140" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="470" y="118" width="200" height="8" rx="4" fill="#4ade80" opacity="0.55"/>
+  <rect x="470" y="138" width="152" height="8" rx="4" fill="#4ade80" opacity="0.35"/>
+  <rect x="470" y="158" width="118" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+
+  <rect x="56" y="240" width="690" height="46" rx="10" fill="#f5f0e8" opacity="0.045"/>
+  <circle cx="92" cy="263" r="13" fill="#4ade80" opacity="0.2"/>
+  <path d="M85 263 l5 5 l10 -11" stroke="#4ade80" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="124" y="259" width="420" height="8" rx="4" fill="#f5f0e8" opacity="0.25"/>
+  <rect x="660" y="255" width="56" height="16" rx="8" fill="#4ade80" opacity="0.3"/>
+
+  <rect x="56" y="298" width="690" height="46" rx="10" fill="#f5f0e8" opacity="0.045"/>
+  <circle cx="92" cy="321" r="13" fill="#4ade80" opacity="0.2"/>
+  <path d="M85 321 l5 5 l10 -11" stroke="#4ade80" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="124" y="317" width="330" height="8" rx="4" fill="#f5f0e8" opacity="0.25"/>
+  <rect x="660" y="313" width="56" height="16" rx="8" fill="#4ade80" opacity="0.3"/>
+
+  <rect x="56" y="356" width="690" height="46" rx="10" fill="#f87171" opacity="0.1"/>
+  <circle cx="92" cy="379" r="13" fill="#f87171" opacity="0.25"/>
+  <path d="M86 373 l12 12 M98 373 l-12 12" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+  <rect x="124" y="375" width="256" height="8" rx="4" fill="#f87171" opacity="0.5"/>
+  <rect x="660" y="371" width="56" height="16" rx="8" fill="#f87171" opacity="0.4"/>
+</svg>

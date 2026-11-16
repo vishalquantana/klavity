@@ -1076,5 +1076,12 @@
     "excerpt": "AI form testing uses AI agents to fill, submit and verify your forms end to end, catching silent submit failures before a client finds them.",
     "category": "Guides",
     "date": "2026-11-15"
+  },
+  {
+    "slug": "how-to-add-tests-to-a-vibe-coded-app",
+    "title": "How to Add Tests to a Vibe-Coded App: A 6-Step Guide",
+    "excerpt": "Start with the two or three flows that cost you money if they break, write one end-to-end test each, and run them on every deploy.",
+    "category": "Guides",
+    "date": "2026-11-16"
   }
 ]
