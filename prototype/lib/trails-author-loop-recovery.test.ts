@@ -1311,3 +1311,60 @@ test("(H) a click that never resolves times out as a failed step and the run con
   expect(clicks).toBeGreaterThanOrEqual(2)
   expect(took).toBeLessThan(40_000)            // bounded at ~18s, far inside the 180s stale window
 }, 60_000)
+
+// ── (I) "Click the 1st check box" is ONE step: a different record in the same position later is rejected ──────────────────────
+// Dev 2026-11-16 (v11): after Save the list reloaded, a new first row sat in the same place, and the model ran select -> complete ->
+// save again, completing a 2nd (then starting a 3rd) pending action. The objective asked for it once.
+
+function checkboxPage() {
+  const page = makeStuckPage({})
+  ;(page as any).count = async (sel: string) => (sel === "#c1" || sel === "#c2" ? 1 : 0)
+  ;(page as any).fingerprint = async (sel: string) => ({
+    domPath: "tr:nth-of-type(1)>td:nth-of-type(1)>input:nth-of-type(1)", inputType: "checkbox", accessibleName: "", text: "", role: undefined, id: sel.slice(1),
+  })
+  ;(page as any).isChecked = async () => false
+  ;(page as any).stableSelector = async (sel: string) => sel
+  return page
+}
+const checkboxModel = (): AuthorModel => {
+  let n = 0
+  return async () => {
+    n++
+    if (n === 1) return { action: { op: "click", selector: "#c1", value: null, url: null, checkpoint: null, rationale: "first checkbox" }, costUsd: 0 }
+    if (n === 2) return { action: { op: "click", selector: "#c2", value: null, url: null, checkpoint: null, rationale: "first checkbox again (new first row)" }, costUsd: 0 }
+    return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "done" }, costUsd: 0 }
+  }
+}
+const verifierOk = async () => ({ achieved: true, reason: "", costUsd: 0 })
+
+test("(I1) the same checkbox position is not selected a 2nd time for a different record", async () => {
+  const page = checkboxPage()
+  const { handle } = makeBrowserHandle(page)
+  const out = await authorTrail("proj_loop_i1", { name: "Once", objective: "Click on the 1st check box on the pending actions page.", baseUrl: "https://example.com/p" }, {
+    model: checkboxModel(), verifier: verifierOk, browserFactory: async () => handle, shotUploader: async () => ({ key: "test" }), ...noSleepOpts,
+    verificationVision: false as const, headless: true,
+  })
+  expect(page.clickLog.filter((s) => s === "#c1").length).toBe(1)
+  expect(page.clickLog.includes("#c2")).toBe(false) // rejected, never executed
+  expect(out.status).toBe("crystallized")
+})
+
+test("(I2) the objective asking for several rows lets the second record through", async () => {
+  const page = checkboxPage()
+  const { handle } = makeBrowserHandle(page)
+  await authorTrail("proj_loop_i2", { name: "Two", objective: "Select the first two rows' check boxes on the pending actions page.", baseUrl: "https://example.com/p" }, {
+    model: checkboxModel(), verifier: verifierOk, browserFactory: async () => handle, shotUploader: async () => ({ key: "test" }), ...noSleepOpts,
+    verificationVision: false as const, headless: true,
+  })
+  expect(page.clickLog.includes("#c1")).toBe(true)
+  expect(page.clickLog.includes("#c2")).toBe(true)
+})
+
+test("(I3) multipleRowsRequested ignores the boilerplate words in a long objective", async () => {
+  const { multipleRowsRequested } = await import("./trails-author")
+  const boiler = "Execute each step in the exact sequence. Re-identify elements after every navigation. Do not consider the test successful merely because all clicks were executed. Click on the 1st check box on the pending actions page."
+  expect(multipleRowsRequested(boiler)).toBe(false)
+  expect(multipleRowsRequested("Select every row")).toBe(true)
+  expect(multipleRowsRequested("tick the first 3 check boxes")).toBe(true)
+  expect(multipleRowsRequested("check both boxes")).toBe(true)
+})

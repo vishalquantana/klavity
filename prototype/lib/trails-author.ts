@@ -119,6 +119,13 @@ export function allRowsRequested(objective: string): boolean {
   return /select[ _-]?all|check[ _-]?all|\ball (the )?(rows|items|actions|entries|records|checkboxes|check boxes)\b|\bevery (row|item|action)\b/i.test(objective || "")
 }
 
+/** True when the objective asks to act on more than one row/item (so selecting a second, different row is legitimate). */
+export function multipleRowsRequested(objective: string): boolean {
+  return allRowsRequested(objective) ||
+    // Only counts when tied to rows/items - the objective's boilerplate says "each step" / "every navigation" / "all clicks".
+    /\b(each|every|both|multiple|several|another|second|2nd|third|3rd)\s+(?:\w+\s+)?(row|item|action|record|entry|entries|check ?box|box)(es|s)?\b|\b(two|three|four|five|[2-9]|1\d)\s+(rows?|items?|actions?|entries|records|check ?boxes|boxes)\b|\bfirst\s+(two|three|[2-9])\b|\btwice\b/i.test(objective || "")
+}
+
 /** Re-capture until the snapshot has real content (>= 8 chars) or the bounded retries run out. */
 export async function recaptureUntilContent(
   first: string,
@@ -459,6 +466,7 @@ export async function authorTrail(
   // check box" was recorded twice). Remember the last checkbox click so an immediate repeat is skipped, not re-toggled.
   const clickedToggleKeys = new Set<string>() // checkboxes (selector|url) this run already clicked
   const toggleSkipCounts = new Map<string, number>() // consecutive repeat-clicks skipped per checkbox
+  const clickedCheckShapes = new Map<string, string>() // checkbox position (type|domPath|page) -> the selector first clicked there
   const PASSWORD_RECENCY_STEPS = 8
   // No-op stagnation tracking: detects when the page URL + DOM hash doesn't change across
   // iterations (the previous action had no visible effect). noOpCount resets on any real change.
@@ -1227,6 +1235,24 @@ export async function authorTrail(
           let skipRepeatNote: string | null = null
           if (a.op === "click") {
             const toggleKey = (fp as any)?.inputType === "checkbox" ? `${persistSelector ?? a.selector}|${page.url()}` : null
+            // "Click the 1st check box" is ONE step. After Save the list reloads and a NEW first row sits in the same position; the
+            // model read the instruction again and ran select -> complete -> save a 2nd time (dev v11 completed two qa2 actions).
+            // Same position (fingerprint path) on the same page but a DIFFERENT record = the step is already done: reject it, unless
+            // the objective actually asks for several rows.
+            const it = (fp as any)?.inputType
+            if ((it === "checkbox" || it === "radio") && (fp as any)?.domPath && !multipleRowsRequested(req.objective)) {
+              let pathKey = page.url(); try { pathKey = new URL(page.url()).pathname } catch {}
+              const shape = `${it}|${(fp as any).domPath}|${pathKey}`
+              const sel = persistSelector ?? a.selector!
+              const prev = clickedCheckShapes.get(shape)
+              if (prev && prev !== sel) {
+                throw new Error(
+                  "that step is already done: you already selected the checkbox in this position earlier in this run (the list now just shows the next record in the same place). " +
+                  "The objective asks for it once - do NOT repeat it. Continue with the objective's NEXT step, or finish with done if all steps are complete.",
+                )
+              }
+              if (!prev) clickedCheckShapes.set(shape, sel)
+            }
             // Skip only when a 2nd click would actually UN-select it: same checkbox as last time AND it is checked right now.
             // (If something since unchecked it - e.g. an intervening click that reset the page state - the click must go through,
             // or the box can never be re-selected and the run loops until its time budget runs out.)
