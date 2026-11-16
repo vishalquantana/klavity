@@ -454,6 +454,7 @@ export async function authorTrail(
   // A checkbox clicked twice in a row is UN-selected by the 2nd click (seen on PX4 Pending Actions: "click 1st
   // check box" was recorded twice). Remember the last checkbox click so an immediate repeat is skipped, not re-toggled.
   const clickedToggleKeys = new Set<string>() // checkboxes (selector|url) this run already clicked
+  const toggleSkipCounts = new Map<string, number>() // consecutive repeat-clicks skipped per checkbox
   const PASSWORD_RECENCY_STEPS = 8
   // No-op stagnation tracking: detects when the page URL + DOM hash doesn't change across
   // iterations (the previous action had no visible effect). noOpCount resets on any real change.
@@ -1227,10 +1228,16 @@ export async function authorTrail(
             // or the box can never be re-selected and the run loops until its time budget runs out.)
             const stillChecked = toggleKey && clickedToggleKeys.has(toggleKey) && page.isChecked
               ? await bounded(page.isChecked(a.selector!), 3_000, "checkbox state").catch(() => null) : null
-            if (stillChecked === true) skipRepeatNote = "skipped: that checkbox is already selected (clicking it again would un-select it). Continue with the next step."
-            else {
+            // Skip a repeat ONCE. If the model asks again it is because the first click did not take effect (dev, 2026-11-16: the
+            // box looked checked but the page never enabled COMPLETE, and skipping forever left the run stuck until its deadline), so
+            // let the next click through: it un-selects, and the one after that re-selects, giving the page a fresh change event.
+            const skippedBefore = toggleKey ? (toggleSkipCounts.get(toggleKey) ?? 0) : 0
+            if (stillChecked === true && skippedBefore < 1) {
+              skipRepeatNote = "skipped: that checkbox is already selected (clicking it again would un-select it). Continue with the next step."
+              toggleSkipCounts.set(toggleKey!, skippedBefore + 1)
+            } else {
               await page.click(a.selector!, ACTION_TIMEOUT)
-              if (toggleKey) clickedToggleKeys.add(toggleKey)
+              if (toggleKey) { clickedToggleKeys.add(toggleKey); toggleSkipCounts.set(toggleKey, 0) }
             }
           }
           if (a.op === "click") { /* handled above */ }
