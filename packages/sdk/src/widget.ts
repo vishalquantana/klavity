@@ -1448,6 +1448,9 @@ async function mount() {
     // `initialRecordings` keys in the buildModal options, so the later one silently dropped the arrived video.
     const arrivedNow = [...(opts?.initialRecordings || []), ...arrivedRecordings]
     arrivedRecordings = []
+    // KD-3080: a "Report Multiple Issues" walkthrough that finished after a page load — the composer analyses it.
+    const multiRecordingId = arrivedMultiId && arrivedNow.some((r) => r.id === arrivedMultiId) ? arrivedMultiId : undefined
+    if (multiRecordingId) arrivedMultiId = null
     const seedRecordings = mergeRecordings(ev?.recordings?.map((r) => ({ ...r })), arrivedNow)
     // The composer never echoes its seed back via onRecordingsChange, so persist an arrived video into the
     // session here — otherwise a later minimize/reload would lose it again.
@@ -1495,6 +1498,7 @@ async function mount() {
       autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0) && !opts?.initialRecordings?.length,
       // Saved session recordings + a "Record me" video that finished after the reporter navigated (see above).
       initialRecordings: seedRecordings.length ? seedRecordings : undefined,
+      initialMultiRecordingId: multiRecordingId,
       // #638: render the "Attach console logs" toggle (default OFF) in the composer. When the reporter enables
       // it, the submit payload carries attachConsole:true and onSubmit includes the captured console logs.
       consoleAttachToggle: true,
@@ -1663,7 +1667,7 @@ async function mount() {
       // (transcribe + AI issue extraction) and resolve the issues it found. Gated on the same reportClarity
       // toggle as Enhance (the server enforces it too). Long timeout: STT of a clip + an LLM call. Best-effort:
       // any failure resolves null so the composer keeps the single ticket.
-      onSplitRecording: (reportClarity && composerRecord) ? (async (audio: Blob, ctx?: { text?: string }) => {
+      onSplitRecording: (reportClarity && composerRecord) ? (async (audio: Blob, ctx?: { text?: string; frames?: Array<{ atSec: number; dataUrl: string }> }) => {
         try {
           const fd = new FormData()
           fd.append('projectId', cfg.projectId)
@@ -1671,6 +1675,8 @@ async function mount() {
           if (audio.type) fd.append('mime', audio.type)
           fd.append('pageUrl', location.href)
           if (ctx?.text) fd.append('text', ctx.text)
+          // KD-3080: screenshots sampled across the clip, so the analysis sees the screens being described.
+          if (ctx?.frames?.length) fd.append('frames', JSON.stringify(ctx.frames))
           const res = await fetchWithTimeout(cfg.backendUrl + '/api/report/split', { method: 'POST', body: fd }, 90000)
           if (!res.ok) return null
           const data = await res.json().catch(() => null)
@@ -1703,9 +1709,9 @@ async function mount() {
       // Opted-in embeds (data-record-mode="window") record in the Klavity recorder WINDOW (record-bridge.ts) so it
       // survives full page loads; the in-page recordMe() overlay is the fallback when the popup is blocked.
       // Every other embed uses recordMe() exactly as before.
-      onRecord: composerRecord ? ((onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => {
+      onRecord: composerRecord ? ((onPhase?: (phase: 'consent' | 'recording' | 'preview') => void, recOpts?: { purpose?: 'multi' }) => {
         if (!recBridge) return recordMe({ onPhase })
-        const viaWindow = recBridge.start(onPhase)
+        const viaWindow = recBridge.start(onPhase, recOpts?.purpose)
         if (viaWindow) return viaWindow
         if (recordingSupported()) return recordMe({ onPhase })
         evBanner("Allow pop-ups for this site to use Record me.")
@@ -2665,12 +2671,14 @@ async function mount() {
   // original composer is gone reopens the report — with the in-progress evidence session + draft — attached.
   // Only for embeds that opted in to the recorder window — elsewhere no bridge exists and nothing changes.
   let arrivedRecordings: ReportRecording[] = []
+  let arrivedMultiId: string | null = null // KD-3080: the arrived clip that is a "Report Multiple Issues" walkthrough
   const recBridge = !useRecorderWindow ? null : createRecordBridge({
     backendUrl: cfg.backendUrl,
     projectId: cfg.projectId,
     notify: (text) => evBanner(text),
-    onRecordingArrived: (rec) => {
+    onRecordingArrived: (rec, purpose) => {
       arrivedRecordings.push(rec)
+      if (purpose === 'multi' && rec.id) arrivedMultiId = rec.id
       if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) {
         evBanner("Your recording is ready — it will be attached the next time you open the report.")
         return
