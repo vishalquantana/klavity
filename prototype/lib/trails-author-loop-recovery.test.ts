@@ -1277,3 +1277,37 @@ test("(B2) loop-recovery: the auto-advance click is recorded in the trajectory (
   const clicks = steps.filter((s: any) => s.action === "click")
   expect(clicks.length).toBeGreaterThanOrEqual(1)                            // ... and it is in the saved trail
 })
+
+// ── (H) A page action that never settles must fail the STEP, not hang the run ─────────────────────
+// Dev 2026-11-16 ("complete a action" v9): the click on the company "Select" button never returned (a stuck browser call; Puppeteer's
+// own protocol timeout is 180s), the loop beat no heartbeat, and the reaper marked the session "stale heartbeat" 3 minutes later.
+
+test("(H) a click that never resolves times out as a failed step and the run continues", async () => {
+  const page = makeStuckPage({ submitSelector: 'button[type="submit"]' })
+  let clicks = 0
+  ;(page as any).click = async (selector: string) => {
+    clicks++
+    if (clicks === 1) return new Promise<void>(() => {}) // hangs forever, like a wedged CDP call
+    page.clickLog.push(selector)
+  }
+  const { handle } = makeBrowserHandle(page)
+
+  let calls = 0
+  const model: AuthorModel = async () => {
+    calls++
+    if (calls <= 2) return { action: { op: "click", selector: 'button[type="submit"]', value: null, url: null, checkpoint: null, rationale: "submit" }, costUsd: 0 }
+    return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "done" }, costUsd: 0 }
+  }
+  const verifier = async () => ({ achieved: true, reason: "", costUsd: 0 })
+
+  const t0 = Date.now()
+  const out = await authorTrail("proj_loop_h", { name: "Hang", objective: "submit the form", baseUrl: "https://example.com/login" }, {
+    model, verifier, browserFactory: async () => handle, shotUploader: async () => ({ key: "test" }), ...noSleepOpts,
+    verificationVision: false as const, headless: true,
+  })
+  const took = Date.now() - t0
+
+  expect(out.status).toBe("crystallized")      // the second click went through, the run finished
+  expect(clicks).toBeGreaterThanOrEqual(2)
+  expect(took).toBeLessThan(40_000)            // bounded at ~18s, far inside the 180s stale window
+}, 60_000)

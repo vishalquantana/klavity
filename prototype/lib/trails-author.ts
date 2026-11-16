@@ -50,6 +50,10 @@ const MAX_CONSECUTIVE_MISSES = 3
 const MAX_API_RETRIES = 3
 const MODEL_RETRY_BASE_MS = 1_000
 const ACTION_TIMEOUT = 10_000
+// Hard ceiling for one page action. ACTION_TIMEOUT only bounds the wait for the element; the browser call itself (click on a
+// page that is navigating, CDP stall) has no limit of its own - Puppeteer's protocol timeout is 180s, longer than the 3-min
+// stale-heartbeat window, so a stuck click got the session reaped as "stale heartbeat" (dev, 2026-11-16, after the company Select).
+const ACTION_HARD_TIMEOUT = ACTION_TIMEOUT + 8_000
 // KLA (BookJoy Save-loop): after a commit-style action (click/submit/select/upload), wait up to this long for
 // in-flight network to settle so the NEXT snapshot reflects the AJAX result. Bounded so a long-poll/websocket
 // site can't stall the walk. Mirrors the replay runner's post-action networkidle wait.
@@ -1236,7 +1240,7 @@ export async function authorTrail(
               skipRepeatNote = "skipped: that checkbox is already selected (clicking it again would un-select it). Continue with the next step."
               toggleSkipCounts.set(toggleKey!, skippedBefore + 1)
             } else {
-              await page.click(a.selector!, ACTION_TIMEOUT)
+              await bounded(page.click(a.selector!, ACTION_TIMEOUT), ACTION_HARD_TIMEOUT, "click")
               if (toggleKey) { clickedToggleKeys.add(toggleKey); toggleSkipCounts.set(toggleKey, 0) }
             }
           }
@@ -1249,7 +1253,7 @@ export async function authorTrail(
             // made the saved trail fragile on replay. Compare only; the value is never logged.
             const curVal = page.fieldValue ? await bounded(page.fieldValue(a.selector!), 3_000, "field value").catch(() => null) : null
             if (curVal && curVal === resolved) skipRepeatNote = "skipped: that field already contains exactly this value, so it was not typed again. Continue with the next step."
-            else await page.fill(a.selector!, resolved, ACTION_TIMEOUT)
+            else await bounded(page.fill(a.selector!, resolved, ACTION_TIMEOUT), ACTION_HARD_TIMEOUT, "type")
             // C2-1: AFTER a successful password fill, latch login-flow evidence (recency-bounded). Uses the
             // fields the PRODUCTION fingerprint actually returns (accessibleName/domPath) plus the credential
             // placeholder (test-account logins) and the stable selector - never the missing inputType/ariaLabel.
@@ -1257,11 +1261,11 @@ export async function authorTrail(
             if ((fp as any)?.inputType === "password" || /:password\}\}/i.test(raw) || /password/i.test(acc) || /password/i.test(persistSelector ?? "")) {
               lastPasswordTypeStep = log.length
             }
-          } else if (a.op === "select") await page.selectOption(a.selector!, a.value ?? "", ACTION_TIMEOUT)
-          else if (a.op === "assert") await page.assertVisible(a.selector!, ACTION_TIMEOUT)
-          else if (a.op === "hover") await page.hover(a.selector!, ACTION_TIMEOUT)
-          else if (a.op === "keyPress") await page.keyPress(a.selector!, a.value ?? "Enter", ACTION_TIMEOUT)
-          else if (a.op === "clearField") await page.clearField(a.selector!, ACTION_TIMEOUT)
+          } else if (a.op === "select") await bounded(page.selectOption(a.selector!, a.value ?? "", ACTION_TIMEOUT), ACTION_HARD_TIMEOUT, "select")
+          else if (a.op === "assert") await bounded(page.assertVisible(a.selector!, ACTION_TIMEOUT), ACTION_HARD_TIMEOUT, "assert")
+          else if (a.op === "hover") await bounded(page.hover(a.selector!, ACTION_TIMEOUT), ACTION_HARD_TIMEOUT, "hover")
+          else if (a.op === "keyPress") await bounded(page.keyPress(a.selector!, a.value ?? "Enter", ACTION_TIMEOUT), ACTION_HARD_TIMEOUT, "key press")
+          else if (a.op === "clearField") await bounded(page.clearField(a.selector!, ACTION_TIMEOUT), ACTION_HARD_TIMEOUT, "clear field")
           else if (a.op === "upload") {
             const fname = (a.value ?? "").trim()
             if (!opts.fileResolver) throw new Error("upload: this AutoSim has no attached file to upload")
