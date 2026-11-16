@@ -116,7 +116,19 @@ describe.skipIf(!RUN)("stableSelector last-resort path (real browser)", () => {
     const page = await open()
     await page.goto("data:text/html," + encodeURIComponent('<div id="list"><div><span><a href="/x">x</a></span></div><div><span><a href="/y">y</a></span></div></div>'), 15_000)
     const s = await page.stableSelector("a[href='/y']")
-    expect(s!.startsWith("#list>")).toBe(true)
+    expect(s!.startsWith("body>")).toBe(false)
+    expect(await page.count(s!)).toBe(1)
+  })
+  test("uses the shortest unique path, so a shifted body-level div does not break it (v15 Projects-nav drift)", async () => {
+    const NAV = (extra: string) => `<!doctype html><html><body>${extra}<div><p>a</p></div><div><nav><ul><li><a href="/h">Home</a></li><li><a href="/p">Projects</a></li></ul></nav></div><div><p>b</p></div></body></html>`
+    const page = await open()
+    await page.goto("data:text/html," + encodeURIComponent(NAV("")), 15_000)
+    const s = await page.stableSelector("a[href='/p']")
+    expect(s).not.toBeNull()
+    expect(s!.startsWith("body>")).toBe(false)
+    expect(await page.count(s!)).toBe(1)
+    // replay page: an extra overlay div shifts every body-level nth-of-type; the saved selector must still resolve to the same link
+    await page.goto("data:text/html," + encodeURIComponent(NAV("<div class='overlay'></div>")), 15_000)
     expect(await page.count(s!)).toBe(1)
   })
 })

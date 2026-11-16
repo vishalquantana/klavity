@@ -538,13 +538,21 @@ function stableSelectorBody(el: Element): string | null {
     while (sib) { if (sib.tagName === n.tagName) i++; sib = sib.previousElementSibling }
     return n.tagName.toLowerCase() + ":nth-of-type(" + i + ")"
   }
-  let path = seg(el), cur: Element | null = el.parentElement
+  // Prefer the SHORTEST unique suffix of that chain (dev v15: the full body-anchored path began with a positional
+  // `body>div:nth-of-type(6)` that drifted between author and replay -> a 93s vision heal). Fewer positional levels
+  // = less to drift. Walk up one level at a time and stop at the first suffix (>= 2 segments when available) that
+  // resolves to exactly `el`; fall back to the full anchored path.
+  let path = seg(el), cur: Element | null = el.parentElement, depth = 1
+  let anchored = ""
   while (cur && cur !== document.documentElement) {
-    if (cur === document.body) { path = "body>" + path; break }
-    if (cur.id) { const a = "#" + CSS.escape(cur.id); if (document.querySelectorAll(a).length === 1) { path = a + ">" + path; break } }
+    if (depth >= 2 && uniq(path)) return path
+    if (cur === document.body) { anchored = "body>" + path; break }
+    if (cur.id) { const a = "#" + CSS.escape(cur.id); if (document.querySelectorAll(a).length === 1) { anchored = a + ">" + path; break } }
     path = seg(cur) + ">" + path
+    depth++
     cur = cur.parentElement
   }
+  if (anchored) return uniq(anchored) ? anchored : null
   return uniq(path) ? path : null
 }
 
