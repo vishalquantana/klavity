@@ -20,7 +20,7 @@ import { expandModuleSteps } from "./trails-modules"
 import {
   getTrail, listTrailSteps, getCacheForStep, upsertLocatorCache,
   startWalk, addRunStep, mergeRunStepEvidence, finishWalk, recordFinding,
-  resolveEnvironmentUrl, pauseWalk, resumeWalk, getWalk,
+  resolveEnvironmentUrl, pauseWalk, resumeWalk, getWalk, resetWalkForRetry,
 } from "./trails"
 import { touchWalkHeartbeat, db, incrementUsageMeter, accountIdForAiCall, accountPlan, getProjectA11yEnabled } from "./db"
 import { runA11yScan, a11yUrlKey, AXE_SCAN_BUDGET_MS } from "./trails-a11y"
@@ -44,6 +44,8 @@ import { RunRecorder, shouldRecordWalk, captureAndPersistRecording } from "./tra
 import { WalkEvidenceCollector, type EvidenceOffsets, type WalkEvidenceSummary } from "./trails-walk-evidence"
 
 export interface WalkOptions {
+  /** Internal (walkTrailWithBrowserRetry): hold the infra "lost the browser" alert because a retry is about to run. */
+  _deferInfraAlert?: boolean
   _resolvedCreds?: Set<string>
   /** Concrete URL to walk against (overrides the trail's baseUrl). file:// or http(s)://. */
   fixtureUrl: string
@@ -276,6 +278,8 @@ export interface WalkSummary {
    */
   reasons: string[]
   failureKind?: FailureKind
+  /** True when the browser/CDP connection dropped mid-walk (infra, not a product result). walkTrailWithBrowserRetry re-runs these once. */
+  browserLost?: boolean
 }
 
 const CACHE_CONFIDENCE = 1.0
@@ -724,6 +728,31 @@ export function scaledWalkDeadlineMs(baseMs: number, stepCount: number): number 
   return Math.max(baseMs, Math.min(WALK_DEADLINE_MAX_MS, scaled))
 }
 
+/**
+ * Run a walk and, if the BROWSER dies mid-walk (infra: "Target page, context or browser has been closed", dropped CDP/socket), run
+ * it ONE more time on a fresh browser. Dev 2026-11-16: a replay that was green through step 9 lost its Chromium at step 10 and the
+ * AutoSim was reported red although the same trail replayed fine minutes later. Only an infra drop is retried - a real step failure,
+ * a deadline or a user cancel never is. The first attempt's "lost the browser" alert is held back (the retry will alert if it also fails).
+ *
+ * With a pre-created runId (manual/scheduled run) the same Walk row is re-armed so the UI that is polling it shows the retry;
+ * without one the retry is a new Walk row and the crashed one stays as the record of what happened.
+ */
+export async function walkTrailWithBrowserRetry(
+  projectId: string,
+  trailId: string,
+  opts: WalkOptions,
+  walkFn: (projectId: string, trailId: string, opts: WalkOptions) => Promise<WalkSummary> = walkTrail,
+): Promise<WalkSummary> {
+  const first = await walkFn(projectId, trailId, { ...opts, _deferInfraAlert: true })
+  if (!first.browserLost || opts.signal?.aborted) {
+    // Nothing to retry. A held-back alert only matters for the browserLost case, which is handled below.
+    return first
+  }
+  console.warn(`[trails-runner] walk ${first.runId} lost its browser mid-run; retrying once on a fresh browser`)
+  if (opts.runId) await resetWalkForRetry(projectId, opts.runId).catch((e) => console.warn("[trails-runner] retry reset failed:", String(e)))
+  return await walkFn(projectId, trailId, opts)
+}
+
 export async function walkTrail(projectId: string, trailId: string, opts: WalkOptions): Promise<WalkSummary> {
   const trail = await getTrail(projectId, trailId)
   if (!trail) throw new Error(`trail ${trailId} not found in project ${projectId}`)
@@ -1096,7 +1125,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     })
 
     if (walkVerdict === "red") {
-      notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now(), failureKind: walkFailureKind ?? undefined, ...(sawInfraDrop ? { browserUnavailable: true } : {}) }).catch(() => {})
+      if (!(sawInfraDrop && opts._deferInfraAlert)) notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now(), failureKind: walkFailureKind ?? undefined, ...(sawInfraDrop ? { browserUnavailable: true } : {}) }).catch(() => {})
     }
 
     // KLA-94: opt-in auto-file. Runs after finishWalk so the walk is already settled. Best-effort:
@@ -1111,7 +1140,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     }
     // KLAVITYKLA-126: mark a clean finish so the first-green HAR baseline is recorded only here.
     sawSuccessfulFinish = true
-    return { runId, verdict: walkVerdict, llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, ...(walkFailureKind ? { failureKind: walkFailureKind } : {}), ...(evSummary ? { evidence: evSummary } : {}) }
+    return { runId, verdict: walkVerdict, llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, ...(walkFailureKind ? { failureKind: walkFailureKind } : {}), ...(sawInfraDrop && walkVerdict === "red" && !deadlineHit && !cancelledBySignal ? { browserLost: true } : {}), ...(evSummary ? { evidence: evSummary } : {}) }
   } catch (e) {
     // Anything thrown (e.g. an unreachable fixtureUrl) must STILL finalize the run — never leave it
     // 'running'. The Walk is RED and the error is recorded in the summary for the trace viewer.
@@ -1128,8 +1157,8 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
       llmCalls,
       summary: { ...redReasons.length ? { reasons: redReasons } : {}, failureKind: failureKindForThrownError(e), error: String(e), browserKind: bh.kind, ...(infra ? { browserUnavailable: true } : {}), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) },
     })
-    notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now(), failureKind: failureKindForThrownError(e), ...(infra ? { browserUnavailable: true } : {}) }).catch(() => {})
-    return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, failureKind: failureKindForThrownError(e), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) }
+    if (!(infra && opts._deferInfraAlert)) notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now(), failureKind: failureKindForThrownError(e), ...(infra ? { browserUnavailable: true } : {}) }).catch(() => {})
+    return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, failureKind: failureKindForThrownError(e), ...(infra ? { browserLost: true } : {}), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) }
   } finally {
     // Usage meter (KLAVITYKLA-305): one 'autosim_walk' event per completed AutoSim/Trail walk
     // (any verdict). MEASUREMENT ONLY — fire-and-forget, never awaited, never blocks the walk.

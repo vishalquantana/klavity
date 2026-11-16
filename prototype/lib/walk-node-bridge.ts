@@ -28,7 +28,7 @@ export function shouldUseNodeWalkWorker(env: NodeJS.ProcessEnv = process.env, ve
 /** The JSON-serialisable subset of WalkOptions the worker understands (functions/signals are re-created inside it). */
 export function serializeWalkOptions(opts: WalkOptions): Record<string, unknown> {
   const o = opts as any
-  const keep = ["fixtureUrl", "replay", "launchArgs", "headless", "deadlineMs", "scaleDeadlineWithSteps", "runId", "stepShots", "suppressFindings", "environmentName"]
+  const keep = ["fixtureUrl", "replay", "launchArgs", "headless", "deadlineMs", "scaleDeadlineWithSteps", "runId", "stepShots", "suppressFindings", "environmentName", "_deferInfraAlert"]
   const out: Record<string, unknown> = {}
   for (const k of keep) if (o[k] !== undefined) out[k] = o[k]
   if (o.vision) out.vision = true

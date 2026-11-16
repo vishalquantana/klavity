@@ -11,7 +11,7 @@
 import { withWalkSlot, WalkBusyError, CHROMIUM_PROD_ARGS, setCurrentWalkRunId, getCurrentWalkAbortSignal } from "./trails-browser"
 import { ToolError } from "./mcp/tool-error"
 import { getTrail, startWalk, finishWalk, getWalk } from "./trails"
-import { walkTrail } from "./trails-runner"
+import { walkTrail, walkTrailWithBrowserRetry } from "./trails-runner"
 import type { Verdict } from "./trails-types"
 import { configuredVisionResolver } from "./trails-vision"
 import { shouldUseNodeWalkWorker, walkTrailViaNode } from "./walk-node-bridge"
@@ -78,11 +78,11 @@ const realWalk: WalkFn = async (projectId, trailId, runId) => {
   const vision = configuredVisionResolver()
   const signal = getCurrentWalkAbortSignal() ?? undefined
   // bun+Windows: Playwright can't drive a browser under Bun, so the replay runs in a Node worker (lib/walk-node-bridge.ts).
-  const s = await (shouldUseNodeWalkWorker() ? walkTrailViaNode : walkTrail)(projectId, trailId, {
+  const s = await walkTrailWithBrowserRetry(projectId, trailId, {
     fixtureUrl: trail.baseUrl, replay: true, launchArgs: CHROMIUM_PROD_ARGS, deadlineMs: WALK_DEADLINE_MS, scaleDeadlineWithSteps: true, runId,
     stepShots: true, signal, liveWatch: true,
     ...(vision ? { vision } : {}),
-  })
+  }, shouldUseNodeWalkWorker() ? walkTrailViaNode : walkTrail)
   return { verdict: s.verdict, llmCalls: s.llmCalls, summary: { ...(s.reasons.length ? { reasons: s.reasons } : {}) } }
 }
 

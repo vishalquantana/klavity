@@ -321,6 +321,18 @@ export async function finishWalk(projectId: string, runId: string, input: { stat
   })
 }
 
+/**
+ * Re-arm a finished Walk row for a second attempt (browser died mid-replay): drop the first attempt's step rows and put the
+ * row back to 'running' so the caller's runId (which the UI is polling) ends up showing the retry, not the crashed attempt.
+ */
+export async function resetWalkForRetry(projectId: string, runId: string): Promise<void> {
+  await db!.execute({ sql: `DELETE FROM run_steps WHERE project_id=? AND run_id=?`, args: [projectId, runId] })
+  await db!.execute({
+    sql: `UPDATE trail_runs SET status='running', llm_calls=0, summary_json=NULL, finished_at=NULL WHERE project_id=? AND id=?`,
+    args: [projectId, runId],
+  })
+}
+
 export async function getWalk(projectId: string, runId: string): Promise<Walk | null> {
   const r = await db!.execute({ sql: `SELECT * FROM trail_runs WHERE project_id=? AND id=?`, args: [projectId, runId] })
   return r.rows.length ? rowToWalk(r.rows[0]) : null

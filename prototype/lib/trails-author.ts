@@ -7,7 +7,7 @@
 import { crystallize, type Trajectory, type TrajectoryStep } from "./trails-crystallize"
 import { deleteTrail, setTrailStatus } from "./trails"
 import { ToolError } from "./mcp/tool-error"
-import { walkTrail, scaledWalkDeadlineMs } from "./trails-runner"
+import { walkTrail, walkTrailWithBrowserRetry, scaledWalkDeadlineMs } from "./trails-runner"
 import { shouldUseNodeWalkWorker, walkTrailViaNode } from "./walk-node-bridge"
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { getTestAccountByName } from "./test-accounts"
@@ -1484,7 +1484,8 @@ export async function authorTrail(
     opts.onHeartbeat?.() // reset the stale clock right as the (up to 180s) replay starts
     let v: Awaited<ReturnType<typeof walkTrail>>
     try {
-      v = await withHeartbeat(() => (opts.verificationWalk ?? (shouldUseNodeWalkWorker() ? walkTrailViaNode : walkTrail))(projectId, trailId, {
+      // A browser that dies mid-replay is retried once on a fresh browser (walkTrailWithBrowserRetry); a real step failure is not.
+      v = await withHeartbeat(() => walkTrailWithBrowserRetry(projectId, trailId, {
         fixtureUrl: req.baseUrl, suppressFindings: true, credResolver, deadlineMs: VERIFY_WALK_DEADLINE_MS, scaleDeadlineWithSteps: true,
         launchArgs, headless: opts.headless, replay: true,
         // KD-2255: per-step screenshots, same as a manual Run, so the verification PDF shows each step.
@@ -1494,7 +1495,9 @@ export async function authorTrail(
         // Replay any `upload` steps against the same fixtures the drive used.
         ...(opts.fileResolver ? { fileResolver: opts.fileResolver } : {}),
         ...(vision ? { vision } : {}),
-      }), opts.onHeartbeat, VERIFY_HEARTBEAT_MS, scaledWalkDeadlineMs(VERIFY_WALK_DEADLINE_MS, traj.length) + VERIFY_HEARTBEAT_GRACE_MS)
+      }, opts.verificationWalk ?? (shouldUseNodeWalkWorker() ? walkTrailViaNode : walkTrail)),
+      // x2: the one-time browser-loss retry can use a second full walk budget; keep pulsing the heartbeat through it.
+      opts.onHeartbeat, VERIFY_HEARTBEAT_MS, scaledWalkDeadlineMs(VERIFY_WALK_DEADLINE_MS, traj.length) * 2 + VERIFY_HEARTBEAT_GRACE_MS)
     } catch (verificationErr: any) {
       try {
         await deleteTrail(projectId, trailId)
