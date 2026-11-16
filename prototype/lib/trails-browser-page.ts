@@ -501,6 +501,9 @@ function fingerprintBody(el: Element): Fingerprint {
     accessibleName: accName || undefined, text: text || undefined,
     testId: el.getAttribute("data-testid") || undefined, domPath: path,
     inputType: tag === "input" ? ((el as HTMLInputElement).type || undefined) : undefined,
+    allToggle: tag === "input" && (el as HTMLInputElement).type === "checkbox"
+      && (/select[_ -]?all|check[_ -]?all|toggle[_ -]?all|\ball[_-]?(rows|items)\b/i.test(`${el.id} ${el.getAttribute("name") || ""} ${el.getAttribute("class") || ""} ${el.getAttribute("aria-label") || ""}`)
+        || !!el.closest("thead, th")) || undefined,
   }
 }
 

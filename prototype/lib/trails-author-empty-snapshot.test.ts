@@ -109,3 +109,14 @@ describe("isTransientSnapshotError", () => {
     for (const m of ["selector matched 0 elements", "net::ERR_NAME_NOT_RESOLVED", "OPENROUTER_API_KEY not set"]) expect(isTransientSnapshotError(m)).toBe(false)
   })
 })
+
+import { allRowsRequested } from "./trails-author"
+describe("allRowsRequested", () => {
+  test("a single-row objective does not ask for select-all", () => {
+    expect(allRowsRequested('Click on the 1st check box on the pending actions page. Click on the complete button. Click on the save button.')).toBe(false)
+    expect(allRowsRequested("Do not repeat any step. Execute exactly once wherever applicable.")).toBe(false)
+  })
+  test("explicit all-rows wording does", () => {
+    for (const o of ["Select all pending actions", "tick select_all then Complete", "complete all the actions", "mark every row as done", "Check all"]) expect(allRowsRequested(o)).toBe(true)
+  })
+})

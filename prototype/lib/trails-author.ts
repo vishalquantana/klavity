@@ -110,6 +110,11 @@ export function isTransientSnapshotError(msg: string): boolean {
   return /hung|timed out|Timeout|execution context was destroyed|cannot find context|inspected target navigated|target closed.*navigat/i.test(msg)
 }
 
+/** Does the objective explicitly ask to act on all rows ("select all", "all actions", "every row")? Otherwise a select-all box is a mistake. */
+export function allRowsRequested(objective: string): boolean {
+  return /select[ _-]?all|check[ _-]?all|\ball (the )?(rows|items|actions|entries|records|checkboxes|check boxes)\b|\bevery (row|item|action)\b/i.test(objective || "")
+}
+
 /** Re-capture until the snapshot has real content (>= 8 chars) or the bounded retries run out. */
 export async function recaptureUntilContent(
   first: string,
@@ -1157,6 +1162,14 @@ export async function authorTrail(
           if (n !== 1) throw new Error(`selector "${a.selector}" matched ${n} elements (need exactly 1)`)
           const fp = await bounded(page.fingerprint(a.selector!), 10_000, "fingerprint capture")
           actionFp = fp
+          // A select-all / header checkbox acts on EVERY row. Reject it unless the objective actually asks for all rows
+          // (a live run on qa2 clicked #select_all for "the 1st check box", then COMPLETE and Save, completing every action).
+          if (a.op === "click" && (fp as any)?.allToggle && !allRowsRequested(req.objective)) {
+            throw new Error(
+              "that is the select-all (header) checkbox - clicking it selects EVERY row, which the objective did not ask for. " +
+              "Pick the checkbox of a single row (the first row's own checkbox), not the one in the table header.",
+            )
+          }
           // Stabilize the selector BEFORE the action so we never persist a brittle path.
           // kref attrs are ephemeral (renumbered every capture) - MUST replace.
           // Non-kref selectors emitted by the model (e.g. `.submit-btn`) can also be fragile;

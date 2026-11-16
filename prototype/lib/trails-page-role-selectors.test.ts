@@ -65,3 +65,13 @@ describe.skipIf(!RUN)("fieldValue (real browser)", () => {
     expect(await page.fieldValue("#missing")).toBeNull()
   })
 })
+
+describe.skipIf(!RUN)("fingerprint.allToggle (real browser)", () => {
+  test("flags the select-all header checkbox, not row checkboxes or other inputs", async () => {
+    const page = await open()
+    expect((await page.fingerprint("#select_all")).allToggle).toBe(true)
+    expect((await page.fingerprint("#c1")).allToggle).toBeUndefined()
+    expect((await page.fingerprint("#c2")).allToggle).toBeUndefined()
+    expect((await page.fingerprint("#go")).allToggle).toBeUndefined()
+  })
+})

@@ -36,6 +36,8 @@ export interface Fingerprint {
   screenshotKey?: string
   inputType?: string  // the input's type attr (e.g. "password") — reliably identifies fields an
                       // accessible name / positional domPath can't (unlabeled password inputs)
+  /** True for a select-all / toggle-all checkbox (header checkbox): clicking it acts on EVERY row. Authoring-time only. */
+  allToggle?: boolean
 }
 
 /** KLA-93: named environment override for a trail — e.g. staging vs prod. */
