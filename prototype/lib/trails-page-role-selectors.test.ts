@@ -90,3 +90,33 @@ describe.skipIf(!RUN)("isChecked (real browser)", () => {
     expect(await page.isChecked("#missing")).toBeNull()
   })
 })
+
+describe.skipIf(!RUN)("stableSelector last-resort path (real browser)", () => {
+  // PX4 project list: bare links in repeated wrappers have no id/name/aria-label. The saved selector must match exactly ONE element.
+  const LIST = `<!doctype html><html><body><div class="wrap">
+    <section><div class="row"><div class="cell"><div class="name"><a href="/p/1">Project one</a></div></div></div></section>
+    <section><div class="row"><div class="cell"><div class="name"><a href="/p/2">Project two</a></div></div></div></section>
+    <section><div class="row"><div class="cell"><div class="name"><a href="/p/3">Project three</a></div></div></div></section>
+  </div></body></html>`
+  test("a bare link in a repeated list gets a selector that resolves to exactly that link", async () => {
+    const page = await open()
+    await page.goto("data:text/html," + encodeURIComponent(LIST), 15_000)
+    const first = await page.stableSelector("a[href='/p/1']")
+    expect(first).not.toBeNull()
+    expect(await page.count(first!)).toBe(1)
+    expect(await page.fingerprint("a[href='/p/1']")).toBeTruthy()
+    const third = await page.stableSelector("a[href='/p/3']")
+    expect(await page.count(third!)).toBe(1)
+    expect(third).not.toBe(first)
+    // the fingerprint's own 4-level domPath is what used to be saved: it is NOT unique
+    const dp = (await page.fingerprint("a[href='/p/1']")).domPath!
+    expect(await page.count(dp)).toBeGreaterThan(1)
+  })
+  test("anchors on the nearest ancestor with a unique id", async () => {
+    const page = await open()
+    await page.goto("data:text/html," + encodeURIComponent('<div id="list"><div><span><a href="/x">x</a></span></div><div><span><a href="/y">y</a></span></div></div>'), 15_000)
+    const s = await page.stableSelector("a[href='/y']")
+    expect(s!.startsWith("#list>")).toBe(true)
+    expect(await page.count(s!)).toBe(1)
+  })
+})

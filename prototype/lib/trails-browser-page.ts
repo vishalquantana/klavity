@@ -530,7 +530,22 @@ function stableSelectorBody(el: Element): string | null {
   // "text") — otherwise a bare `<input>` would build `input[type="text"]` and could anchor onto a DIFFERENT
   // explicit text input. Absent/invalid attribute → skip (fall through to the positional path).
   if (tag === "input") { const ty = el.getAttribute("type"); if (ty) { const s = `input[type="${esc(ty)}"]`; if (uniq(s)) return s } }
-  return null
+  // Last resort (a bare <a>/<div>/<td> - e.g. the "1st project" link in a list): the fingerprint's domPath is only the last 4 levels,
+  // NOT anchored to the page, so it can match dozens of elements (dev, 2026-11-16: 21 matches -> replay "ambiguous_selector"). Build the
+  // path from the nearest ancestor with a unique id (else <body>) down to el, and keep it only if it resolves to exactly `el`.
+  const seg = (n: Element): string => {
+    let i = 1, sib = n.previousElementSibling
+    while (sib) { if (sib.tagName === n.tagName) i++; sib = sib.previousElementSibling }
+    return n.tagName.toLowerCase() + ":nth-of-type(" + i + ")"
+  }
+  let path = seg(el), cur: Element | null = el.parentElement
+  while (cur && cur !== document.documentElement) {
+    if (cur === document.body) { path = "body>" + path; break }
+    if (cur.id) { const a = "#" + CSS.escape(cur.id); if (document.querySelectorAll(a).length === 1) { path = a + ">" + path; break } }
+    path = seg(cur) + ">" + path
+    cur = cur.parentElement
+  }
+  return uniq(path) ? path : null
 }
 
 // READ-ONLY element map for Sim screenshot review (Rule 2: accurate UI identification). Runs in the page context right after the
