@@ -833,7 +833,17 @@ export async function authorTrail(
               try {
                 const n = await bounded(page.count(sel), 5_000, "auto-advance count")
                 if (n === 1) {
+                  // Capture the control's fingerprint + stable selector BEFORE the click (the click may navigate away).
+                  const advFp = await bounded(page.fingerprint(sel), 8_000, "auto-advance fingerprint").catch(() => null)
+                  const advStable = await bounded(page.stableSelector(sel), 8_000, "auto-advance stable selector").catch(() => null)
                   await bounded(page.click(sel, ACTION_TIMEOUT), ACTION_TIMEOUT + 2_000, "auto-advance click")
+                  // This click really happened and moved the flow on (e.g. Submit after the security code), so it MUST be in the
+                  // saved trail. It was not: the replay then typed the code and sat on the code page forever (dev, 2026-11-16).
+                  traj.push({
+                    action: "click", actionValue: undefined,
+                    target: { ...(advFp ?? {}), resolvedSelector: advStable ?? advFp?.domPath ?? sel },
+                    url: page.url(), domHash: sha256hex(dom),
+                  })
                   // KLA (BookJoy Save-loop): an auto-advanced submit is a commit too - settle the network so the
                   // next snapshot reflects its AJAX result rather than the pre-response DOM.
                   await bounded(page.settleNetwork(POST_ACTION_SETTLE_MS), POST_ACTION_SETTLE_MS + 1_000, "post-auto-advance network settle").catch(() => {})

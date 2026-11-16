@@ -1249,3 +1249,31 @@ test("KLA-788b: the done read-back + verify path pumps onHeartbeat (not just top
   // so this independently proves both are present (codex round-review C3).
   expect(beatsAtVerify).toBeGreaterThanOrEqual(4)
 })
+
+// ── (B2) The auto-advanced submit click is part of the saved trail ───────────────────────────────
+// dev, 2026-11-16: after typing the PX4 security code the model stalled, the loop auto-clicked Submit to move on, but that click was
+// never recorded, so the saved trail had no Submit step and every replay sat on the code page ("step 7: Select not found").
+
+test("(B2) loop-recovery: the auto-advance click is recorded in the trajectory (replay needs it)", async () => {
+  const page = makeStuckPage({ submitSelector: 'button[type="submit"]' })
+  const { handle } = makeBrowserHandle(page)
+  let callCount = 0
+  const model: AuthorModel = async () => {
+    callCount++
+    if (callCount < 10) {
+      return { action: { op: "type", selector: 'input[aria-label="Email"]', value: "test@test.com", url: null, checkpoint: null, rationale: "filling email again" }, costUsd: 0 }
+    }
+    return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "done" }, costUsd: 0 }
+  }
+  const verifier = async () => ({ achieved: true, reason: "", costUsd: 0 })
+  const out = await authorTrail("proj_loop_b2", { name: "Login B2", objective: "get past login", baseUrl: "https://example.com/login" }, {
+    model, verifier, browserFactory: async () => handle, shotUploader: async () => ({ key: "test" }),
+    ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  expect(page.clickLog.some((s) => s.includes("submit"))).toBe(true)        // the auto-advance really clicked Submit
+  expect(out.trailId).toBeTruthy()
+  const { listTrailSteps } = await import("./trails")
+  const steps = await listTrailSteps("proj_loop_b2", out.trailId!)
+  const clicks = steps.filter((s: any) => s.action === "click")
+  expect(clicks.length).toBeGreaterThanOrEqual(1)                            // ... and it is in the saved trail
+})
