@@ -20597,6 +20597,14 @@
     const col = (s) => COLORS[[...String(s || "")].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length]
     const initials = (e) => String(e || "").slice(0, 2).toUpperCase()
     const esc = (s) => String(s || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]))
+    // KD-3082: a Sim Report always shows "<KEY>-SIM-<n>". While it waits in Sim Reports, n is its own Sim Reports count
+    // (simSeqNum). Once a person ACCEPTS it, it takes the next Tickets number (seqNum) and shows "<KEY>-SIM-<ticket number>",
+    // so on the Tickets board it sorts in one sequence with manual / widget tickets ("<KEY>-<n>").
+    function showsSimSeq(t) { return !!t && t.simSeqNum != null }
+    function simLabelNum(t) {
+      const accepted = t.seqNum != null && t.status !== "new" && t.status !== "dismissed"
+      return accepted ? t.seqNum : t.simSeqNum
+    }
     // KD-1006: in-app confirmation dialog for destructive actions — replaces the browser-native confirm(), which showed
     // "<host> says …". Resolves true on confirm; false on Cancel, Esc or a backdrop click. Focus starts on Cancel (the safe
     // choice), Tab stays inside the dialog, and focus returns to the button that opened it.
@@ -21649,7 +21657,7 @@
           const title = (t.title || "").toLowerCase()
           const obs = (t.observation || "").toLowerCase()
           const quote = (t.sourceQuote || "").toLowerCase()
-          const seq = (t.seqNum ? String(t.seqNum) : "")
+          const seq = (showsSimSeq(t) ? "sim-" + String(simLabelNum(t)) : (t.seqNum ? String(t.seqNum) : ""))
           const simNm = (t.simName || "").toLowerCase(), pth = (t.urlPath || "").toLowerCase()
           if (!title.includes(q) && !obs.includes(q) && !quote.includes(q) && !seq.includes(q) && !simNm.includes(q) && !pth.includes(q)) return false
         }
@@ -22669,7 +22677,7 @@
       <label class="tg-cb-wrap" title="Select for bulk action"><input type="checkbox" class="tg-cb"${sel ? " checked" : ""} aria-label="Select report"></label>
       ${t.screenshotId ? `<div class="tg-shot" data-shot="${esc(String(t.screenshotId))}" title="Open screenshot"><div class="tg-shot-ph">${kicon('image', { size: 16 })}</div></div>` : `<div class="tg-shot tg-shot-empty"><div class="tg-shot-ph">${kicon('image', { size: 16 })}</div></div>`}
       <div class="tg-b">
-        ${t.seqNum ? `<div class="fx-id">${esc(seqPillText(t))}</div>` : ""}
+        ${(t.seqNum || t.simSeqNum) ? `<div class="fx-id">${esc(seqPillText(t))}</div>` : ""}
         <div class="fx-t">${esc(t.title || "Untitled report")}</div>
         ${t.sourceQuote ? `<div class="fx-q">"${esc(t.sourceQuote)}"</div>` : (t.observation ? `<div class="fx-q">${esc(t.observation)}</div>` : "")}
         <div class="fx-m">${t.urlPath ? `<span class="fx-area">${esc(t.urlPath)}</span>` : ""}${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${t.simName ? `<span class="fx-sim">${kicon('bot', { size: 14 })} ${esc(t.simName)}</span>` : ""}${t.createdAt ? `<span class="muted" data-ago="${Number(t.createdAt)}">${esc(ago(t.createdAt))}</span>` : ""}</div>
@@ -22706,7 +22714,7 @@
             const meta = `${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${tgRoutingAffordance(t)}`
             card.innerHTML = `
     <label class="tg-cb-wrap" title="Select for bulk action"><input type="checkbox" class="tg-cb"${sel ? " checked" : ""} aria-label="Select report"></label>
-    <div class="sr-card-top"><span class="sr-bug">${window.figmaIcon ? figmaIcon('bug', 22, 1.8) : kicon('bug')}</span>${t.seqNum ? `<span class="sr-id">${esc(seqPillText(t))}</span>` : ""}</div>
+    <div class="sr-card-top"><span class="sr-bug">${window.figmaIcon ? figmaIcon('bug', 22, 1.8) : kicon('bug')}</span>${(t.seqNum || t.simSeqNum) ? `<span class="sr-id">${esc(seqPillText(t))}</span>` : ""}</div>
     <div class="kb-card-t">${esc(t.title || "Untitled report")}</div>
     ${sub ? `<div class="kb-card-d">${sub}</div>` : ""}
     ${quote}
@@ -28790,7 +28798,7 @@
           // now always renders in detail, uses a searchable ticket picker (not window.prompt), and on success
           // re-opens the ticket so the merged occurrences show inline, plus a toast.
           function mergeCandLabel(x) {
-            return (x.seqNum ? "#" + x.seqNum + " " : "") + (x.title || "Untitled report")
+            return (showsSimSeq(x) ? "SIM-" + simLabelNum(x) + " " : (x.seqNum ? "#" + x.seqNum + " " : "")) + (x.title || "Untitled report")
           }
           function buildMergeControl(ticketId) {
             const wrap = document.createElement("div")
@@ -28838,7 +28846,7 @@
               resultsEl.innerHTML = rows.map(x => {
                 const st = x.status || "new"
                 return '<button type="button" class="tkt-merge-cand" role="option" data-id="' + esc(String(x.id)) + '">'
-                  + '<span class="mc-key">#' + esc(String(x.seqNum || "?")) + "</span>"
+                  + '<span class="mc-key">' + esc(showsSimSeq(x) ? "SIM-" + simLabelNum(x) : "#" + String(x.seqNum || "?")) + "</span>"
                   + '<span class="mc-title">' + esc(x.title || "Untitled report") + "</span>"
                   + '<span class="chip kb-st-' + esc(st) + ' mc-st">' + esc(stLabel(st)) + "</span></button>"
               }).join("")
@@ -29148,6 +29156,9 @@
           // number (#123), falls back to the short quotable ref, then the id prefix. Status stays color+text.
           function ticketKeyLabel(t) {
             if (!t) return ""
+            // KD-3082: an untriaged Sim Report shows its OWN sequence → "KD-SIM-12" (or "SIM-12" without a project key);
+            // once accepted it has a ticket number and falls through to "KD-95".
+            if (showsSimSeq(t)) { const k = _simKeyFor(t); return k ? k + "-SIM-" + simLabelNum(t) : "SIM-" + simLabelNum(t) }
             // #745: prefer the Jira-clean human key (KLAV-94) when the project has a ticket_key; else the bare
             // sequence (#94), then the short quotable ref, then the id prefix.
             if (t.ticketKey && (t.seqNum != null)) return String(t.ticketKey) + "-" + t.seqNum
@@ -29155,8 +29166,16 @@
             if (t.ref) return String(t.ref)
             return String(t.id || "").slice(0, 8)
           }
+          // KD-1074: project key for a Sim Report's "<KEY>-SIM-<n>" label. Sim Report list items don't carry ticketKey,
+          // so fall back to the active project's key (the Sim Reports page is always scoped to one project).
+          function _simKeyFor(t) {
+            const k = (t && t.ticketKey) || (state && state.active && (state.active.ticketKey || state.active.key))
+            return k ? String(k) : ""
+          }
           // #745: the short pill text on cards / title heads — "KLAV-94" when a ticket_key exists, else "#94".
           function seqPillText(t) {
+            // KD-3082: untriaged Sim Reports → "KD-SIM-12" / "SIM-12"; tickets (incl. accepted Sim Reports) → "KD-94" / "#94".
+            if (showsSimSeq(t)) { const k = _simKeyFor(t); return k ? k + "-SIM-" + simLabelNum(t) : "SIM-" + simLabelNum(t) }
             if (!t || t.seqNum == null) return ""
             return (t.ticketKey ? String(t.ticketKey) + "-" + t.seqNum : "#" + t.seqNum)
           }
@@ -29171,7 +29190,12 @@
           // Prev / Next step by TICKET NUMBER (KD-1, KD-2, KD-3 …) across every status — not by board column.
           // ‹ goes to the next-lower number, › to the next-higher one. Tickets without a number go last (oldest first).
           function _tktByNumber(list) {
-            const num = (t) => { const n = Number(t && t.seqNum); return (t && t.seqNum != null && isFinite(n)) ? n : null }
+            // KD-3082: tickets and ACCEPTED Sim Reports order by their Tickets number; a waiting Sim Report by its Sim Reports count.
+            // (Rule inlined — same as simLabelNum() — so this function stays self-contained.)
+            const num = (t) => {
+              const waitingSim = t && t.simSeqNum != null && (t.seqNum == null || t.status === "new" || t.status === "dismissed")
+              const v = t && (waitingSim ? t.simSeqNum : t.seqNum); const n = Number(v); return (v != null && isFinite(n)) ? n : null
+            }
             const at = (t) => Number(t && (t.createdAt || t.created_at)) || 0
             return list.slice().sort((a, b) => {
               const na = num(a), nb = num(b)
@@ -29225,6 +29249,10 @@
             if (!t) return null
             const slug = t.slug || (state && state.active && (state.active.slug || state.active.workspaceSlug))
             const ticketKey = t.ticketKey || (state && state.active && (state.active.ticketKey || state.active.key))
+            // KD-3082: untriaged Sim Reports link as /<slug>/<KEY>-SIM-<n>; accepted ones as /<slug>/<KEY>-<n>.
+            if (slug && ticketKey && showsSimSeq(t)) {
+              return "/" + encodeURIComponent(String(slug)) + "/" + encodeURIComponent(String(ticketKey)) + "-SIM-" + simLabelNum(t)
+            }
             if (slug && ticketKey && (t.seqNum != null)) {
               return "/" + encodeURIComponent(String(slug)) + "/" + encodeURIComponent(String(ticketKey)) + "-" + t.seqNum
             }
@@ -29453,7 +29481,7 @@
               head.innerHTML = `<span class="single-rail sv-${sv}"></span>
       <div class="single-h-b">
         <div class="single-title-row">
-          <div class="single-title">${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
+          <div class="single-title">${(t.seqNum || t.simSeqNum) ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
           <button class="single-title-edit" type="button" title="Edit title" aria-label="Edit title">${kicon('pencil', { size: 13 })}</button>
         </div>
         <div class="single-meta">${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}${recurBadgeHtml(t)}<span class="muted" style="font-family:var(--mono);font-size:11px">${t.simName ? (kicon('bot', { size: 11 }) + " " + esc(t.simName) + " · ") : ""}${t.urlPath ? (esc(t.urlPath) + " · ") : ""}${esc(ago(t.createdAt))}</span></div>
@@ -31085,7 +31113,7 @@
             if (partial) {
               const links = failedIds.slice(0, 20).map(id => {
                 const t = (state.tickets || []).find(x => String(x.id) === String(id))
-                const seq = t && t.seqNum ? ("#" + t.seqNum) : String(id).slice(0, 8)
+                const seq = showsSimSeq(t) ? ("SIM-" + simLabelNum(t)) : (t && t.seqNum ? ("#" + t.seqNum) : String(id).slice(0, 8))
                 return `<a data-id="${esc(String(id))}">${esc(seq)}</a>`
               }).join("")
               html += `<div class="tg-toast-fails">Failed: ${links}${failedIds.length > 20 ? ` +${failedIds.length - 20} more` : ""}</div>`
@@ -31464,7 +31492,7 @@
               rowInner.style.cssText = "display:contents"
               rowInner.innerHTML =
                 '<span class="tl-pri ' + priDotClass(pri) + '" title="Priority: ' + esc(pri || "none") + '"></span>' +
-                '<div class="tl-title">' + (t.seqNum ? '<span class="tkt-seq">#' + t.seqNum + '</span> ' : '') + esc(t.title || "Untitled report") + (lblChipsHtml ? ' <span class="lbl-chips" style="margin-left:6px">' + lblChipsHtml + '</span>' : '') + '</div>' +
+                '<div class="tl-title">' + (showsSimSeq(t) ? '<span class="tkt-seq">SIM-' + simLabelNum(t) + '</span> ' : (t.seqNum ? '<span class="tkt-seq">#' + t.seqNum + '</span> ' : '')) + esc(t.title || "Untitled report") + (lblChipsHtml ? ' <span class="lbl-chips" style="margin-left:6px">' + lblChipsHtml + '</span>' : '') + '</div>' +
                 '<div class="tl-meta">' +
                 statusPillHtml(t.status) +
                 dupAckHtml(t, { badge: true }) +
@@ -32101,7 +32129,7 @@
                 cardEl.innerHTML = `
         <input type="checkbox" class="kb-card-cb" aria-label="Select ticket for bulk action"${_bulkSelected.has(ticketId) ? " checked" : ""}>
         <button class="copy-ai-icon kb-copy-ai" type="button" aria-label="Copy to AI" title="Copy to AI — paste into Claude / ChatGPT to fix this bug">${kicon('sparkles')}</button>
-        <div class="kb-card-t">${kicon('bug')} ${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
+        <div class="kb-card-t">${kicon('bug')} ${(t.seqNum || t.simSeqNum) ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
         <div class="kb-card-d" title="${esc(sub)}">${esc(sub)}</div>
         <div class="kb-card-meta"></div>`
                 renderCard()
