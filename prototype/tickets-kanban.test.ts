@@ -110,7 +110,8 @@ test("Ticket detail priority editor persists via PATCH and is timeline-tracked (
 
 test("Tickets kanban fetch includes all board statuses by default; no fake 'Closed' status filter", () => {
   // KD-208: the literal list became ALL_STATUSES, derived from STATUS_ORDER.
-  expect(html).toContain("return ALL_STATUSES")
+  // No status picked → every status (behaviour covered in tickets-board-list-parity.test.ts).
+  expect(html).toContain('return picked.length ? picked.join(",") : ALL_STATUSES')
   expect(html).toContain('const ALL_STATUSES = STATUS_ORDER.join(",")')
   // KD-223: "Closed" isn't a real status (it was a Done+Dismissed shortcut) — removed from the Status filter,
   // and an old ?status=closed link falls back to All statuses.

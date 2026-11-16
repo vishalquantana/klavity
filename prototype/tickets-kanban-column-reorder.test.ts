@@ -156,10 +156,10 @@ test("Ticket 382/384: throwing/blocked localStorage does not crash or break colu
   expect(() => env.moveKanbanColumn("open", "new", false)).not.toThrow()
 })
 
-test("Ticket 382/384: _tktOrderedVisibleIds respects custom column order for prev/next", () => {
+test("prev/next is ordered by ticket number, so column order does not affect it", () => {
   const fnSrc = extractFn(HTML, "function _tktOrderedVisibleIds(")
-  expect(fnSrc).toContain("getOrderedKanbanCols")
-  expect(fnSrc).toContain("orderedCols.forEach")
+  expect(fnSrc).toContain("_tktByNumber(")
+  expect(fnSrc).not.toContain("getOrderedKanbanCols")
 })
 
 test("Ticket 382/384: UI wiring pins for column draggable header, grip handle, and drop styling", () => {

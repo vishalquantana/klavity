@@ -164,3 +164,37 @@ test("the response carries a Server-Timing header with the per-phase split", asy
   for (const phase of ["auth", "parse", "uploads", "resolve", "dedupe_insert", "post_writes", "total"]) expect(st).toContain(`${phase};dur=`)
   expect(r.headers.get("access-control-expose-headers") || "").toContain("Server-Timing")
 })
+
+// Multi-capture ticket bug: a report with a full-page shot + a picked element + a selected region used to keep ONLY the first
+// screenshot on the ticket — the 2nd+ were uploaded and ledgered but linked to nothing, so the ticket never showed them.
+test("every report screenshot is linked to the ticket and returned by GET /api/feedback/:id (in order)", async () => {
+  resetStub()
+  const r = await submit({ shots: [{ size: 6001 }, { size: 6002 }, { size: 6003 }] })
+  expect(r.status).toBe(200)
+  const id = ((await r.json()) as any).id
+  const rw: any = (await exec("SELECT screenshot_id, extra_screenshots_json FROM feedback WHERE id=?", [id])).rows[0]
+  const extra = JSON.parse(String(rw.extra_screenshots_json || "[]")) as string[]
+  expect(extra).toHaveLength(2)
+  expect(extra).not.toContain(String(rw.screenshot_id))
+  // Each linked id is a real, stored screenshot of this project, in the order the reporter captured them.
+  const sizes: number[] = []
+  for (const sid of [rw.screenshot_id, ...extra]) {
+    const sc: any = (await exec("SELECT project_id, bytes FROM screenshots WHERE id=?", [sid])).rows[0]
+    expect(sc.project_id).toBe(PROJ)
+    sizes.push(Number(sc.bytes))
+  }
+  expect(sizes).toEqual([6001, 6002, 6003])
+  const d: any = await (await fetch(`${BASE}/api/feedback/${id}`, { headers: { Cookie: `klav_session=${SID}` } })).json()
+  expect(d.report.screenshotId).toBe(rw.screenshot_id)
+  expect(d.report.extraScreenshotIds).toEqual(extra)
+})
+
+test("a single-screenshot report is unchanged: no extra screenshots", async () => {
+  resetStub()
+  const r = await submit({ shots: [{ size: 6100 }] })
+  const id = ((await r.json()) as any).id
+  const rw: any = (await exec("SELECT extra_screenshots_json FROM feedback WHERE id=?", [id])).rows[0]
+  expect(rw.extra_screenshots_json).toBeNull()
+  const d: any = await (await fetch(`${BASE}/api/feedback/${id}`, { headers: { Cookie: `klav_session=${SID}` } })).json()
+  expect(d.report.extraScreenshotIds).toEqual([])
+})

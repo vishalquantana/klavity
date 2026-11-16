@@ -29,6 +29,22 @@ export interface EvidenceShot {
   dataUrl?: string
 }
 
+/**
+ * KD-1074: a "Record me" clip attached in the composer, kept so it survives minimize → resume (and
+ * navigation). Mirrors the composer's ReportRecording minus the live Blob / object URL — the dataUrl is
+ * the upload payload and also plays in the strip on restore.
+ */
+export interface EvidenceRecording {
+  id: string
+  dataUrl: string
+  mime: string
+  durationMs: number
+  bytes: number
+  width: number
+  height: number
+  screenOnly: boolean
+}
+
 /** A bug report in progress. `id` is deterministic = `${projectId}|${origin}` (one per project+origin). */
 export interface EvidenceSession {
   id: string
@@ -41,6 +57,7 @@ export interface EvidenceSession {
   reportType: string
   env?: string
   shots: EvidenceShot[]
+  recordings?: EvidenceRecording[]
   isOpen?: boolean
 }
 
@@ -250,6 +267,19 @@ export async function updateShotAnnotations(
   if (!shot) return null
   if (annotations == null) delete shot.annotations
   else shot.annotations = annotations
+  cur.updatedAt = Date.now()
+  await putSession(cur)
+  return cur
+}
+
+/** KD-1074: replace the session's recordings with the composer's current list (empty array clears). */
+export async function setRecordings(sessionId: string, recordings: EvidenceRecording[]): Promise<EvidenceSession | null> {
+  const cur = await getById(sessionId)
+  if (!cur) return null
+  cur.recordings = recordings.map((r) => ({
+    id: r.id, dataUrl: r.dataUrl, mime: r.mime, durationMs: r.durationMs, bytes: r.bytes,
+    width: r.width, height: r.height, screenOnly: r.screenOnly,
+  }))
   cur.updatedAt = Date.now()
   await putSession(cur)
   return cur

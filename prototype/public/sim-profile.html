@@ -111,6 +111,13 @@ a{color:inherit;text-decoration:none}
 .tx-add-msg{font-size:12px;color:var(--paper-faint);flex:1;min-width:0}
 .tx-add-msg.ok{color:var(--green)}
 .tx-add-msg.bad{color:var(--rose)}
+.sim-edit-box{border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--ink-2);margin:14px 0}
+.sim-edit-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+@media(max-width:640px){.sim-edit-row{grid-template-columns:1fr}}
+.sim-edit-group{display:flex;flex-direction:column;gap:5px}
+.sim-edit-group label{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--paper-faint)}
+.sim-edit-group input, .sim-edit-group textarea{background:var(--ink);border:1px solid var(--line);border-radius:8px;color:var(--paper);font-family:var(--body);font-size:13px;padding:8px 10px;outline:none;transition:border-color 150ms ease}
+.sim-edit-group input:focus, .sim-edit-group textarea:focus{border-color:rgba(99,102,241,.55)}
 </style>
 </head>
 <body>
@@ -246,8 +253,37 @@ async function load() {
     clearTimeout(tmo)
   }
 
+  // Persona core: what this Sim validates (watchFor) plus the goals / mood / voice that drive its reviews.
+  function coreCard(core) {
+    const c = core && typeof core === "object" ? core : null
+    const list = v => (Array.isArray(v) ? v : []).map(x => String(x || "").trim()).filter(Boolean)
+    const watch = c ? list(c.watchFor) : [], goals = c ? list(c.goals) : []
+    if (!c || (!watch.length && !goals.length && !c.temperament && !c.voice && !c.expertise)) {
+      return `<div class="card" id="simCoreCard" style="margin-bottom:10px"><div class="tt" style="opacity:.7">No validations were generated for this Sim.</div></div>`
+    }
+    const row = (label, html) => html ? `<div class="trait"><span class="k want">${label}</span><div class="tb"><div class="tt">${html}</div></div></div>` : ""
+    const ul = a => a.length ? `<ul style="margin:0;padding-left:18px">${a.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""
+    return `<div class="card" id="simCoreCard" style="margin-bottom:10px">
+      ${row("validates", ul(watch))}
+      ${row("goals", ul(goals))}
+      ${row("expertise", c.expertise ? esc(c.expertise) : "")}
+      ${row("mood", c.temperament ? esc(c.temperament) : "")}
+      ${row("voice", c.voice ? "&ldquo;" + esc(c.voice) + "&rdquo;" : "")}
+    </div>`
+  }
+  // QA Sims only: the persisted, mandatory screenshot-inspection rules (read-only).
+  function validationsCard(sim) {
+    const rules = sim && sim.personaKind === "qa" && sim.validations && Array.isArray(sim.validations.rules) ? sim.validations.rules : []
+    if (!rules.length) return ""
+    return `<div class="card" id="simValidationsCard" data-testid="sim-validations" style="margin-bottom:10px">
+      <div class="tt" style="font-weight:600;margin-bottom:6px">SIM Validations <span style="opacity:.6;font-weight:400">&middot; always checked on the screenshot, never edited</span></div>
+      ${rules.map(r => `<div class="trait"><span class="k want">${esc(r.title)}</span><div class="tb"><div class="tt">${(r.checks || []).map(esc).join("; ")}${r.limits ? `<div style="opacity:.7;margin-top:2px">${esc(r.limits)}</div>` : ""}</div></div></div>`).join("")}
+    </div>`
+  }
   const s = data.sim || {}
-  const studioUrl = pq('/app?sim=' + encodeURIComponent(SIM_ID))
+  // KD-1458: "Open in Studio" lands on the Sims Studio page itself; "Edit" deep-links to this Sim's edit view.
+  const studioUrl = pq('/app')
+  const editUrl = pq('/app?sim=' + encodeURIComponent(SIM_ID))
   // v3 vocabulary (JTBD 3.7): resolve the two-axis simClass (User/Client), preferring the explicit
   // field and falling back to the legacy type shim (internal maps to user, else client). NEVER label a
   // v3 user-class Sim as client — the old type-only pill did exactly that.
@@ -268,16 +304,40 @@ async function load() {
           <span class="pill">${(data.feedback||[]).length} report${(data.feedback||[]).length===1?"":"s"}</span>
         </div>
         <div class="hero-acts">
-          <a class="kbtn kbtn-indigo" href="${studioUrl}">${ic('pencil')} Open in Studio</a>
+          <button class="kbtn" id="simEditToggleBtn" onclick="simEditToggle()">${ic('pencil')} Edit name &amp; description</button>
+          <a class="kbtn kbtn-indigo" href="${studioUrl}">${ic('sparkles')} Open in Studio</a>
         </div>
       </div>
     </div>
-    ${s.summary ? `<div class="summary">${esc(s.summary)}</div>` : `<div style="height:18px"></div>`}
+    <div id="simEditBox" class="sim-edit-box" style="display:none">
+      <div class="sim-edit-row">
+        <div class="sim-edit-group">
+          <label for="simEditName">Name</label>
+          <input id="simEditName" type="text" value="${esc(s.name || "")}" placeholder="Sim name" />
+        </div>
+        <div class="sim-edit-group">
+          <label for="simEditRole">Role</label>
+          <input id="simEditRole" type="text" value="${esc(s.role || "")}" placeholder="Role / Title" />
+        </div>
+      </div>
+      <div class="sim-edit-group" style="margin-bottom:12px">
+        <label for="simEditSummary">Description / Summary</label>
+        <textarea id="simEditSummary" rows="3" placeholder="What describes this Sim and how they evaluate your product?">${esc(s.summary || "")}</textarea>
+      </div>
+      <div class="tx-add-foot">
+        <span class="tx-add-msg" id="simEditMsg"></span>
+        <button class="kbtn kbtn-sm" onclick="simEditCancel()">Cancel</button>
+        <button class="kbtn kbtn-sm kbtn-indigo" id="simEditSaveBtn" onclick="simEditSubmit()">${ic('check')} Save changes</button>
+      </div>
+    </div>
+    ${s.summary ? `<div class="summary" id="simSummaryView">${esc(s.summary)}</div>` : `<div style="height:18px"></div>`}
 
     <div class="cols">
       <div>
         <div class="sec">
-          <div class="sec-h">${ic('dna')} Persona &amp; trait config <span class="ct mono">${(data.traits||[]).length}</span><a class="kbtn kbtn-sm" href="${studioUrl}" style="margin-left:10px">${ic('pencil')} Edit</a></div>
+          <div class="sec-h">${ic('dna')} Persona &amp; trait config <span class="ct mono">${(data.traits||[]).length}</span><a class="kbtn kbtn-sm" href="${editUrl}" style="margin-left:10px">${ic('pencil')} Edit</a></div>
+          ${coreCard(s.core)}
+          ${validationsCard(s)}
           ${insights.length ? `<div class="card" style="margin-bottom:10px">${insights.map(i=>`<div class="trait"><span class="k ${["pain","want","love"].includes(i.kind)?i.kind:"pain"}">${esc(i.kind||"note")}</span><div class="tb"><div class="tt">${esc(i.text)}</div>${i.quote?`<div class="tq">“${esc(i.quote)}”</div>`:``}</div></div>`).join("")}</div>` : ``}
           ${traitsCard(data.traits || [])}
         </div>
@@ -339,6 +399,61 @@ async function txAddSubmit() {
 window.txAddToggle = txAddToggle
 window.txAddCancel = txAddCancel
 window.txAddSubmit = txAddSubmit
+
+function simEditToggle() {
+  const b = document.getElementById('simEditBox')
+  if (b) {
+    const isShown = b.style.display !== 'none'
+    b.style.display = isShown ? 'none' : 'block'
+    if (!isShown) {
+      const n = document.getElementById('simEditName')
+      if (n) { n.focus(); n.select() }
+    }
+  }
+}
+function simEditCancel() {
+  const b = document.getElementById('simEditBox')
+  const m = document.getElementById('simEditMsg')
+  if (b) b.style.display = 'none'
+  if (m) { m.textContent = ''; m.className = 'tx-add-msg' }
+}
+async function simEditSubmit() {
+  const n = document.getElementById('simEditName')
+  const r = document.getElementById('simEditRole')
+  const sum = document.getElementById('simEditSummary')
+  const m = document.getElementById('simEditMsg')
+  const btn = document.getElementById('simEditSaveBtn')
+  if (!n || !m) return
+  const name = n.value.trim()
+  if (!name) { m.textContent = 'Name is required.'; m.className = 'tx-add-msg bad'; return }
+  const role = r ? r.value.trim() : ''
+  const summary = sum ? sum.value.trim() : ''
+  m.textContent = 'Saving…'; m.className = 'tx-add-msg'
+  if (btn) btn.disabled = true
+  try {
+    const res = await fetch(pq('/api/personas/' + encodeURIComponent(SIM_ID)), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, role, summary })
+    })
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}))
+      m.textContent = errData.error || 'Failed to save changes.'
+      m.className = 'tx-add-msg bad'
+      if (btn) btn.disabled = false
+      return
+    }
+    m.textContent = 'Saved! Refreshing…'; m.className = 'tx-add-msg ok'
+    setTimeout(load, 500)
+  } catch (err) {
+    m.textContent = 'Network error: ' + (err && err.message || 'please try again.')
+    m.className = 'tx-add-msg bad'
+    if (btn) btn.disabled = false
+  }
+}
+window.simEditToggle = simEditToggle
+window.simEditCancel = simEditCancel
+window.simEditSubmit = simEditSubmit
 
 load()
 </script>

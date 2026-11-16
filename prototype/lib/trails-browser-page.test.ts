@@ -4,7 +4,7 @@
 // exercised by the live spike (needs network + key), not unit-tested here.
 // acquirePlaywrightBrowser (used by the walker) is also tested here for its local/fallback path.
 import { describe, test, expect, afterAll } from "bun:test"
-import { acquireBrowser, acquirePlaywrightBrowser, createSteelSession, launchLocalChromium, BrowserLaunchError, playwrightContextOptionsForTrailViewport, startCdpScreencast, safeClose, type BrowserHandle, type PlaywrightBrowserHandle } from "./trails-browser-page"
+import { acquireBrowser, acquirePlaywrightBrowser, retryNavRace, createSteelSession, launchLocalChromium, BrowserLaunchError, playwrightContextOptionsForTrailViewport, startCdpScreencast, safeClose, type BrowserHandle, type PlaywrightBrowserHandle } from "./trails-browser-page"
 
 // Real-browser tests only run when KLAV_E2E=1 (browsers installed). CI default suite is hermetic.
 const RUN_BROWSER = !!process.env.KLAV_E2E
@@ -483,3 +483,17 @@ test("acquireBrowser Steel path: releases session when connectOverCDP fails", as
   }
   expect(released).toBe(true)
 }, 10_000)
+
+describe("retryNavRace", () => {
+  test("retries an evaluate that hangs mid-navigation, then returns the next attempt's result", async () => {
+    let calls = 0
+    const r = await retryNavRace(() => (++calls === 1 ? new Promise<string>(() => {}) : Promise.resolve("snap")), 4, 50)
+    expect(r).toBe("snap")
+    expect(calls).toBe(2)
+  })
+  test("does not retry unrelated errors", async () => {
+    let calls = 0
+    await expect(retryNavRace(async () => { calls++; throw new Error("boom") }, 4, 50)).rejects.toThrow("boom")
+    expect(calls).toBe(1)
+  })
+})

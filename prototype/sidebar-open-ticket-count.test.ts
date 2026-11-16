@@ -39,6 +39,23 @@ test("a status change shows up in the count straight away (cache is invalidated)
   invalidateDashboardCache(pid)
 })
 
+// ── Overview "Tickets filed" card (counts.tickets) ──
+test("Tickets filed counts every ticket on the board — any status — not a legacy Plane key (was always 0)", async () => {
+  const pid = "proj_filed_" + Math.random().toString(36).slice(2)
+  for (const s of ["new", "open", "in_progress", "blocked", "done", "dismissed"]) await ticket(pid, s)        // 6 counted, no plane_issue_key on any
+  const root = await ticket(pid, "open")                                                                    // +1
+  await ticket(pid, "open", root)                                                                           // merged away — not counted
+  // A Sim report still awaiting triage lives in Sim Reports, not on the board — not counted until a person accepts it.
+  const simNew = await insertFeedback({ projectId: pid, observation: "sim finding", actorEmail: "u@x.io", simId: "sim_x" } as any)
+  await db!.execute({ sql: "UPDATE feedback SET status='new', sim_id='sim_x' WHERE id=?", args: [simNew] })
+  invalidateDashboardCache(pid)
+  expect((await dashboardCounts(pid)).tickets).toBe(7)
+  // Accepting it (status → open) files it as a ticket.
+  await updateFeedbackMeta(pid, simNew, { status: "open" })
+  expect((await dashboardCounts(pid)).tickets).toBe(8)
+  invalidateDashboardCache(pid)
+})
+
 const HTML = await Bun.file(import.meta.dir + "/public/dashboard.html").text()
 test("the sidebar badge reads the server count and is no longer mirrored from the Recent-tickets card", () => {
   expect(HTML).toContain("state.counts && state.counts.openTickets")

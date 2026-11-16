@@ -3,7 +3,7 @@ import { buildFeedbackFormData } from '../../core/src/integrations/backend'
 import { coerceReporter } from './identity'
 import { icon } from '@klavity/core/icons'
 
-export function parseScriptConfig(scriptEl: { dataset?: Record<string, string | undefined>, src?: string } | null | undefined): { projectId: string, backendUrl: string, reporter?: Reporter, identity?: Reporter, metadata?: Record<string, string> } {
+export function parseScriptConfig(scriptEl: { dataset?: Record<string, string | undefined>, src?: string } | null | undefined): { projectId: string, backendUrl: string, reporter?: Reporter, identity?: Reporter, metadata?: Record<string, string>, recordMode?: "window" } {
   if (!scriptEl) return { projectId: "", backendUrl: "" }
   const d = scriptEl.dataset || {}
   const projectId = d.project || ""
@@ -43,7 +43,10 @@ export function parseScriptConfig(scriptEl: { dataset?: Record<string, string | 
       }
     } catch { /* ignore malformed data-meta */ }
   }
-  return { projectId, backendUrl, reporter, identity: reporter, metadata }
+  // "Record me" in a separate Klavity recorder window, which survives full page loads — opt-in per embed
+  // (data-record-mode="window") for multi-page host apps such as PX4. Absent → the in-page recorder, unchanged.
+  const recordMode = String(d.recordMode || "").trim().toLowerCase() === "window" ? "window" as const : undefined
+  return { projectId, backendUrl, reporter, identity: reporter, metadata, ...(recordMode ? { recordMode } : {}) }
 }
 
 export interface SuccessCopy {
@@ -104,6 +107,21 @@ export function resolveComposerRecord(
   if (!supported) return false
   if (!composer) return true
   return composer.record !== false && composer.allowRecording !== false
+}
+
+// KD-1470: the recordings a composer opens with = the evidence session's saved ones (KD-1074) PLUS any
+// "Record me" video that finished after a page navigation (record-bridge). Merged in that order, deduped by
+// id (or dataUrl), so neither source can silently replace the other.
+export function mergeRecordings<T extends { id?: string; dataUrl?: string }>(saved: T[] | null | undefined, arrived: T[] | null | undefined): T[] {
+  const out: T[] = []
+  const seen = new Set<string>()
+  for (const r of [...(saved || []), ...(arrived || [])]) {
+    const key = String(r?.id || r?.dataUrl || '')
+    if (key && seen.has(key)) continue
+    if (key) seen.add(key)
+    out.push(r)
+  }
+  return out
 }
 
 export function gateMessage(reason: string): string {

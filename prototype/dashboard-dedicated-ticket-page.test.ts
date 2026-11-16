@@ -87,15 +87,48 @@ test("compact header row has back link + project + key · status pill · Copy li
 
 test("prev/next steps through the board's filtered+ordered ids, disabled at the ends", () => {
   const fn = extractFn(HTML, "function _renderSingleTicket(id)")
-  expect(fn).toContain("const ids = _tktOrderedVisibleIds()")
+  expect(fn).toContain("const ids = _tktOrderedVisibleIds(id)")
   expect(fn).toContain("const hasPrev = cur > 0, hasNext = cur >= 0 && cur < ids.length - 1")
-  expect(fn).toContain('openSingleTicket(ids[cur - 1], "full")')
-  expect(fn).toContain('openSingleTicket(ids[cur + 1], "full")')
-  // ordered id list mirrors the board filter predicate + column order
-  const ord = extractFn(HTML, "function _tktOrderedVisibleIds()")
+  // stepping keeps the origin list (Tickets board / Sim Reports)
+  expect(fn).toContain('openSingleTicket(ids[cur - 1], "full", _tktOriginContext)')
+  expect(fn).toContain('openSingleTicket(ids[cur + 1], "full", _tktOriginContext)')
+  // ordered id list keeps the board filters, but is ordered by ticket number (not by status column)
+  const ord = extractFn(HTML, "function _tktOrderedVisibleIds(curId)")
   expect(ord).toContain("tktMatchesSelectFilters(t)")
-  expect(ord).toContain("kanbanKeyForStatus(t.status)")
-  expect(ord).toContain("KANBAN_COLS")
+  expect(ord).toContain("_tktByNumber(list)")
+  expect(ord).not.toContain("kanbanKeyForStatus")
+})
+
+test("prev/next order is by ticket number across all statuses; un-numbered tickets go last, oldest first", () => {
+  const byNum = new Function(extractFn(HTML, "function _tktByNumber(list)") + "; return _tktByNumber")() as (l: any[]) => any[]
+  const list = [
+    { id: "a", seqNum: 12, status: "done" },
+    { id: "b", seqNum: 3, status: "open" },
+    { id: "c", seqNum: null, createdAt: 200 },
+    { id: "d", seqNum: 7, status: "in_progress" },
+    { id: "e", createdAt: 100 },
+    { id: "f", seqNum: 10, status: "new" },
+  ]
+  expect(byNum(list).map(t => t.id)).toEqual(["b", "d", "f", "a", "e", "c"])
+  expect(list[0].id).toBe("a")   // input not mutated
+})
+
+test("prev/next is never silently dead: Sim Reports steps its own list; a filtered-out ticket falls back to the unfiltered order", () => {
+  const ord = extractFn(HTML, "function _tktOrderedVisibleIds(curId)")
+  // opened from Sim Reports → step through the Sim Reports list (reports never sit on the Tickets board)
+  expect(ord).toContain('_tktOriginContext === "triage"')
+  expect(ord).toContain("tgVisibleItems()")
+  // open ticket hidden by the board filters → same order without filters, so cur is never -1 (both buttons disabled)
+  expect(ord).toContain("return order(src)")
+})
+
+test("the ticket page renders a stepped-to ticket from the board / Sim Reports cache (not only the 50-row payload)", () => {
+  const fn = extractFn(HTML, "function _renderSingleTicket(id)")
+  expect(fn).toContain("_tktSeedFromCaches(id)")
+  const seed = extractFn(HTML, "function _tktSeedFromCaches(id)")
+  expect(seed).toContain("_tktBoardTickets")
+  expect(seed).toContain("_triageItems")
+  expect(seed).toContain("state.tickets.push")
 })
 
 test("Copy link copies the pretty ticket permalink (#745)", () => {

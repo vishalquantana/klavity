@@ -159,6 +159,22 @@ export function openModal(type: ReportType = 'bug') {
         return (data && data.draft) ? data.draft : null
       } catch { return null }
     },
+    // KD-995: split a "Record me" walkthrough into separate tickets (POST /api/report/split → the issues the
+    // reporter narrated). Resolve null on any failure so the composer keeps the single ticket.
+    onSplitRecording: async (audio: Blob, ctx?: { text?: string }) => {
+      try {
+        const fd = new FormData()
+        fd.append('projectId', _projectId)
+        fd.append('audio', audio, 'recording.webm')
+        if (audio.type) fd.append('mime', audio.type)
+        fd.append('pageUrl', location.href)
+        if (ctx?.text) fd.append('text', ctx.text)
+        const res = await fetchWithTimeout(backendBase() + '/api/report/split', { method: 'POST', body: fd }, 90_000)
+        if (!res.ok) return null
+        const data = await res.json().catch(() => null)
+        return (data && Array.isArray(data.issues)) ? data.issues : null
+      } catch { return null }
+    },
     // KLA-505 server-side dictation (POST /api/voice/transcribe): the Voice button hands each mic clip here;
     // resolve null on any failure so the composer falls back to Web Speech.
     onDictate: async (audio: Blob) => {

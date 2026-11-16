@@ -236,7 +236,11 @@ test("Sims page leads with Sims feed; Live/Observability are collapsible in Sims
 test("renderSimsFeed shows actual observation text with a Triage link", () => {
   const els: Record<string, any> = {
     simsFeed: { innerHTML: "" },
-    simsCount: { textContent: "" },
+    simsCount: {
+      textContent: "", title: "", attrs: {} as Record<string, string>,
+      setAttribute(k: string, v: string) { this.attrs[k] = v },
+      removeAttribute(k: string) { delete this.attrs[k] },
+    },
   }
   const state = {
     active: { id: "proj_1" },
@@ -267,6 +271,7 @@ test("renderSimsFeed shows actual observation text with a Triage link", () => {
   expect(els.simsFeed.innerHTML).toContain("View in Sim Reports")
   expect(els.simsFeed.innerHTML).toContain('href="#triage"')
   expect(els.simsCount.textContent).toBe("1")
+  expect(els.simsCount.attrs["aria-label"]).toBe("1 Sim")
 })
 
 // =============================================================================

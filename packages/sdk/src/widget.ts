@@ -16,8 +16,8 @@ import {
 import { type CaptureBuffers } from "@klavity/core/capture"
 import { installCaptureContext, buildCaptureContext } from "./capture-context"
 import { installErrorReporter } from "./error-reporter"
-import type { ReportContext, ReportIdentity, Reporter, ClientInfo } from "@klavity/core"
-import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, shouldUseInteractiveSuccess, compressScreenshot, buildThumbnail, resolveComposerRecord } from "./widget-lib"
+import type { ReportContext, ReportIdentity, Reporter, ClientInfo, ReportRecording } from "@klavity/core"
+import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, shouldUseInteractiveSuccess, compressScreenshot, buildThumbnail, resolveComposerRecord, mergeRecordings } from "./widget-lib"
 import { SubmitError, newSubmissionKey, sendForm, withRetries, buildRepairForm, refreshTurnstileField, outcomeFromResult, serverSupportsIdempotency, retryFailureCopy, RETRY, type SubmitOutcome, type RetryInfo } from "./submit-flow"
 import { coerceReporter, reporterToIdentity, resolveFallbackReporter, captureClientInfo } from "./identity"
 import { pickElementOnPage as pickElementOnPageShared } from "@klavity/core/element-picker"
@@ -27,14 +27,17 @@ import { icon } from "@klavity/core/icons"
 import { CONTEXT_MENU_CSS, MENU_ARROW_SVG, buildMenuCard } from "@klavity/core/context-menu"
 import { klavityAttributionUrl } from "@klavity/core/attribution"
 import { recordMe, recordingSupported } from "./recorder"
+import { createRecordBridge, recorderWindowAvailable } from "./record-bridge"
 import { on, emit } from "./events"
 import {
   getActiveSession, startOrContinue, addShot, removeShot, clear as clearEvidenceSession,
   makeShotId, pageCount, MAX_SHOTS, updateShotAnnotations, updateFields as updateEvidenceFields,
+  setRecordings as setEvidenceRecordings,
   type EvidenceSession, type EvidenceShot,
 } from "./evidence-session"
 import { SimsLive, type LiveObservation } from "./sims-live"  // side-effecting: auto-installs window.KlavitySims on load
 import { startSimsWatch, type SimsWatchController } from "./sims-watch"
+import { openSelectSimsModal, createSelectSimsApi, managedSigOf, planManagedSync, isSimRunning, type ManagedSim, type ManagedSimAction } from "./sims-select-modal"
 
 const HOST_ID = "klavity-widget-host"
 // Screenshot capture filter: exclude ALL Klavity-injected chrome so the widget never captures
@@ -214,6 +217,19 @@ function currentScript(): HTMLScriptElement {
     || (document.querySelector('script[src*="widget.js"]') as HTMLScriptElement)
 }
 
+// KD-993: remember the reporter's email (per project, on the customer's origin) so the composer doesn't make them
+// retype it every time. A host-supplied identity (identify() / data-user-email) always wins over this.
+const REPORTER_EMAIL_KEY = "klavity_reporter_email"
+const EMAIL_OK = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+function getSavedEmail(projectId: string): string {
+  try { const v = localStorage.getItem(REPORTER_EMAIL_KEY + ":" + projectId) || ""; return EMAIL_OK.test(v) ? v : "" } catch { return "" }
+}
+function setSavedEmail(projectId: string, email: string) {
+  try {
+    if (email && EMAIL_OK.test(email)) localStorage.setItem(REPORTER_EMAIL_KEY + ":" + projectId, email)
+    else localStorage.removeItem(REPORTER_EMAIL_KEY + ":" + projectId)
+  } catch { /* storage unavailable (private mode / blocked) — just don't remember */ }
+}
 function getToken(): string { try { return localStorage.getItem(TOKEN_KEY) || "" } catch { return "" } }
 function setToken(t: string) { try { localStorage.setItem(TOKEN_KEY, t) } catch {} }
 function clearToken() { try { localStorage.removeItem(TOKEN_KEY) } catch {} }
@@ -813,7 +829,11 @@ async function mount() {
   // the browser can screen-record (getDisplayMedia + MediaRecorder) — hidden on iOS Safari, matching the
   // Sharp-capture support envelope. A project turns it OFF only by explicitly setting composer.record:false
   // (or allowRecording:false). No config / a failed config fetch → the button shows (when supported).
-  let composerRecord = (() => { try { return resolveComposerRecord(null, recordingSupported()) } catch { return false } })()
+  // The recorder window (record-bridge) is opt-in per embed (data-record-mode="window", e.g. PX4); every other
+  // project keeps the original in-page recorder and its support check, unchanged.
+  const useRecorderWindow = cfg.recordMode === "window"
+  const recordCapable = () => recordingSupported() || (useRecorderWindow && recorderWindowAvailable())
+  let composerRecord = (() => { try { return resolveComposerRecord(null, recordCapable()) } catch { return false } })()
   let composerIssueTypes: Array<{ value: 'bug' | 'feature' | 'task' | 'query'; label: string; mappingLabel?: string }> | undefined
   // Report-clarity helper (per-project, DEFAULT on). Only OFF when the server explicitly returns
   // reportClarity:false. Server + widget ship together (orchestrator), so the field is always present.
@@ -879,7 +899,7 @@ async function mount() {
         composerFileAttach = !(composer.fileAttach === false || composer.allowFileAttachments === false)
         // "Record me" (KLAVITYKLA-438): DEFAULT-ON — only an EXPLICIT record:false / allowRecording:false
         // turns it off. Still gated on browser screen-capture support (recordingSupported()).
-        composerRecord = resolveComposerRecord(composer, recordingSupported())
+        composerRecord = resolveComposerRecord(composer, recordCapable())
         if (Array.isArray(composer.issueTypes) && composer.issueTypes.length) {
           const cleaned = composer.issueTypes
             .filter((t: any) => t && typeof t.value === 'string' && ['bug', 'feature', 'task', 'query'].includes(t.value))
@@ -956,6 +976,11 @@ async function mount() {
   let evMinimizing = false // set while we deliberately close the composer to minimize (vs a plain X-close)
   // Serialize session writes so concurrent adds/removes can't lose an update (read-modify-write races).
   let evWriteChain: Promise<unknown> = Promise.resolve()
+  // KD-1004: sessions whose report was already filed, and whether the current composer's report was. A late
+  // write (debounced typing, a page-unload flush) for a filed report must not re-create the saved draft —
+  // that resurrected a "Bug report in progress" dock after a refresh even though the ticket was created.
+  const filedSessionIds = new Set<string>()
+  let composerFiled = false
   function queueEvWrite<T>(fn: () => Promise<T>): Promise<T> {
     const run = evWriteChain.then(fn, fn)
     evWriteChain = run.catch(() => undefined)
@@ -986,6 +1011,7 @@ async function mount() {
   // the screenshot via this same session; without this, the typed text was silently lost even though the
   // shot survived. queueEvWrite serializes it against shot writes so a fast typist + a fast shot can't race.
   async function persistEvDesc(sessionId: string, text: string): Promise<void> {
+    if (filedSessionIds.has(sessionId)) return
     try {
       saveDraft(cfg.projectId, evOrigin, { desc: text })
       const updated = await updateEvidenceFields(sessionId, { desc: text })
@@ -993,6 +1019,7 @@ async function mount() {
     } catch { /* best-effort: a failed persist must never break typing */ }
   }
   async function persistEvTitle(sessionId: string, text: string): Promise<void> {
+    if (filedSessionIds.has(sessionId)) return
     try {
       saveDraft(cfg.projectId, evOrigin, { title: text })
       const updated = await updateEvidenceFields(sessionId, { title: text })
@@ -1061,11 +1088,14 @@ async function mount() {
   }
   function hasEvSessionContent(session: EvidenceSession | null): boolean {
     if (!session) return false
-    return session.shots.length > 0 || session.desc.trim().length > 0 || session.title.trim().length > 0
+    return session.shots.length > 0 || (session.recordings?.length ?? 0) > 0 || session.desc.trim().length > 0 || session.title.trim().length > 0
   }
   function evCountText(): string {
     const n = evSession ? evSession.shots.length : 0
     const m = evSession ? pageCount(evSession) : 0
+    // KD-1074: a recording-only report (e.g. a walkthrough, whose default snap is dropped) still says what's saved.
+    const r = evSession?.recordings?.length ?? 0
+    if (n === 0 && r > 0) return `${r} recording${r === 1 ? "" : "s"} - not lost`
     if (n === 0) return "Bug report in progress - not lost"
     return `${n} shot${n === 1 ? "" : "s"} - ${m} page${m === 1 ? "" : "s"} - not lost`
   }
@@ -1403,14 +1433,26 @@ async function mount() {
     reportBtn.addEventListener("mouseleave", () => { fabHover = false; fabShareHint?.classList.remove("kl-show") })
   }
 
-  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialTitle?: string; initialShotCapture?: ShotCapture; evidence?: { session: EvidenceSession } }) {
+  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialTitle?: string; initialShotCapture?: ShotCapture; evidence?: { session: EvidenceSession }; initialRecordings?: ReportRecording[] }) {
     if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
+    composerFiled = false
     // KLA-412: the multi-page evidence session backing this composer (null for a normal single-page report).
     const ev = opts?.evidence?.session ?? null
     if (ev) {
       ev.isOpen = true
       saveDraft(cfg.projectId, evOrigin, { isOpen: true, desc: ev.desc, title: ev.title })
       void queueEvWrite(() => updateEvidenceFields(ev.id, { isOpen: true }))
+    }
+    // KD-1470: ONE seed list for the composer's recordings — the session's saved ones (KD-1074) plus a
+    // "Record me" video that finished after a page reload (record-bridge). They used to be two separate
+    // `initialRecordings` keys in the buildModal options, so the later one silently dropped the arrived video.
+    const arrivedNow = [...(opts?.initialRecordings || []), ...arrivedRecordings]
+    arrivedRecordings = []
+    const seedRecordings = mergeRecordings(ev?.recordings?.map((r) => ({ ...r })), arrivedNow)
+    // The composer never echoes its seed back via onRecordingsChange, so persist an arrived video into the
+    // session here — otherwise a later minimize/reload would lose it again.
+    if (ev && arrivedNow.length) {
+      void queueEvWrite(async () => { evSession = await setEvidenceRecordings(ev.id, seedRecordings) ?? evSession; updateEvDock() })
     }
     const identified = firstParty || !!getToken()  // already known to Klavity (own page session, or signed-in widget)
     // Only the "login" gate forces the connect flow on third-party sites. "email"/"anonymous" let an
@@ -1450,7 +1492,9 @@ async function mount() {
       // so we skip the full-page auto-capture and let the zoomed-in region lead. KLA-412: also skip it when
       // resuming an evidence session that already holds shots (we seed those below); a BRAND-NEW session
       // (empty, no region shot) still auto-captures so the first shot lands + persists via onShotAdded.
-      autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0),
+      autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0) && !opts?.initialRecordings?.length,
+      // Saved session recordings + a "Record me" video that finished after the reporter navigated (see above).
+      initialRecordings: seedRecordings.length ? seedRecordings : undefined,
       // #638: render the "Attach console logs" toggle (default OFF) in the composer. When the reporter enables
       // it, the submit payload carries attachConsole:true and onSubmit includes the captured console logs.
       consoleAttachToggle: true,
@@ -1528,15 +1572,16 @@ async function mount() {
       // whether this project already tracks a matching known/recurring issue; on a hit the composer shows
       // an inline "Already reported — status: X" note (the user can still submit or dismiss). Best-effort:
       // any failure resolves null so the composer is never blocked by the lookup.
-      // QPQ-31: resolve people for the Email field's typeahead. Credentials are sent so a signed-in
-      // reporter (our own dashboard, or a logged-in embedder) gets the project's members + contacts;
-      // the endpoint is session-gated, so an anonymous visitor on a customer's site simply gets nothing
-      // back and their dropdown offers Create only — the team's addresses never leave the server.
+      // QPQ-31 / KD-983: resolve people for the Email field's typeahead — the project's members + contacts.
+      // The endpoint is public (the list shows whether or not the reporter is signed in); credentials and
+      // the widget token are still sent so the server can attribute the request when it can.
       onLookupPeople: async (q: string) => {
         try {
+          const headers: Record<string, string> = {}
+          if (getToken()) headers.authorization = `Bearer ${getToken()}`
           const res = await fetchWithTimeout(
             cfg.backendUrl + "/api/projects/" + encodeURIComponent(cfg.projectId) + "/people?q=" + encodeURIComponent(q),
-            { credentials: "include" },
+            { credentials: "include", headers },
           )
           if (!res.ok) return []
           const j = await res.json().catch(() => null) as any
@@ -1614,9 +1659,28 @@ async function mount() {
           return (data && data.draft) ? data.draft : null
         } catch { return null }
       }) : undefined,
+      // KD-995: split a "Record me" walkthrough into separate tickets — POST the clip to /api/report/split
+      // (transcribe + AI issue extraction) and resolve the issues it found. Gated on the same reportClarity
+      // toggle as Enhance (the server enforces it too). Long timeout: STT of a clip + an LLM call. Best-effort:
+      // any failure resolves null so the composer keeps the single ticket.
+      onSplitRecording: (reportClarity && composerRecord) ? (async (audio: Blob, ctx?: { text?: string }) => {
+        try {
+          const fd = new FormData()
+          fd.append('projectId', cfg.projectId)
+          fd.append('audio', audio, 'recording.webm')
+          if (audio.type) fd.append('mime', audio.type)
+          fd.append('pageUrl', location.href)
+          if (ctx?.text) fd.append('text', ctx.text)
+          const res = await fetchWithTimeout(cfg.backendUrl + '/api/report/split', { method: 'POST', body: fd }, 90000)
+          if (!res.ok) return null
+          const data = await res.json().catch(() => null)
+          return (data && Array.isArray(data.issues)) ? data.issues : null
+        } catch { return null }
+      }) : undefined,
       requireEmail,
       // PX4 #439: pre-fill the email gate with the known reporter email so the user never retypes it.
-      prefillEmail: _reporter?.email,
+      prefillEmail: _reporter?.email || getSavedEmail(cfg.projectId) || undefined,
+      onRememberEmail: (email: string) => setSavedEmail(cfg.projectId, email),
       // PX4 #411/#425: enhanced-composer opts from the project config (all default off → classic composer).
       showTitleField: composerShowTitle,
       allowFileAttachments: composerFileAttach,
@@ -1629,9 +1693,24 @@ async function mount() {
       // KLAVITYKLA-438 "Record me": expose the button + drive the consent → record → preview overlay from
       // the sdk recorder, returning the captured recording (or null on cancel) to the composer.
       allowRecording: composerRecord,
+      // KD-1074: persist every add/remove so a minimize (or a navigation) never loses the recorded video.
+      // (The session's recordings are restored via the single `initialRecordings` seed above — KD-1470.)
+      onRecordingsChange: ev ? (recs) => {
+        void queueEvWrite(async () => { evSession = await setEvidenceRecordings(ev.id, recs) ?? evSession; updateEvDock() })
+      } : undefined,
       // KLA-555 (walkthrough mode): thread the composer's onPhase signal into the recorder so it can
       // minimize the composer while recording is ACTIVE and restore it on consent/preview.
-      onRecord: composerRecord ? ((onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => recordMe({ onPhase })) : undefined,
+      // Opted-in embeds (data-record-mode="window") record in the Klavity recorder WINDOW (record-bridge.ts) so it
+      // survives full page loads; the in-page recordMe() overlay is the fallback when the popup is blocked.
+      // Every other embed uses recordMe() exactly as before.
+      onRecord: composerRecord ? ((onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => {
+        if (!recBridge) return recordMe({ onPhase })
+        const viaWindow = recBridge.start(onPhase)
+        if (viaWindow) return viaWindow
+        if (recordingSupported()) return recordMe({ onPhase })
+        evBanner("Allow pop-ups for this site to use Record me.")
+        return Promise.resolve(null)
+      }) : undefined,
       // KLA-505: server-side live dictation for the Voice button (replaces the flaky Web Speech backend).
       // The composer records a short mic clip and hands each audio Blob here; we POST it to the STT endpoint
       // (POST /api/voice/transcribe, multipart: audio + projectId) and resolve the recognized text. On ANY
@@ -1731,6 +1810,8 @@ async function mount() {
         // multi-page evidence session (KLA-412) now that the report is stored.
         const afterFiled = async (result: { issueKey: string; issueUrl: string }) => {
           try { emit("submit", { issueKey: result.issueKey, issueUrl: result.issueUrl ?? null, type: p.type as "bug" | "feature" }) } catch {}
+          composerFiled = true
+          if (ev) filedSessionIds.add(ev.id)
           clearDraft(cfg.projectId, evOrigin)
           if (ev) {
             evMinimizing = false
@@ -1973,6 +2054,11 @@ async function mount() {
     // session). Anonymous/unidentified visitors — and every visitor in 'reportOnly' mode — get the
     // Report/Request/Browser-menu menu without any Sims jargon. (Same identity notion as openReport.)
     const showSims = rightClickMode === 'full' && (firstParty || !!getToken() || (typeof process !== "undefined" && process.env.NODE_ENV === "test"))
+    // No Klavity connection yet on a customer's site ('full' mode, not our own page, no stored token): the Sims
+    // actions stay hidden, but we offer a "Sims — Connect" card that opens the connect popup (same handshake as
+    // "Deploy all Sims"). Once the token arrives the menu is re-drawn with the Sims and the card is gone. In
+    // production this is exactly !showSims; in tests showSims is force-enabled, so both can appear there.
+    const needsConnect = rightClickMode === 'full' && !firstParty && !getToken()
     // Each action is a compact CARD: icon chip + label + optional desc + arrow/hint.
     // Pass desc="" to render a label-only card (no description line — keeps menu short).
     const card = (iconName: string, label: string, desc: string, opts: { primary?: boolean; muted?: boolean; hint?: string; onClick: () => void }) => {
@@ -2074,10 +2160,10 @@ async function mount() {
       const syncConfirm = () => {
         const n = sel.size
         confirmBtn.disabled = n === 0
-        confirmBtn.textContent = n > 0 ? `Deploy ${n} Sim${n > 1 ? "s" : ""} →` : "Select a Sim first"
+        confirmBtn.textContent = n > 0 ? `Run ${n} Sim${n > 1 ? "s" : ""} →` : "Select a Sim first"
         confirmBtn.style.opacity = n > 0 ? "1" : ".45"
       }
-      confirmBtn.addEventListener("click", () => { if (!sel.size) return; closeMenu(); void deployAndWatch([...sel]) })
+      confirmBtn.addEventListener("click", () => { if (!sel.size) return; closeMenu(); void runSimsOnPage([...sel]) })
       // Sim rows — scrollable list
       const list = document.createElement("div")
       list.style.cssText = "display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto"
@@ -2105,10 +2191,19 @@ async function mount() {
     }
     menu.appendChild(card("zap", "Report a Bug", "Snap the page and tell us what broke.", { primary: true, onClick: () => void startBugReport() }))
     menu.appendChild(card("lightbulb", "Request a Feature", "Suggest something you'd love to see.", { onClick: () => openReport("feature") }))
+    if (needsConnect) {
+      menu.appendChild(card("users", "Sims", "Connect to Klavity to use your Sims on this page.", {
+        hint: "Connect",
+        // The card handler has already closed the menu; once the popup hands back a token, re-open it in the same
+        // spot — getToken() is now set, so the Sims actions show and this card does not come back.
+        onClick: () => { void openConnect().then((tok) => { if (tok) showMenu(x, y) }) },
+      }))
+    }
     // Sims actions are member-only + 'full'-mode-only — anonymous visitors and reportOnly never see them.
     if (showSims) {
-      menu.appendChild(card("users", "Deploy all Sims", "Have every Sim jump in and analyze this page.", { onClick: () => { closeMenu(); void deployAndWatch("all") } }))
-      menu.appendChild(card("sparkles", "Select Sims…", "Choose which Sims jump into action.", { onClick: () => { void showSimPicker() } }))
+      menu.appendChild(card("users", "Run all Sims", "Every activated Sim reviews the pages you browse.", { onClick: () => { closeMenu(); void runSimsOnPage("all") } }))
+      // Opens the Select Sims modal: Run / Stop each Sim (Activate / Deactivate stays on the dashboard Sims tab).
+      menu.appendChild(card("sparkles", "Select Sims…", "Run or stop individual Sims.", { onClick: () => { void openSimsManager() } }))
     }
     menu.appendChild(card("monitor", "Browser menu", "", { muted: true, hint: "⇧ right-<br>click", onClick: () => { nativePending = true; showNativeHint(x, y) } }))
     // "Powered by Klavity" footer — hidden for Pro accounts with whiteLabel enabled (KLAVITYKLA-311).
@@ -2250,47 +2345,185 @@ async function mount() {
     setTimeout(() => { if (el && el.textContent === text) safeRemove(el) }, 6000)
   }
 
-  // Deploy the named Sims (or "all") + boot the watch engine + fire an IMMEDIATE review.
-  // Uses the anonymous /api/widget/sims endpoint so this works on client sites with no admin auth.
-  async function deployAndWatch(simIds: string[] | 'all') {
-    // AUTH GATE: /api/sim/review hard-requires an authenticated caller (session cookie OR bearer token).
-    // On a cross-origin customer site the klavity.in session cookie isn't sent, so reviews only work with a
-    // widget token. Without one the Sims would deploy and float but every review 401s silently — so run the
-    // connect handshake FIRST and only deploy once we hold a real token. (First-party pages use the cookie.)
+  // "Run all Sims" / the menu's Sim chips: set the Sims to RUNNING for this user (server Run state — the same one Select Sims, the
+  // dashboard Sims tab and the card's Close use), then show them on the card, watch the page and review it right away. Every way of
+  // starting Sims goes through this state, so Stop always works however they were started. "all" = every Activated Sim.
+  async function runSimsOnPage(simIds: string[] | 'all') {
+    // AUTH GATE: the Run state and /api/sim/review need an authenticated caller (session cookie OR bearer token). On a
+    // cross-origin customer site the klavity.in cookie isn't sent, so run the connect handshake FIRST.
     if (!firstParty && !getToken()) {
       banner("Connect to Klavity so your Sims can review this page…")
       const token = await openConnect()
-      if (!token) { banner("Sims need a Klavity connection to review this page. Deploy again to connect."); return }
+      if (!token) { banner("Sims need a Klavity connection to review this page. Run them again to connect."); return }
     }
+    try {
+      const api = managedSimsApi()
+      const ids = simIds === "all"
+        ? (await api.load()).filter((s) => s.active !== false && s.run !== "running").map((s) => s.id)
+        : simIds
+      const res = ids.length ? await api.act("run", ids) : { applied: [], skipped: [], sims: await api.load() }
+      if (!res.sims.some((s) => s.active !== false)) { banner("No activated Sims yet — activate one on the Klavity Sims tab."); return }
+      if (!res.applied.length && res.skipped.length) banner(`Couldn't run that Sim: ${res.skipped[0].reason}.`)
+      applyManagedSims(res.sims, { action: "run", applied: res.applied })
+      try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-applied")) } catch { /* noop */ }
+    } catch (e: any) {
+      banner(e?.message || "Couldn't start the Sims — please try again.")
+    }
+  }
+
+  // ── Sims on this page: Run / Stop (per user) ──────────────────────────────────────────────
+  // ONE state decides which Sims run on the pages this user browses: the server Run state (/api/widget/sim-deployments →
+  // prototype/lib/sim-run-state.ts). It is set from the Select Sims modal, "Run all Sims" / the menu chips, the dashboard Sims tab,
+  // and the feedback card's Close. applyManagedSims() mirrors it onto the page:
+  //   * the feedback card shows the RUNNING Sims; a Sim that is stopped keeps the issues it already reported but adds no new ones;
+  //   * only running Sims are watched / reviewed (the server also refuses widget reviews for Sims that aren't running);
+  //   * when NO Sim is running, the card closes by itself (every reported issue is already in Sim Reports);
+  //   * the card's Close (×) stops every running Sim and closes the card.
+  let _managedMounted = false
+  async function openSimsManager() {
+    // Same auth gate as runSimsOnPage: cross-origin pages need a widget token for member endpoints.
+    if (!firstParty && !getToken()) {
+      banner("Connect to Klavity to manage your Sims…")
+      const token = await openConnect()
+      if (!token) { banner("Sims need a Klavity connection. Open Select Sims again to connect."); return }
+    }
+    openSelectSimsModal({
+      api: managedSimsApi(),
+      onChange: (sims, change) => {
+        applyManagedSims(sims, change)
+        // Lets a host page that shows Sim status (the dashboard Sims tab) refresh it.
+        try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-applied")) } catch { /* noop */ }
+      },
+    })
+  }
+  function managedSimsApi() {
+    return createSelectSimsApi({
+      backendUrl: cfg.backendUrl,
+      projectId: cfg.projectId,
+      getToken,
+      fetch: (input, init) => fetchWithTimeout(input, init),
+    })
+  }
+  // Signature of the running set — lets a sync skip no-op re-applies. null until the first sync.
+  let _managedSig: string | null = null
+
+  // Run / Stop can also change OUTSIDE this page — the dashboard Sims tab, another tab, or before a reload. Re-read the server
+  // state on load, when the tab regains focus, on a light poll while Sims run here, and when the dashboard announces a change
+  // ("klavity:sim-deployments-changed"). A reload restores the running Sims WITHOUT an extra AI review; a Sim started elsewhere
+  // reviews the page right away.
+  let _managedSyncing = false
+  async function syncManagedSims() {
+    if (_managedSyncing || rightClickMode !== "full" || (!firstParty && !getToken())) return
+    _managedSyncing = true
+    try {
+      const sims = await managedSimsApi().load()
+      const plan = planManagedSync(_managedSig, sims)
+      if (plan.kind === "skip") { _managedSig = plan.sig; return }
+      applyManagedSims(sims, { action: plan.fresh.length ? "run" : "stop", applied: plan.fresh })
+    } catch { /* best-effort: the page keeps its current Sims */ }
+    finally { _managedSyncing = false }
+  }
+  if (typeof window !== "undefined" && typeof document !== "undefined") {
+    const syncSoon = () => { if (document.visibilityState !== "hidden") void syncManagedSims() }
+    window.addEventListener("klavity:sim-deployments-changed", syncSoon)
+    window.addEventListener("focus", syncSoon)
+    document.addEventListener("visibilitychange", syncSoon)
+    // Poll only while Sims are running on this page.
+    setInterval(() => { if (_managedSig) syncSoon() }, 20_000)
+    setTimeout(syncSoon, 1500) // after the project config (rightClickMode) has loaded
+  }
+
+  // The card's Close (×): stop every Sim this user has running and close the card. Nothing is lost — each issue was saved to
+  // Sim Reports the moment its Sim reported it.
+  async function closeSimsCard() {
     _simsWatchCtrl?.stop()
     _simsWatchCtrl = null
-    let sims: Array<{ id: string; name: string; initials?: string; accent?: string }> = []
-    try {
-      const r = await fetchWithTimeout(cfg.backendUrl + "/api/widget/sims?project=" + encodeURIComponent(cfg.projectId))
-      if (r.ok) {
-        const data = await r.json().catch(() => ({}))
-        sims = Array.isArray(data.sims) ? data.sims : []
+    try { (window as any).KlavitySims?.undeploy?.() } catch { /* never break page */ }
+    _managedMounted = false
+    _deployedSims = []
+    let sims: ManagedSim[] | null = null
+    try { sims = (await managedSimsApi().act("stop_all")).sims } catch { /* the server also skips stopped Sims; retry on next sync */ }
+    _managedSig = sims ? managedSigOf(sims) : ""
+    banner("Sims stopped. Every issue they reported is in Sim Reports.")
+    try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-applied")) } catch { /* noop */ }
+  }
+
+  // The feedback card's "Sims" menu: every Sim with Run / Stop (and Run / Stop selected). Same per-user Run state as Select Sims;
+  // each action is applied to the page right away (a started Sim reviews now, a stopped one stops; none left → the card closes).
+  function cardSimControls() {
+    const toCard = (list: ManagedSim[]) => list.map((s) => ({
+      id: s.id, name: s.name, role: s.role, initials: s.initials ?? null, accent: s.accent ?? null,
+      active: s.active !== false, running: isSimRunning(s),
+    }))
+    const act = async (action: "run" | "stop", ids: string[]) => {
+      const res = await managedSimsApi().act(action, ids)
+      applyManagedSims(res.sims, { action, applied: res.applied })
+      try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-applied")) } catch { /* noop */ }
+      if (!res.applied.length && res.skipped.length) throw new Error(`Couldn't ${action}: ${res.skipped[0].reason}.`)
+      return toCard(res.sims)
+    }
+    return {
+      list: async () => toCard(await managedSimsApi().load()),
+      run: (ids: string[]) => act("run", ids),
+      stop: (ids: string[]) => act("stop", ids),
+    }
+  }
+
+  function applyManagedSims(sims: ManagedSim[], change: { action: ManagedSimAction; applied: string[] }) {
+    _managedSig = managedSigOf(sims)
+    // A Sim Deactivated on the dashboard Sims tab never runs, whatever its Run state.
+    const running = sims.filter(isSimRunning)
+    const kl = (window as any).KlavitySims
+    _simsWatchCtrl?.stop()
+    _simsWatchCtrl = null
+    if (!running.length) {
+      // Nothing running → the card closes by itself (its issues are already in Sim Reports).
+      if (_managedMounted) {
+        try { kl?.undeploy?.() } catch { /* never break page */ }
+        if (change.action === "stop" || change.action === "stop_all") banner("All Sims are stopped. Their reported issues are in Sim Reports.")
       }
-    } catch { /* non-fatal: empty dock is guarded in sims-live.ts */ }
-    _deployedSims = sims
-    ;(window as any).KlavitySims?.deploy?.(simIds, sims)
-    // Boot the watch engine for continuous monitoring (scroll / navigation / mutations).
+      _managedMounted = false
+      _deployedSims = []
+      return
+    }
+    const descriptors = running.map((s) => ({ id: s.id, name: s.name, initials: s.initials || undefined, accent: s.accent || undefined }))
+    // Update the card in place: a stopped Sim keeps its earlier findings; a started one is added. (Mounts the card if needed.)
+    const cardOpts = { onClose: () => void closeSimsCard(), simControls: cardSimControls() }
+    try {
+      if (kl?.updateSims) kl.updateSims(descriptors, cardOpts)
+      else kl?.deploy?.(running.map((s) => s.id), descriptors, cardOpts)
+    } catch { /* never break page */ }
+    _managedMounted = true
+    _deployedSims = descriptors
     _simsWatchCtrl = startSimsWatch({
       backendUrl: cfg.backendUrl,
       projectId: cfg.projectId,
-      simIds: simIds === 'all' ? undefined : simIds,
-      // Live-review captures the FULL page (whole scrollHeight), not just the above-the-fold viewport,
-      // so the Sim reviews the entire page — bounded by MAX_FULLPAGE_CAPTURE_HEIGHT. (KLAVITYKLA-404)
+      simIds: running.map((s) => s.id),
       captureViewport: () => safeToPngFullPage({ skipFonts: true, filter: notKlavityChrome }),
       bearerToken: getToken() || undefined,
+      runScope: "widget",
     })
-    // BOOT: fire an immediate review so Sims react to the current page right away (not only on next scroll).
-    void bootReview(simIds)
+    // Sims that just started review the current page right away — a beat AFTER the click has painted. The review starts with a
+    // full-page screenshot, which is heavy on a big page; starting it in the same tick froze the modal / card mid-update and made
+    // Run feel slow. (The Run itself is already done — this is only the first review.)
+    if (change.action === "run") {
+      const fresh = change.applied.filter((id) => running.some((s) => s.id === id))
+      if (fresh.length) {
+        const start = () => void bootReview(fresh)
+        const ric = (window as any).requestIdleCallback as undefined | ((cb: () => void, o?: { timeout: number }) => void)
+        setTimeout(() => (ric ? ric(start, { timeout: 1200 }) : start()), 350)
+      }
+    }
   }
 
   // Capture the current viewport and POST to /api/sim/review immediately.
   // This is the "boot" review triggered right after Deploy — no waiting for scroll or mutation.
   async function bootReview(simIds: string[] | 'all') {
+    // KD-1465: report the run's phase to the Sims feedback panel (analysing → running → completed/failed).
+    const runStatus = (s: "analysing" | "running" | "completed" | "failed") => {
+      try { (window as any).KlavitySims?.setRunStatus?.(s) } catch { /* never break page */ }
+    }
+    runStatus("analysing")
     try {
       const benchStart = benchNow()
       const captureStart = benchNow()
@@ -2313,10 +2546,13 @@ async function mount() {
         domSig: null,
         adhoc: true,
         projectId: cfg.projectId,
+        // Only Sims this user has set to Run are reviewed (a Sim stopped meanwhile is skipped by the server).
+        runScope: "widget",
       }
       if (simIds !== 'all') body.simIds = simIds
       const headers: Record<string, string> = { 'content-type': 'application/json' }
       if (getToken()) headers.authorization = `Bearer ${getToken()}`
+      runStatus("running")
       const networkStart = benchNow()
       const res = await fetchWithTimeout(cfg.backendUrl + '/api/sim/review', {
         method: 'POST', headers, credentials: 'include', body: JSON.stringify(body),
@@ -2326,12 +2562,13 @@ async function mount() {
       if (res.status === 401 && !firstParty) {
         clearToken()
         banner("Your Klavity connection expired — deploy Sims again to reconnect.")
+        runStatus("failed")
         return
       }
-      if (!res.ok) return
+      if (!res.ok) { runStatus("failed"); return }
       const data = await res.json().catch(() => ({}))
       const networkMs = benchNow() - networkStart
-      if (!data?.ok || !Array.isArray(data.reviews)) return
+      if (!data?.ok || !Array.isArray(data.reviews)) { runStatus("failed"); return }
       const kl = (window as any).KlavitySims
       const renderStart = benchNow()
       let observations = 0
@@ -2353,6 +2590,7 @@ async function mount() {
       const renderMs = benchNow() - renderStart
       const totalMs = benchNow() - benchStart
       updateIssueCounter()
+      runStatus("completed")
       const server = data.timing?.simReview
       const domNodes = reactionNodeCount()
       console.log(
@@ -2361,7 +2599,7 @@ async function mount() {
         `serverReviewMs=${server?.reviewMs ?? '?'} renderMs=${benchMs(renderMs)} totalMs=${benchMs(totalMs)} ` +
         `sims=${data.reviews.length} observations=${observations} domNodes=${domNodes}`,
       )
-    } catch { /* non-fatal: boot review is best-effort */ }
+    } catch { runStatus("failed") /* non-fatal: boot review is best-effort */ }
   }
 
   // Opens the Klavity connect popup and resolves with the minted widget token, or "" if the user
@@ -2409,6 +2647,7 @@ async function mount() {
   if (typeof window !== "undefined") {
     const flushCurrentComposerDraft = () => {
       if (!composer || !(composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
+      if (composerFiled) return // KD-1004: the open composer is only showing its "sent" screen — nothing to keep
       const descEl = composer.shadowRoot.getElementById("klavity-desc") as HTMLTextAreaElement | null
       const titleEl = composer.shadowRoot.getElementById("klavity-title") as HTMLInputElement | null
       saveDraft(cfg.projectId, evOrigin, {
@@ -2420,6 +2659,38 @@ async function mount() {
     window.addEventListener("beforeunload", flushCurrentComposerDraft)
     window.addEventListener("pagehide", flushCurrentComposerDraft)
   }
+
+  // ── "Record me" across navigation: the bridge to the recorder window. Created on every page so a recording
+  // started on an earlier page of this tab re-attaches here (REC bar + Stop). A video that finishes once the
+  // original composer is gone reopens the report — with the in-progress evidence session + draft — attached.
+  // Only for embeds that opted in to the recorder window — elsewhere no bridge exists and nothing changes.
+  let arrivedRecordings: ReportRecording[] = []
+  const recBridge = !useRecorderWindow ? null : createRecordBridge({
+    backendUrl: cfg.backendUrl,
+    projectId: cfg.projectId,
+    notify: (text) => evBanner(text),
+    onRecordingArrived: (rec) => {
+      arrivedRecordings.push(rec)
+      if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) {
+        evBanner("Your recording is ready — it will be attached the next time you open the report.")
+        return
+      }
+      void (async () => {
+        const initialRecordings = arrivedRecordings
+        arrivedRecordings = []
+        let active: EvidenceSession | null = null
+        try { active = await getActiveSession(cfg.projectId, evOrigin) } catch { active = null }
+        const draft = loadDraft(cfg.projectId, evOrigin)
+        if (active) {
+          evSession = active
+          if (evDockEl) evDockEl.style.display = "none"
+          openReport("bug", { evidence: { session: active }, initialDescription: draft?.desc || active.desc, initialTitle: draft?.title || active.title, initialRecordings })
+        } else {
+          openReport("bug", { initialDescription: draft?.desc, initialTitle: draft?.title, initialRecordings })
+        }
+      })()
+    },
+  })
 
   // ── KLA-412: on load, resume a still-fresh evidence session (survives navigation/reload)
   // If the composer was open when refreshed, re-opens it; otherwise displays the in-progress dock.
