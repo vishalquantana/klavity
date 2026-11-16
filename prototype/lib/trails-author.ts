@@ -453,7 +453,7 @@ export async function authorTrail(
   let lastPasswordTypeStep = -999
   // A checkbox clicked twice in a row is UN-selected by the 2nd click (seen on PX4 Pending Actions: "click 1st
   // check box" was recorded twice). Remember the last checkbox click so an immediate repeat is skipped, not re-toggled.
-  let lastToggleClickKey: string | null = null
+  const clickedToggleKeys = new Set<string>() // checkboxes (selector|url) this run already clicked
   const PASSWORD_RECENCY_STEPS = 8
   // No-op stagnation tracking: detects when the page URL + DOM hash doesn't change across
   // iterations (the previous action had no visible effect). noOpCount resets on any real change.
@@ -1209,10 +1209,17 @@ export async function authorTrail(
           let skipRepeatNote: string | null = null
           if (a.op === "click") {
             const toggleKey = (fp as any)?.inputType === "checkbox" ? `${persistSelector ?? a.selector}|${page.url()}` : null
-            if (toggleKey && toggleKey === lastToggleClickKey) skipRepeatNote = "skipped: that checkbox was just clicked (a second click would un-select it). It is already selected; continue with the next step."
-            else await page.click(a.selector!, ACTION_TIMEOUT)
-            lastToggleClickKey = toggleKey
-          } else lastToggleClickKey = null
+            // Skip only when a 2nd click would actually UN-select it: same checkbox as last time AND it is checked right now.
+            // (If something since unchecked it - e.g. an intervening click that reset the page state - the click must go through,
+            // or the box can never be re-selected and the run loops until its time budget runs out.)
+            const stillChecked = toggleKey && clickedToggleKeys.has(toggleKey) && page.isChecked
+              ? await bounded(page.isChecked(a.selector!), 3_000, "checkbox state").catch(() => null) : null
+            if (stillChecked === true) skipRepeatNote = "skipped: that checkbox is already selected (clicking it again would un-select it). Continue with the next step."
+            else {
+              await page.click(a.selector!, ACTION_TIMEOUT)
+              if (toggleKey) clickedToggleKeys.add(toggleKey)
+            }
+          }
           if (a.op === "click") { /* handled above */ }
           else if (a.op === "type") {
             const raw = a.value ?? ""

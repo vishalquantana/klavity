@@ -77,3 +77,16 @@ describe.skipIf(!RUN)("fingerprint.allToggle (real browser)", () => {
     expect((await page.fingerprint("#go")).allToggle).toBeUndefined()
   })
 })
+
+describe.skipIf(!RUN)("isChecked (real browser)", () => {
+  test("reports a checkbox's live state, null for non-checkboxes", async () => {
+    const page = await open()
+    expect(await page.isChecked("#c1")).toBe(false)
+    await page.click("#c1", 3_000)
+    expect(await page.isChecked("#c1")).toBe(true)
+    await page.click("#c1", 3_000)
+    expect(await page.isChecked("#c1")).toBe(false) // a second click un-selects: the author loop must NOT re-click only while it is true
+    expect(await page.isChecked("#go")).toBeNull()
+    expect(await page.isChecked("#missing")).toBeNull()
+  })
+})

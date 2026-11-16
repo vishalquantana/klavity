@@ -628,6 +628,8 @@ export interface BrowserPage {
   fill(selector: string, value: string, timeoutMs: number, sensitive?: boolean): Promise<void>
   /** Current value of an input/textarea (null if it has none / can't be read). Used to avoid re-typing what a field already holds. */
   fieldValue?(selector: string): Promise<string | null>
+  /** Whether a checkbox/radio is currently checked (null if it isn't one / can't be read). Lets a repeated click be skipped only when it WOULD un-select. */
+  isChecked?(selector: string): Promise<boolean | null>
   selectOption(selector: string, value: string, timeoutMs: number): Promise<void>
   hover(selector: string, timeoutMs: number): Promise<void>
   keyPress(selector: string, key: string, timeoutMs: number): Promise<void>
@@ -745,6 +747,7 @@ class PlaywrightPage implements BrowserPage {
   async keyPress(selector: string, key: string, timeoutMs: number) { await this.page.locator(selector).press(key, { timeout: timeoutMs }) }
   async clearField(selector: string, timeoutMs: number) { await this.page.locator(selector).clear({ timeout: timeoutMs }) }
   async fieldValue(selector: string) { try { return await this.page.locator(selector).first().inputValue({ timeout: 2_000 }) } catch { return null } }
+  async isChecked(selector: string) { try { return await this.page.locator(selector).first().isChecked({ timeout: 2_000 }) } catch { return null } }
   async setInputFiles(selector: string, files: string[], timeoutMs: number) { await this.page.locator(selector).setInputFiles(files, { timeout: timeoutMs }) }
   async waitForSelector(selector: string, timeoutMs: number) { await this.page.locator(selector).first().waitFor({ state: "visible", timeout: timeoutMs }) }
   async assertVisible(selector: string, timeoutMs: number) { await this.page.locator(selector).waitFor({ state: "visible", timeout: timeoutMs }) }
@@ -925,6 +928,7 @@ export class PuppeteerPage implements BrowserPage {
   async hover(selector: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }); await this.page.hover(selector) }
   async keyPress(selector: string, key: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }); await this.page.focus(selector); await this.page.keyboard.press(key) }
   async fieldValue(selector: string) { try { return await this.page.$eval(selector, (e: any) => (typeof e.value === "string" ? e.value : null)) } catch { return null } }
+  async isChecked(selector: string) { try { return await this.page.$eval(selector, (e: any) => (e.type === "checkbox" || e.type === "radio" ? !!e.checked : null)) } catch { return null } }
   async clearField(selector: string, timeoutMs: number) {
     const el = await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs })
     await el.evaluate(selectAllBody).catch(() => {})
