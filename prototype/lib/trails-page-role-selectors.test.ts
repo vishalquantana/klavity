@@ -6,6 +6,8 @@ import { acquireBrowser, type BrowserHandle } from "./trails-browser-page"
 
 const RUN = !!process.env.KLAV_E2E
 const HTML = `<!doctype html><html><body>
+  <div style="display:none"><input type="checkbox" id="hidden_modal_box"></div>
+  <label><input type="checkbox" id="filter_box"> only mine</label>
   <ul class="nav"><li><a href="/x">Completed Actions</a></li></ul>
   <h4 class="title">Completed Actions</h4>
   <table><thead><tr><th><input type="checkbox" id="select_all"></th><th>Action</th></tr></thead><tbody>

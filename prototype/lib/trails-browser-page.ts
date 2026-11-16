@@ -384,10 +384,13 @@ export function targetCheckBody(arg: { selector: string; label: string }): Targe
     const isAllToggle = /select[_ -]?all|check[_ -]?all|toggle[_ -]?all|\ball[_-]?(rows|items)\b/i.test(hay) || !!el.closest("thead, th") || (el as HTMLInputElement).disabled
     if (!isAllToggle) {
       if (!/\b(1st|first)\b/.test(want)) return { ok: true, html: "", candidates: [] }
-      // "1st/first check box": it must be the first row checkbox on the page.
-      const rowBoxes = Array.from(document.querySelectorAll('input[type="checkbox"]')).filter((c) => {
+      // "1st/first check box": it must be the first VISIBLE row checkbox of ITS OWN table (not of the whole page: hidden modal
+      // or filter checkboxes elsewhere in the DOM must not make the genuine first row look like the second).
+      const scope: ParentNode = el.closest("table") || document
+      const rowBoxes = Array.from(scope.querySelectorAll('input[type="checkbox"]')).filter((c) => {
         const h = `${c.id} ${c.getAttribute("name") || ""} ${c.getAttribute("class") || ""}`
         return !/select[_ -]?all|check[_ -]?all|toggle[_ -]?all/i.test(h) && !c.closest("thead, th") && !(c as HTMLInputElement).disabled
+          && (c as HTMLElement).getClientRects().length > 0
       })
       if (rowBoxes[0] === el) return { ok: true, html: "", candidates: [] }
     }
