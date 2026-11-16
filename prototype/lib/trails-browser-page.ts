@@ -377,7 +377,21 @@ export function targetCheckBody(arg: { selector: string; label: string }): Targe
   // A checkbox/radio has no visible text, so the model names it by role ("checkbox", "1st check box on the page"). That is a
   // correct description of an <input type=checkbox>, not a mismatch (PX4 Pending Actions rejected it 4 times).
   const inType = el.tagName === "INPUT" ? ((el as HTMLInputElement).type || "").toLowerCase() : ""
-  if ((inType === "checkbox" && /\bcheck ?box\b/.test(want)) || (inType === "radio" && /\bradio\b/.test(want))) return { ok: true, html: "", candidates: [] }
+  if ((inType === "checkbox" && /\bcheck ?box\b/.test(want)) || (inType === "radio" && /\bradio\b/.test(want))) {
+    // But NEVER let a "select all" / header checkbox stand in for "the 1st check box": completing after it acts on EVERY row
+    // (a live run on qa2 did exactly that). A row checkbox is not in a header and not an all-rows toggle.
+    const hay = `${el.id} ${el.getAttribute("name") || ""} ${el.getAttribute("class") || ""} ${el.getAttribute("aria-label") || ""}`
+    const isAllToggle = /select[_ -]?all|check[_ -]?all|toggle[_ -]?all|\ball[_-]?(rows|items)\b/i.test(hay) || !!el.closest("thead, th") || (el as HTMLInputElement).disabled
+    if (!isAllToggle) {
+      if (!/\b(1st|first)\b/.test(want)) return { ok: true, html: "", candidates: [] }
+      // "1st/first check box": it must be the first row checkbox on the page.
+      const rowBoxes = Array.from(document.querySelectorAll('input[type="checkbox"]')).filter((c) => {
+        const h = `${c.id} ${c.getAttribute("name") || ""} ${c.getAttribute("class") || ""}`
+        return !/select[_ -]?all|check[_ -]?all|toggle[_ -]?all/i.test(h) && !c.closest("thead, th") && !(c as HTMLInputElement).disabled
+      })
+      if (rowBoxes[0] === el) return { ok: true, html: "", candidates: [] }
+    }
+  }
   const visible = (e: Element) => {
     const r = e.getBoundingClientRect(); if (r.width === 0 || r.height === 0) return false
     const s = getComputedStyle(e); return s.display !== "none" && s.visibility !== "hidden" && s.opacity !== "0"

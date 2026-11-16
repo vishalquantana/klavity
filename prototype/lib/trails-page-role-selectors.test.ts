@@ -8,7 +8,7 @@ const RUN = !!process.env.KLAV_E2E
 const HTML = `<!doctype html><html><body>
   <ul class="nav"><li><a href="/x">Completed Actions</a></li></ul>
   <h4 class="title">Completed Actions</h4>
-  <table><tbody>
+  <table><thead><tr><th><input type="checkbox" id="select_all"></th><th>Action</th></tr></thead><tbody>
     <tr><td><input type="checkbox" class="checkbox" name="selected_actions[]" id="c1"></td><td>Action one</td></tr>
     <tr><td><input type="checkbox" class="checkbox" name="selected_actions[]" id="c2"></td><td>Action two</td></tr>
   </tbody></table>
@@ -42,6 +42,15 @@ describe.skipIf(!RUN)("checkbox target check (real browser)", () => {
     }
     expect((await page.targetCheck("#c1", "Save")).ok).toBe(false)
     expect((await page.targetCheck("#go", "check box")).ok).toBe(false) // a button is not a checkbox
+  })
+
+  test('"1st check box" is the first ROW checkbox, never the select-all header (a live run completed every action)', async () => {
+    const page = await open()
+    expect((await page.targetCheck("#c1", "1st check box on the pending actions page")).ok).toBe(true)
+    expect((await page.targetCheck("#c2", "1st check box on the pending actions page")).ok).toBe(false)         // second row
+    expect((await page.targetCheck("#select_all", "1st check box on the pending actions page")).ok).toBe(false) // header toggle
+    expect((await page.targetCheck("#select_all", "checkbox")).ok).toBe(false)                                    // never, even without an ordinal
+    expect((await page.targetCheck("#c2", "checkbox")).ok).toBe(true)                                              // any row box by role is fine
   })
 })
 
