@@ -304,6 +304,8 @@ export interface ObjectiveVerificationInput {
   objective: string
   pageUrl: string
   domSnapshot: string
+  /** The actions the driver actually performed, oldest first (trusted: written by the driver, not the page). Optional. */
+  actionsDone?: string[]
   screenshotB64?: string
   mediaType?: string
 }
@@ -324,8 +326,13 @@ Return STRICT JSON only:
 
 export function buildVerifyMessages(input: ObjectiveVerificationInput, projectInstructions?: string): any[] {
   const sys = VERIFY_SYS + projectInstructionsBlock("verify", projectInstructions)
+  const done = (input.actionsDone ?? []).slice(-60).map((a) => `- ${String(a).replace(/[\r\n]+/g, " ").slice(0, 200)}`)
   const text =
     `OBJECTIVE: ${input.objective}\n` +
+    (done.length
+      ? `ACTIONS ALREADY PERFORMED, oldest first (by the test driver, in order; FAILED lines were rejected attempts that did not act):\n${done.join("\n")}\n` +
+        `The page below is only the FINAL state. Judge it against the objective's LAST step(s); the earlier steps are evidenced by the actions above, so do not fail only because the final page does not show them.\n`
+      : "") +
     `PAGE URL (untrusted): <<<${input.pageUrl}>>>\n` +
     `ELEMENT SNAPSHOT (untrusted):\n<<<\n${input.domSnapshot}\n>>>`
   return [

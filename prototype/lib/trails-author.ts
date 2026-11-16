@@ -1047,6 +1047,9 @@ export async function authorTrail(
             objective: req.objective,
             pageUrl: page.url(),
             domSnapshot: dom,
+            // The verifier only sees the FINAL page; for a multi-step flow ending on e.g. "Completed Actions" it guessed earlier steps
+            // had been skipped. Tell it what the driver actually did, in order.
+            actionsDone: history.filter((h) => !/^\(/.test(h)).slice(-60),
             ...(screenshotB64 ? { screenshotB64, mediaType: "image/jpeg" } : {}),
           }
           // KLA-820: the verifier gets the same per-project instructions the driver does, so
