@@ -4,7 +4,7 @@
 // findings)  outcome. On "stall"/caps/errors: stalled outcome with the exact reason (stop-show-
 // refine UX). Secrets: the model only ever sees {{cred:...}} placeholders (credFields); values are
 // resolved at fill time and never logged (history/trajectory keep the placeholder).
-import { crystallize, type Trajectory, type TrajectoryStep } from "./trails-crystallize"
+import { crystallize, isTransientNetworkError, retryTransient, type Trajectory, type TrajectoryStep } from "./trails-crystallize"
 import { deleteTrail, setTrailStatus } from "./trails"
 import { ToolError } from "./mcp/tool-error"
 import { walkTrail, walkTrailWithBrowserRetry, scaledWalkDeadlineMs } from "./trails-runner"
@@ -603,7 +603,11 @@ export async function authorTrail(
   const SAVE_TIMEOUT_MS = 15_000
   const saveStep = async (l: any) => {
     try { await bounded(Promise.resolve(opts.onStep?.(l)), SAVE_TIMEOUT_MS, "save step") }
-    catch (e) { if (/timed out/.test(String((e as any)?.message ?? e))) console.warn("[trails-author] save step timed out, continuing"); else throw e }
+    catch (e) {
+      // A dropped DB connection is the same as a timeout: the next step saves the whole log again, so do not end the run over it.
+      if (/timed out/.test(String((e as any)?.message ?? e)) || isTransientNetworkError(e)) console.warn("[trails-author] save step failed transiently, continuing:", String((e as any)?.message ?? e).slice(0, 120))
+      else throw e
+    }
   }
   const saveCheckpoint = (c: any) => bounded(Promise.resolve(opts.onCheckpoint?.(c)), SAVE_TIMEOUT_MS, "save checkpoint")
   // KD-2255: heavy pages (PX4 add_new_project) keep the renderer busy for 15s+ while their scripts run; no
@@ -1519,8 +1523,9 @@ export async function authorTrail(
     await closeHandle()
     if (!traj.length) return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: "model finished without performing any step", llmCalls, costUsd, objectiveVerified }
     const trajectory: Trajectory = { name: req.name, intent: req.objective, baseUrl: req.baseUrl, viewport, authorKind: "llm", createdBy: req.createdBy, steps: traj, objectiveVerified, judgePersonaId: req.judgePersonaId ?? null, attachments: req.attachments ?? null, sourceSimId: req.sourceSimId ?? null, schedule: req.schedule ?? null, scheduleTz: req.scheduleTz ?? null }
-    const { trailId } = await crystallize(projectId, trajectory)
-    await setTrailStatus(projectId, trailId, "draft")
+    opts.onHeartbeat?.() // crystallize is ~3 DB round trips per step; beat so a slow DB is not mistaken for a hang
+    const { trailId } = await crystallize(projectId, trajectory, () => opts.onHeartbeat?.())
+    await retryTransient(() => setTrailStatus(projectId, trailId, "draft"))
     // Verification Walk: zero-LLM rehearsal; draft status suppresses findings (Task 4), but pass
     // the flag explicitly too - a Verification Walk never files regardless of trail status.
     const vision = opts.verificationVision === false ? undefined : (opts.verificationVision ?? configuredVisionResolver())
@@ -1568,6 +1573,11 @@ export async function authorTrail(
     }
     return { status: "crystallized", trailId, verificationRunId: v.runId, verificationVerdict: mappedVerdict, redCause, steps: log, stallReason: null, llmCalls, costUsd, objectiveVerified }
   } catch (e: any) {
+    // A dropped network connection is not a failed run: stall (checkpoint + partial draft + Resume) instead of throwing the
+    // authored steps away. (dev v16: "The socket connection was closed unexpectedly" ended a fully authored run as failed.)
+    if (isTransientNetworkError(e) && traj.length > 0 && !opts.abortSignal?.aborted) {
+      return await stall(`network error, run paused: ${String(e?.message || e).slice(0, 200)}. Resume to continue from the last checkpoint.`, undefined)
+    }
     await closeHandle()
     return { status: "failed", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: String(e?.message || e), llmCalls, costUsd, objectiveVerified }
   }

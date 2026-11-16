@@ -1415,3 +1415,35 @@ test("(W2) a slow-but-moving step is NOT tripped: only silence between waits cou
   expect(n).toBeGreaterThan(0)
   expect(String(out.stallReason ?? "")).not.toMatch(/step watchdog/)
 }, 30_000)
+
+// ── (N) Dropped network connections ──────────────────────────────────────────────────────────────────────────────
+// Dev v16 (2026-11-16): a fully authored run (18 steps, objective verified) ended "failed" with "The socket connection was closed
+// unexpectedly" - one dropped DB/API call threw away the whole authoring. Transient network errors must be retried or paused, not fatal.
+
+test("(N1) a dropped connection while saving a step does not end the run", async () => {
+  const page = checkboxPage()
+  const { handle } = makeBrowserHandle(page)
+  let saves = 0
+  const out = await authorTrail("proj_loop_n1", { name: "Flaky", objective: "Click on the 1st check box on the pending actions page.", baseUrl: "https://example.com/p" }, {
+    model: checkboxModel(), verifier: verifierOk, browserFactory: async () => handle, shotUploader: async () => ({ key: "test" }), ...noSleepOpts,
+    verificationVision: false as const, headless: true,
+    onStep: async () => { saves++; throw new Error("The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()") },
+  } as any)
+  expect(saves).toBeGreaterThan(0)
+  expect(out.status).toBe("crystallized")
+}, 30_000)
+
+test("(N2) retryTransient retries a dropped connection but not a real error", async () => {
+  const { retryTransient, isTransientNetworkError } = await import("./trails-crystallize")
+  let n = 0
+  const v = await retryTransient(async () => { n++; if (n < 3) throw new Error("The socket connection was closed unexpectedly"); return "ok" })
+  expect(v).toBe("ok"); expect(n).toBe(3)
+  let m = 0
+  await expect(retryTransient(async () => { m++; throw new Error("SQLITE_CONSTRAINT: UNIQUE failed") })).rejects.toThrow(/UNIQUE/)
+  expect(m).toBe(1)
+  let k = 0
+  await expect(retryTransient(async () => { k++; throw new Error("fetch failed") }, undefined, 3)).rejects.toThrow(/fetch failed/)
+  expect(k).toBe(3)
+  expect(isTransientNetworkError(new Error("ECONNRESET"))).toBe(true)
+  expect(isTransientNetworkError(new Error("element not found"))).toBe(false)
+})
