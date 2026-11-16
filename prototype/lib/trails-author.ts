@@ -377,6 +377,8 @@ export async function authorTrail(
      * Wired by runAuthorNow to touchAuthorHeartbeat(sessionId). Best-effort: errors are swallowed.
      */
     onHeartbeat?: () => void | Promise<void>
+    /** Step-watchdog tuning (tests only). tickMs: check interval; abortMs: max silence between progress marks before the run is failed. */
+    watchdog?: { tickMs?: number; abortMs?: number }
     /**
      * KLA-57: prior checkpoint to resume from. Browser navigates to checkpoint.lastUrl and the
      * drive loop continues from checkpoint.stepIdx with accumulated traj/history/cost.
@@ -567,16 +569,43 @@ export async function authorTrail(
   }
   // KD-2255: Cancel must not wait out a 2-min model call or a busy-page snapshot - every bounded wait also
   // ends the moment the user cancels; the loop-top abort check then stalls with "cancelled by user".
+  // ── Step watchdog ─────────────────────────────────────────────────────────────────────────────────────────────
+  // Dev 2026-11-16: two runs were reaped as "stale heartbeat" (no progress for 3 min right after a page-changing click)
+  // with nothing logged about WHERE the loop was stuck. Every bounded wait now marks progress (stage name + time), a slow
+  // but moving step keeps the heartbeat alive (throttled), and a timer logs a warning when a stage goes quiet. If NOTHING
+  // moves for longer than the stage's own budget the watchdog fails the run itself - closing the browser to unblock any
+  // hung CDP await - with the stage named, well before the 3-min reaper, and the checkpoint is kept so Resume works.
+  const WD_TICK_MS = opts.watchdog?.tickMs ?? 10_000
+  const WD_WARN_MS = 45_000
+  const WD_GAP_ABORT_MS = opts.watchdog?.abortMs ?? 90_000 // silence allowed BETWEEN bounded waits (an unbounded await)
+  const wd = { stage: "starting", inFlight: false, since: Date.now(), allowMs: WD_GAP_ABORT_MS, idx: -1, tripped: null as string | null, warnedAt: 0, lastBeat: 0 }
+  const progress = (stage: string, inFlight: boolean, allowMs: number = WD_GAP_ABORT_MS) => {
+    wd.stage = stage; wd.inFlight = inFlight; wd.since = Date.now(); wd.allowMs = allowMs
+    // Progress-based heartbeat: a step that is slow but moving is alive; a hung one never gets here, so it still ages out.
+    if (wd.since - wd.lastBeat > 10_000) { wd.lastBeat = wd.since; try { opts.onHeartbeat?.() } catch {} }
+  }
+  let wdTimer: ReturnType<typeof setInterval> | null = null
+  // KD-2255: Cancel must not wait out a 2-min model call or a busy-page snapshot - every bounded wait also
+  // ends the moment the user cancels; the loop-top abort check then stalls with "cancelled by user".
   const bounded = <T>(p: Promise<T>, ms: number, what: string): Promise<T> => {
     const sig = opts.abortSignal
     p.catch(() => {})   // may fail after we've given up on it (cancel/timeout closed the page): never a crash
     if (sig?.aborted) return Promise.reject(new Error("cancelled by user"))
+    progress(what, true, ms + 20_000)
     let timer: ReturnType<typeof setTimeout> | undefined, onAbort: (() => void) | undefined
     return Promise.race([p, new Promise<never>((_, rej) => {
       timer = setTimeout(() => rej(new Error(`${what} timed out after ${ms}ms`)), ms)
       if (sig) { onAbort = () => rej(new Error("cancelled by user")); sig.addEventListener("abort", onAbort, { once: true }) }
-    })]).finally(() => { clearTimeout(timer); if (sig && onAbort) sig.removeEventListener("abort", onAbort) })
+    })]).finally(() => { clearTimeout(timer); if (sig && onAbort) sig.removeEventListener("abort", onAbort); progress(`after ${what}`, false) })
   }
+  // Persistence hooks (DB writes) used to be awaited with no limit. A timeout is logged and skipped (best effort, the next
+  // step saves again); a real error still propagates exactly as before.
+  const SAVE_TIMEOUT_MS = 15_000
+  const saveStep = async (l: any) => {
+    try { await bounded(Promise.resolve(opts.onStep?.(l)), SAVE_TIMEOUT_MS, "save step") }
+    catch (e) { if (/timed out/.test(String((e as any)?.message ?? e))) console.warn("[trails-author] save step timed out, continuing"); else throw e }
+  }
+  const saveCheckpoint = (c: any) => bounded(Promise.resolve(opts.onCheckpoint?.(c)), SAVE_TIMEOUT_MS, "save checkpoint")
   // KD-2255: heavy pages (PX4 add_new_project) keep the renderer busy for 15s+ while their scripts run; no
   // snapshot (or screenshot) can run until it frees up, and one busy spell was killing the whole walk with
   // "snapshot attempt hung". Give the page up to 4 rounds (~1 min) before failing. Real errors still throw.
@@ -626,17 +655,30 @@ export async function authorTrail(
     watchdogMs: driveDeadlineMs + 30_000,
   })
   const closeHandle = async () => {
+    if (wdTimer) { clearInterval(wdTimer); wdTimer = null }
     if (!handle) return
     const h = handle
     handle = null
     await h.close().catch(() => {})
   }
+  wdTimer = setInterval(() => {
+    const idle = Date.now() - wd.since
+    if (idle >= Math.min(WD_WARN_MS, wd.allowMs) && wd.warnedAt !== wd.since) {
+      wd.warnedAt = wd.since
+      console.warn(`[trails-author] watchdog: step ${wd.idx} quiet for ${Math.round(idle / 1000)}s at "${wd.stage}" (${wd.inFlight ? "bounded wait in flight" : "between waits"})`)
+    }
+    if (idle > wd.allowMs && !wd.tripped) {
+      wd.tripped = `step watchdog: no progress for ${Math.round(idle / 1000)}s at "${wd.stage}" (step ${wd.idx}) - the run stopped making progress, so it was ended instead of hanging. Resume to continue from the last checkpoint.`
+      console.error(`[trails-author] ${wd.tripped}`)
+      void closeHandle() // unblocks any hung browser call; the loop then stalls with this reason at its next check
+    }
+  }, WD_TICK_MS) // cleared by closeHandle(), which every exit path of this function reaches
   const stall = async (why: string, currentUrl?: string, finalStatus: "stalled" | "needs_auth" = "stalled"): Promise<AuthorOutcome> => {
     // A user cancel can surface as any step error (bounded() rejects everywhere); report it as what it is.
     if (opts.abortSignal?.aborted) { why = "cancelled by user"; finalStatus = "stalled" }
     // KLA-57: persist checkpoint before closing so the session is resumable.
     if (opts.onCheckpoint) {
-      try { await opts.onCheckpoint(snapshotCheckpoint(currentUrl ?? req.baseUrl)) } catch {}
+      try { await saveCheckpoint(snapshotCheckpoint(currentUrl ?? req.baseUrl)) } catch {}
     }
     // KLA-57: crystallize whatever we have when we stall with > 1 step (skip pure-navigate-only runs).
     // This gives the user a reviewable partial draft trail even when the drive didn't finish.
@@ -694,6 +736,8 @@ export async function authorTrail(
     for (let idx = startIdx; idx < stepLimit; idx++) {
       // KLA-55: heartbeat - signals the crash-reaper that this session is still alive. Best-effort.
       opts.onHeartbeat?.()
+      wd.idx = idx; progress("step start", false)
+      if (wd.tripped) { let u = req.baseUrl; try { u = page.url() } catch {} ; return await stall(wd.tripped, u) }
       if (costUsd >= AUTHOR_MAX_COST_USD) return await stall(`authoring budget cap $${AUTHOR_MAX_COST_USD} reached after ${llmCalls} model calls`, page.url())
       if (opts.abortSignal?.aborted) return await stall("cancelled by user", page.url())
       if (Date.now() > deadlineAt) {
@@ -1042,7 +1086,7 @@ export async function authorTrail(
             // whose reload keeps failing can't bypass the bound via misses resetting on the next click.
             if (forceProactiveDone) {
               proactiveVerifyFails++
-              if (opts.onCheckpoint) { try { await opts.onCheckpoint(snapshotCheckpoint(page.url())) } catch {} }
+              if (opts.onCheckpoint) { try { await saveCheckpoint(snapshotCheckpoint(page.url())) } catch {} }
             }
             history.push(`(could not reload the page to independently confirm the change persisted — not finishing yet; will retry)`)
             if (misses >= MAX_CONSECUTIVE_MISSES) return await stall("could not confirm the change persisted before finishing", page.url())
@@ -1104,7 +1148,7 @@ export async function authorTrail(
           // the attempt (round-9g C3).
           if (forceProactiveDone) {
             proactiveVerifyFails++
-            if (opts.onCheckpoint) { try { await opts.onCheckpoint(snapshotCheckpoint(page.url())) } catch {} }
+            if (opts.onCheckpoint) { try { await saveCheckpoint(snapshotCheckpoint(page.url())) } catch {} }
           }
           const errMsg = verifyErr?.message || String(verifyErr)
           history.push(`(objective verification failed: ${errMsg} — retrying done from last state)`)
@@ -1127,9 +1171,9 @@ export async function authorTrail(
               krefSnapshot: dom.length > 50000 ? dom.slice(0, 50000) + "\n...[TRUNCATED]" : dom,
             }
             log.push(entry)
-            await opts.onStep?.(log)
+            await saveStep(log)
             if (opts.onCheckpoint) {
-              try { await opts.onCheckpoint(snapshotCheckpoint(page.url())) } catch {}
+              try { await saveCheckpoint(snapshotCheckpoint(page.url())) } catch {}
             }
           }
           objectiveVerified = true
@@ -1141,7 +1185,7 @@ export async function authorTrail(
           // (round-9g C3) persist immediately so a crash/resume in this window can't regain the attempt.
           if (forceProactiveDone) {
             proactiveVerifyFails++
-            if (opts.onCheckpoint) { try { await opts.onCheckpoint(snapshotCheckpoint(page.url())) } catch {} }
+            if (opts.onCheckpoint) { try { await saveCheckpoint(snapshotCheckpoint(page.url())) } catch {} }
           }
           history.push(`(verification failed: your proposed 'done' action was rejected because the objective has not been achieved yet: ${verifyResult.reason || "unknown reason"} — continue until the objective is fully achieved)`)
           if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after ${misses} failed verification attempts; last: ${verifyResult.reason}`, page.url())
@@ -1273,7 +1317,7 @@ export async function authorTrail(
           if (a.op === "click") { /* handled above */ }
           else if (a.op === "type") {
             const raw = a.value ?? ""
-            const resolved = hasCredRef(raw) ? await credResolver(projectId, raw) : raw
+            const resolved = hasCredRef(raw) ? await bounded(credResolver(projectId, raw), SAVE_TIMEOUT_MS, "credential lookup") : raw
             // Re-typing the exact value a field already holds (PX4's password screen pre-fills the email; the model typed it
             // again) is a redundant step the objective forbids ("don't enter email and password multiple times") and it
             // made the saved trail fragile on replay. Compare only; the value is never logged.
@@ -1295,7 +1339,7 @@ export async function authorTrail(
           else if (a.op === "upload") {
             const fname = (a.value ?? "").trim()
             if (!opts.fileResolver) throw new Error("upload: this AutoSim has no attached file to upload")
-            const paths = await opts.fileResolver(fname)
+            const paths = await bounded(Promise.resolve(opts.fileResolver!(fname)), SAVE_TIMEOUT_MS, "file lookup")
             await page.setInputFiles(a.selector!, paths, ACTION_TIMEOUT)
           }
           // KLA (BookJoy Save-loop): after a commit-style action, let the network settle so the NEXT top-of-loop
@@ -1351,7 +1395,7 @@ export async function authorTrail(
               const postDom = await bounded(page.krefSnapshot(), 15_000, "post-autosubmit snapshot").catch(() => dom)
               traj.push({ action: "click", actionValue: undefined, target: { resolvedSelector: autoClicked, domPath: autoClicked }, url: page.url(), domHash: sha256hex(postDom) })
               log.push({ idx: log.length, op: "click", selector: autoClicked, value: null, url: page.url(), rationale: "auto-advance: submit the filled login form (stall recovery)", ok: true, krefSnapshot: postDom.length > 50000 ? postDom.slice(0, 50000) + "\n...[TRUNCATED]" : postDom })
-              await opts.onStep?.(log)
+              await saveStep(log)
               history.push(`(auto-advance: '${a.op}' repeated without progress on a login form — clicked "${autoClicked}" to submit; check the new page state)`)
               consecutiveSuccessKey = 0
               lastSuccessKey = `autosubmit|${autoClicked}|${page.url()}`
@@ -1367,11 +1411,11 @@ export async function authorTrail(
               // verify below increments the counter; a successful one crystallizes and ends the run).
               entry.ok = true
               entry.krefSnapshot = dom.length > 50000 ? dom.slice(0, 50000) + "\n...[TRUNCATED]" : dom
-              log.push(entry); await opts.onStep?.(log)
+              log.push(entry); await saveStep(log)
               consecutiveSuccessKey = 0
               // KLA-786 (round-9b C2, codex): persist the armed gate NOW (before continue) so a crash/resume
               // in this window can't drop unconfirmedCommitPending and let a resumed "done" skip the read-back.
-              if (opts.onCheckpoint) { try { await opts.onCheckpoint(snapshotCheckpoint(page.url())) } catch {} }
+              if (opts.onCheckpoint) { try { await saveCheckpoint(snapshotCheckpoint(page.url())) } catch {} }
               history.push(`(stuck repeating '${a.op}', but a save/submit happened just before — verifying whether it already succeeded before giving up)`)
               continue
             } else {
@@ -1387,7 +1431,7 @@ export async function authorTrail(
                 }
               } catch {}
               entry.krefSnapshot = dom.length > 50000 ? dom.slice(0, 50000) + "\n...[TRUNCATED]" : dom
-              log.push(entry); await opts.onStep?.(log)
+              log.push(entry); await saveStep(log)
               return await stall(
                 `progress stall: '${a.op}' on '${safeSelector ?? a.url ?? "page"}' repeated ${consecutiveSuccessKey + 1}× without state change — refine the objective to include the next step`,
                 page.url(),
@@ -1443,7 +1487,7 @@ export async function authorTrail(
             }
           } catch {}
           entry.krefSnapshot = dom.length > 50000 ? dom.slice(0, 50000) + "\n...[TRUNCATED]" : dom
-          log.push(entry); await opts.onStep?.(log); return await stall(`stuck after ${misses} failed attempts; last: ${safeMsg}`, page.url())
+          log.push(entry); await saveStep(log); return await stall(`stuck after ${misses} failed attempts; last: ${safeMsg}`, page.url())
           }
         }
       }
@@ -1460,13 +1504,13 @@ export async function authorTrail(
       }
       entry.krefSnapshot = entryDom.length > 50000 ? entryDom.slice(0, 50000) + "\n...[TRUNCATED]" : entryDom
       if (!entryLogged) log.push(entry)
-      await opts.onStep?.(log)
+      await saveStep(log)
       // Arm before persisting the final ordinary step so a crash/resume cannot lose the pending
       // read-back that was earned at the max-step boundary.
       const armedAtStepLimit = idx === stepLimit - 1 && !maxStepSlotReserved && armProactiveVerify()
       // KLA-57: persist checkpoint after each step so a subsequent stall or crash has a recovery point.
       if (opts.onCheckpoint) {
-        try { await opts.onCheckpoint(snapshotCheckpoint(page.url())) } catch {}
+        try { await saveCheckpoint(snapshotCheckpoint(page.url())) } catch {}
       }
       // The action just consumed the last ordinary step. If it was a recent commit, reserve a final
       // iteration for the same forced read-back before the authoring loop crystallizes a partial trail.

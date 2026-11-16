@@ -1368,3 +1368,50 @@ test("(I3) multipleRowsRequested ignores the boilerplate words in a long objecti
   expect(multipleRowsRequested("tick the first 3 check boxes")).toBe(true)
   expect(multipleRowsRequested("check both boxes")).toBe(true)
 })
+
+// ── (W) Step watchdog ────────────────────────────────────────────────────────────────────────────────────────────
+// Dev 2026-11-16: two runs were reaped as "stale heartbeat" with nothing saying where the loop was stuck. A browser call the
+// loop does not bound (here: the `wait` op) that never returns must be failed by the watchdog - stage named, checkpoint kept.
+
+test("(W1) a browser call that never returns is failed by the step watchdog, naming the stage", async () => {
+  const page = makeStuckPage({})
+  let release: () => void = () => {}
+  const hung = new Promise<void>((_, rej) => { release = () => rej(new Error("Target closed")) })
+  hung.catch(() => {})
+  ;(page as any).waitMs = async () => hung // unbounded in the loop; only closing the browser frees it, like a wedged CDP call
+  let closed = 0
+  const handle: any = { newPage: async () => page, close: async () => { closed++; release() }, kind: "local" }
+  const model: AuthorModel = async () => ({ action: { op: "wait", value: "1000", selector: null, url: null, checkpoint: null, rationale: "wait for the page" }, costUsd: 0 })
+  const checkpoints: any[] = []
+  const t0 = Date.now()
+  const out = await authorTrail("proj_wd1", { name: "Hang", objective: "wait for something", baseUrl: "https://example.com/login" }, {
+    model, verifier: async () => ({ achieved: true, reason: "", costUsd: 0 }), browserFactory: async () => handle,
+    shotUploader: async () => ({ key: "test" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+    watchdog: { tickMs: 100, abortMs: 600 },
+    onCheckpoint: async (c: any) => { checkpoints.push(c) },
+  } as any)
+  expect(out.status).toBe("stalled")
+  expect(out.stallReason).toMatch(/step watchdog: no progress for \d+s at ".+"/)
+  expect(out.stallReason).toMatch(/Resume/)
+  expect(closed).toBeGreaterThan(0)            // the browser was closed to unblock the hung call
+  expect(checkpoints.length).toBeGreaterThan(0) // the session stays resumable
+  expect(Date.now() - t0).toBeLessThan(15_000)
+}, 30_000)
+
+test("(W2) a slow-but-moving step is NOT tripped: only silence between waits counts", async () => {
+  const page = makeStuckPage({ submitSelector: 'button[type="submit"]' })
+  const { handle } = makeBrowserHandle(page)
+  let n = 0
+  const model: AuthorModel = async () => {
+    n++
+    await new Promise((r) => setTimeout(r, 1500)) // a slow model call (bounded, in flight): longer than abortMs, must be allowed
+    return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "done" }, costUsd: 0 }
+  }
+  const out = await authorTrail("proj_wd2", { name: "Slow", objective: "do a thing", baseUrl: "https://example.com/login" }, {
+    model, verifier: async () => ({ achieved: true, reason: "", costUsd: 0 }), browserFactory: async () => handle,
+    shotUploader: async () => ({ key: "test" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+    watchdog: { tickMs: 100, abortMs: 600 },
+  } as any)
+  expect(n).toBeGreaterThan(0)
+  expect(String(out.stallReason ?? "")).not.toMatch(/step watchdog/)
+}, 30_000)
