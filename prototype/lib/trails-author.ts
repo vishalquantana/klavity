@@ -8,6 +8,7 @@ import { crystallize, type Trajectory, type TrajectoryStep } from "./trails-crys
 import { deleteTrail, setTrailStatus } from "./trails"
 import { ToolError } from "./mcp/tool-error"
 import { walkTrail, scaledWalkDeadlineMs } from "./trails-runner"
+import { shouldUseNodeWalkWorker, walkTrailViaNode } from "./walk-node-bridge"
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { getTestAccountByName } from "./test-accounts"
 import { sha256hex } from "./crypto"
@@ -98,6 +99,15 @@ export function resumeLostSession(expectedUrl: string, actualUrl: string): boole
     if (a.origin === e.origin && a.pathname === e.pathname) return false
     return AUTH.test(a.pathname) && !AUTH.test(e.pathname)
   } catch { return false }
+}
+
+/**
+ * A page-snapshot failure worth waiting out and retrying: the page is busy ("hung"/"timed out") or is in the middle of
+ * navigating ("Execution context was destroyed ..."; seen right after PX4's post-login redirect to the dashboard, which
+ * used to fail the whole authoring run instead of just re-capturing a moment later).
+ */
+export function isTransientSnapshotError(msg: string): boolean {
+  return /hung|timed out|Timeout|execution context was destroyed|cannot find context|inspected target navigated|target closed.*navigat/i.test(msg)
 }
 
 /** Re-capture until the snapshot has real content (>= 8 chars) or the bounded retries run out. */
@@ -436,6 +446,9 @@ export async function authorTrail(
   // C2-1: auto-submit a stalled form ONLY when the run typed a password within the last few steps
   // (evidence it's a LOGIN flow, and recency-bounded so a later unrelated form after login can't trip it).
   let lastPasswordTypeStep = -999
+  // A checkbox clicked twice in a row is UN-selected by the 2nd click (seen on PX4 Pending Actions: "click 1st
+  // check box" was recorded twice). Remember the last checkbox click so an immediate repeat is skipped, not re-toggled.
+  let lastToggleClickKey: string | null = null
   const PASSWORD_RECENCY_STEPS = 8
   // No-op stagnation tracking: detects when the page URL + DOM hash doesn't change across
   // iterations (the previous action had no visible effect). noOpCount resets on any real change.
@@ -554,7 +567,7 @@ export async function authorTrail(
       try { return await bounded(pg.krefSnapshot(), 15_000, what) }
       catch (e) {
         const msg = String((e as any)?.message ?? e)
-        if (i >= 4 || !/hung|timed out|Timeout/i.test(msg)) throw e
+        if (i >= 4 || !isTransientSnapshotError(msg)) throw e
         console.warn(`[trails-author] ${what}: page busy (${msg.split("\n")[0]}), retry ${i}/3`)
         opts.onHeartbeat?.()
         await new Promise((r) => setTimeout(r, 2_000))
@@ -1179,10 +1192,24 @@ export async function authorTrail(
               )
             }
           }
-          if (a.op === "click") await page.click(a.selector!, ACTION_TIMEOUT)
+          // Set when the action would only repeat what already happened (nothing is executed or recorded for it).
+          let skipRepeatNote: string | null = null
+          if (a.op === "click") {
+            const toggleKey = (fp as any)?.inputType === "checkbox" ? `${persistSelector ?? a.selector}|${page.url()}` : null
+            if (toggleKey && toggleKey === lastToggleClickKey) skipRepeatNote = "skipped: that checkbox was just clicked (a second click would un-select it). It is already selected; continue with the next step."
+            else await page.click(a.selector!, ACTION_TIMEOUT)
+            lastToggleClickKey = toggleKey
+          } else lastToggleClickKey = null
+          if (a.op === "click") { /* handled above */ }
           else if (a.op === "type") {
             const raw = a.value ?? ""
-            await page.fill(a.selector!, hasCredRef(raw) ? await credResolver(projectId, raw) : raw, ACTION_TIMEOUT)
+            const resolved = hasCredRef(raw) ? await credResolver(projectId, raw) : raw
+            // Re-typing the exact value a field already holds (PX4's password screen pre-fills the email; the model typed it
+            // again) is a redundant step the objective forbids ("don't enter email and password multiple times") and it
+            // made the saved trail fragile on replay. Compare only; the value is never logged.
+            const curVal = page.fieldValue ? await bounded(page.fieldValue(a.selector!), 3_000, "field value").catch(() => null) : null
+            if (curVal && curVal === resolved) skipRepeatNote = "skipped: that field already contains exactly this value, so it was not typed again. Continue with the next step."
+            else await page.fill(a.selector!, resolved, ACTION_TIMEOUT)
             // C2-1: AFTER a successful password fill, latch login-flow evidence (recency-bounded). Uses the
             // fields the PRODUCTION fingerprint actually returns (accessibleName/domPath) plus the credential
             // placeholder (test-account logins) and the stable selector - never the missing inputType/ariaLabel.
@@ -1205,14 +1232,16 @@ export async function authorTrail(
           // snapshot captures the AJAX result (a "Saved" toast / updated list). Without this, an AJAX save with
           // no page navigation leaves the DOM looking unchanged  the no-op stagnation guard fires  the model
           // is nudged to re-click Save  Save-loop. (type/hover/fill/assert don't commit, so skip them.)
-          if (a.op === "click" || a.op === "keyPress" || a.op === "select" || a.op === "upload") {
+          if (skipRepeatNote) {
+            history.push(`${a.op} ${persistSelector ?? a.selector} — ${skipRepeatNote}`)
+          } else if (a.op === "click" || a.op === "keyPress" || a.op === "select" || a.op === "upload") {
             await bounded(page.settleNetwork(POST_ACTION_SETTLE_MS), POST_ACTION_SETTLE_MS + 1_000, "post-action network settle").catch(() => {})
             // KLA-786: mark this as a settled commit so next iteration's no-op guard nudges the model
             // to finish (emit "done") rather than re-click submit if the DOM still didn't change.
             prevActionWasCommit = true
             lastCommitStep = log.length // KLA-786 (round-9): recency anchor for the stall→verify hook
           }
-          traj.push({
+          if (!skipRepeatNote) traj.push({
             action: OP2ACTION[a.op], actionValue: a.op === "type" || a.op === "select" || a.op === "keyPress" || a.op === "upload" ? a.value ?? undefined : undefined,
             target: { ...fp, resolvedSelector: persistSelector },
             checkpoint: a.op === "assert" ? { description: a.checkpoint || a.rationale || "checkpoint" } : undefined,
@@ -1385,7 +1414,7 @@ export async function authorTrail(
     opts.onHeartbeat?.() // reset the stale clock right as the (up to 180s) replay starts
     let v: Awaited<ReturnType<typeof walkTrail>>
     try {
-      v = await withHeartbeat(() => (opts.verificationWalk ?? walkTrail)(projectId, trailId, {
+      v = await withHeartbeat(() => (opts.verificationWalk ?? (shouldUseNodeWalkWorker() ? walkTrailViaNode : walkTrail))(projectId, trailId, {
         fixtureUrl: req.baseUrl, suppressFindings: true, credResolver, deadlineMs: VERIFY_WALK_DEADLINE_MS, scaleDeadlineWithSteps: true,
         launchArgs, headless: opts.headless, replay: true,
         // KD-2255: per-step screenshots, same as a manual Run, so the verification PDF shows each step.

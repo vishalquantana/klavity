@@ -97,3 +97,15 @@ describe("resumeLostSession", () => {
     expect(resumeLostSession("not a url", "also not")).toBe(false)
   })
 })
+
+import { isTransientSnapshotError } from "./trails-author"
+describe("isTransientSnapshotError", () => {
+  test("retries busy-page and mid-navigation errors", () => {
+    for (const m of ["snapshot attempt hung", "snapshot capture timed out after 15000ms", "Timeout 30000ms exceeded",
+      "Execution context was destroyed, most likely because of a navigation.", "Cannot find context with specified id",
+      "Inspected target navigated or closed"]) expect(isTransientSnapshotError(m)).toBe(true)
+  })
+  test("does not retry real failures", () => {
+    for (const m of ["selector matched 0 elements", "net::ERR_NAME_NOT_RESOLVED", "OPENROUTER_API_KEY not set"]) expect(isTransientSnapshotError(m)).toBe(false)
+  })
+})

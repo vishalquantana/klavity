@@ -374,6 +374,10 @@ export function targetCheckBody(arg: { selector: string; label: string }): Targe
   const el = document.querySelector(arg.selector)
   if (!el) return { ok: true, html: "", candidates: [] }
   if (!want || names(el).includes(want)) return { ok: true, html: "", candidates: [] }
+  // A checkbox/radio has no visible text, so the model names it by role ("checkbox", "1st check box on the page"). That is a
+  // correct description of an <input type=checkbox>, not a mismatch (PX4 Pending Actions rejected it 4 times).
+  const inType = el.tagName === "INPUT" ? ((el as HTMLInputElement).type || "").toLowerCase() : ""
+  if ((inType === "checkbox" && /\bcheck ?box\b/.test(want)) || (inType === "radio" && /\bradio\b/.test(want))) return { ok: true, html: "", candidates: [] }
   const visible = (e: Element) => {
     const r = e.getBoundingClientRect(); if (r.width === 0 || r.height === 0) return false
     const s = getComputedStyle(e); return s.display !== "none" && s.visibility !== "hidden" && s.opacity !== "0"
@@ -440,6 +444,19 @@ function pwSelectorKrefBody(arg: { selector: string; id: string }): { selector: 
   const t = sel.match(/^text=(["']?)(.*)\1$/s)
   const m = sel.match(/^(.*?):(has-text|text-is|text)\((["'])(.*)\3\)\s*$/s)
   if (t) { want = t[2]; exact = !!t[1] } else if (m) { base = m[1].trim() || "*"; want = m[4]; exact = m[2] === "text-is" } else return { selector: null, count: 0 }
+  // The model often writes an ARIA role where CSS wants a tag: heading:has-text("Completed Actions"). "heading" is not an
+  // element, so it matched 0 and three misses in a row stalled the run. Map the common roles to the elements that carry them.
+  const ROLE_BASE: Record<string, string> = {
+    heading: 'h1,h2,h3,h4,h5,h6,[role="heading"]',
+    button: 'button,[role="button"],input[type="button"],input[type="submit"]',
+    link: 'a,[role="link"]',
+    textbox: 'input:not([type]),input[type="text"],input[type="email"],input[type="password"],textarea,[role="textbox"]',
+    checkbox: 'input[type="checkbox"],[role="checkbox"]',
+    dialog: '[role="dialog"],dialog,.modal',
+    row: 'tr,[role="row"]',
+    cell: 'td,th,[role="cell"]',
+  }
+  base = ROLE_BASE[base.toLowerCase()] ?? base
   const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase()
   const w = norm(want)
   const hit = (el: Element) => { const x = norm((el as HTMLElement).innerText ?? el.textContent ?? ""); return exact ? x === w : x.includes(w) }
@@ -589,6 +606,8 @@ export interface BrowserPage {
   stableSelector(selector: string): Promise<string | null>
   click(selector: string, timeoutMs: number): Promise<void>
   fill(selector: string, value: string, timeoutMs: number, sensitive?: boolean): Promise<void>
+  /** Current value of an input/textarea (null if it has none / can't be read). Used to avoid re-typing what a field already holds. */
+  fieldValue?(selector: string): Promise<string | null>
   selectOption(selector: string, value: string, timeoutMs: number): Promise<void>
   hover(selector: string, timeoutMs: number): Promise<void>
   keyPress(selector: string, key: string, timeoutMs: number): Promise<void>
@@ -705,6 +724,7 @@ class PlaywrightPage implements BrowserPage {
   async hover(selector: string, timeoutMs: number) { await this.page.locator(selector).hover({ timeout: timeoutMs }) }
   async keyPress(selector: string, key: string, timeoutMs: number) { await this.page.locator(selector).press(key, { timeout: timeoutMs }) }
   async clearField(selector: string, timeoutMs: number) { await this.page.locator(selector).clear({ timeout: timeoutMs }) }
+  async fieldValue(selector: string) { try { return await this.page.locator(selector).first().inputValue({ timeout: 2_000 }) } catch { return null } }
   async setInputFiles(selector: string, files: string[], timeoutMs: number) { await this.page.locator(selector).setInputFiles(files, { timeout: timeoutMs }) }
   async waitForSelector(selector: string, timeoutMs: number) { await this.page.locator(selector).first().waitFor({ state: "visible", timeout: timeoutMs }) }
   async assertVisible(selector: string, timeoutMs: number) { await this.page.locator(selector).waitFor({ state: "visible", timeout: timeoutMs }) }
@@ -884,6 +904,7 @@ export class PuppeteerPage implements BrowserPage {
   async selectOption(selector: string, value: string, timeoutMs: number) { await this.page.waitForSelector(selector, { timeout: timeoutMs }); await this.page.select(selector, value) }
   async hover(selector: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }); await this.page.hover(selector) }
   async keyPress(selector: string, key: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }); await this.page.focus(selector); await this.page.keyboard.press(key) }
+  async fieldValue(selector: string) { try { return await this.page.$eval(selector, (e: any) => (typeof e.value === "string" ? e.value : null)) } catch { return null } }
   async clearField(selector: string, timeoutMs: number) {
     const el = await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs })
     await el.evaluate(selectAllBody).catch(() => {})
