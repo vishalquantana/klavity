@@ -9010,10 +9010,17 @@ export async function listTicketsPaginated(
     // descriptions live in observation, while notes are the editable ticket description. #543: a
     // manual ticket's explicit Title now lives in the dedicated `title` column (no longer crammed
     // into observation), so search must cover it too or a title-only match is missed.
-    conditions.push(`(LOWER(COALESCE(f.title, '')) LIKE LOWER(?) ESCAPE '\\'
+    // KD-3095: a ticket ID typed into search ("109", "#109", "KD-109") must find that ticket by its
+    // number (feedback.seq_num) -- the ID is not part of any text column, so the LIKE match alone
+    // returned nothing. The key prefix is not checked: results are already project-scoped.
+    const idMatch = search.match(/^(?:#|[A-Za-z][A-Za-z0-9]{1,9}-)?(\d{1,15})$/)
+    const seq = idMatch ? Number(idMatch[1]) : NaN
+    const seqClause = Number.isSafeInteger(seq) && seq > 0 ? "f.seq_num = ? OR " : ""
+    conditions.push(`(${seqClause}LOWER(COALESCE(f.title, '')) LIKE LOWER(?) ESCAPE '\\'
                       OR LOWER(COALESCE(f.observation, '')) LIKE LOWER(?) ESCAPE '\\'
                       OR LOWER(COALESCE(f.notes, '')) LIKE LOWER(?) ESCAPE '\\'
                       OR LOWER(COALESCE(f.suggested_bug_json, '')) LIKE LOWER(?) ESCAPE '\\')`)
+    if (seqClause) args.push(seq)
     args.push(pattern, pattern, pattern, pattern)
   }
 

@@ -30865,7 +30865,10 @@
               let bug = ""
               try { bug = t.suggestedBug ? JSON.stringify(t.suggestedBug) : "" } catch { bug = "" }
               const hay = [t.title, t.observation, t.notes, bug].filter(Boolean).join(" \n ").toLowerCase()
-              if (!hay.includes(q)) return false
+              // KD-3095: mirror the server -- a ticket ID ("68", "#68", "KD-68") matches the ticket number exactly.
+              const idM = q.trim().match(/^(?:#|[a-z][a-z0-9]{1,9}-)?(\d{1,15})$/)
+              const idHit = !!idM && t.seqNum != null && Number(t.seqNum) === Number(idM[1])
+              if (!idHit && !hay.includes(q)) return false
             }
             return true
           }
