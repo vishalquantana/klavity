@@ -168,7 +168,7 @@ import { extractKeyframes } from "./lib/keyframes"
 import { updateFeedbackTitle, updateFeedbackAnnotations } from "./lib/db"
 import { transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeAudioBytes, transcribeConfigured, TRANSCRIBE_MODEL, TRANSCRIBE_MAX_BYTES, activeTranscribeModel } from "./lib/transcribe"
 // KD-995: split one Record-me walkthrough into separate tickets (POST /api/report/split).
-import { splitTranscriptIntoIssues } from "./lib/issue-split"
+import { splitTranscriptIntoIssues, parseSplitFrames, SPLIT_MAX_FRAMES, SPLIT_FRAME_MAX_CHARS } from "./lib/issue-split"
 import { DeepgramRelay, deepgramConfigured, deepgramCostUsd, evaluateVoiceStreamUpgrade, createVoiceStreamWsHandlers, VOICE_STREAM_MAX_SESSION_MS, type VoiceStreamData } from "./lib/deepgram-stream"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
@@ -4926,7 +4926,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   // toggle, per-IP + per-project caps). Best-effort: any failure returns { issues: [] } (never 500).
   if (req.method === "POST" && path === "/api/report/split") {
     if (!rlAllow(`split:ip:${clientIp(req, server)}`, 10, 60_000)) return wjson({ error: "rate limited", issues: [] }, 429)
-    const SIZE_CEIL = TRANSCRIBE_MAX_BYTES + 64 * 1024 // clip cap + multipart framing overhead
+    // clip cap + the sampled frames (KD-3080) + multipart framing overhead
+    const SIZE_CEIL = TRANSCRIBE_MAX_BYTES + SPLIT_MAX_FRAMES * SPLIT_FRAME_MAX_CHARS + 64 * 1024
     const declaredLen = Number(req.headers.get("content-length") || 0)
     if (declaredLen > SIZE_CEIL) return wjson({ error: "payload too large", issues: [] }, 413)
     const bounded = await readBodyBounded(req, SIZE_CEIL)
@@ -4982,18 +4983,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
     const pageUrl = String(form.get("pageUrl") || "").slice(0, 300)
     const note = String(form.get("text") || "").slice(0, 2000)
+    // KD-3080: screenshots the composer sampled across the clip — the model sees the screens, not just the words.
+    const frames = parseSplitFrames(form.get("frames"), { maxFrames: SPLIT_MAX_FRAMES, maxChars: SPLIT_FRAME_MAX_CHARS })
     const issues = await splitTranscriptIntoIssues(transcript, {
       llm: async (input, systemPrompt) => {
+        // Transcript + reporter note + page URL are UNTRUSTED (spoken/typed user content) → fenced as data.
+        const textPart = "VIDEO WALKTHROUGH TRANSCRIPT (untrusted — the reporter narrating):\n" + wrapUntrusted(input) +
+          "\n\nREPORTER NOTE (untrusted):\n" + wrapUntrusted(note || "(none)") +
+          "\n\nPAGE URL (untrusted):\n" + wrapUntrusted(pageUrl || "(unknown)")
+        const userParts: any[] = [{ type: "text", text: textPart + (frames.length ? "\n\nVIDEO FRAMES (untrusted screen content) follow, each labelled with its time in the recording." : "") }]
+        for (const f of frames) {
+          userParts.push({ type: "text", text: `FRAME at ${f.atSec.toFixed(1)}s:` })
+          userParts.push({ type: "image_url", image_url: { url: f.dataUrl } })
+        }
         const { content } = await chat(
           [
             { role: "system", content: systemPrompt + UNTRUSTED_GUARD },
-            {
-              role: "user",
-              // Transcript + reporter note + page URL are UNTRUSTED (spoken/typed user content) → fenced as data.
-              content: "VIDEO WALKTHROUGH TRANSCRIPT (untrusted — the reporter narrating):\n" + wrapUntrusted(input) +
-                "\n\nREPORTER NOTE (untrusted):\n" + wrapUntrusted(note || "(none)") +
-                "\n\nPAGE URL (untrusted):\n" + wrapUntrusted(pageUrl || "(unknown)"),
-            },
+            { role: "user", content: frames.length ? userParts : textPart },
           ],
           3000, true,
           // feature tag 'report-split' → budget-gated + cost-logged like every other LLM call.

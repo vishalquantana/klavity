@@ -161,7 +161,7 @@ export function openModal(type: ReportType = 'bug') {
     },
     // KD-995: split a "Record me" walkthrough into separate tickets (POST /api/report/split → the issues the
     // reporter narrated). Resolve null on any failure so the composer keeps the single ticket.
-    onSplitRecording: async (audio: Blob, ctx?: { text?: string }) => {
+    onSplitRecording: async (audio: Blob, ctx?: { text?: string; frames?: Array<{ atSec: number; dataUrl: string }> }) => {
       try {
         const fd = new FormData()
         fd.append('projectId', _projectId)
@@ -169,6 +169,7 @@ export function openModal(type: ReportType = 'bug') {
         if (audio.type) fd.append('mime', audio.type)
         fd.append('pageUrl', location.href)
         if (ctx?.text) fd.append('text', ctx.text)
+        if (ctx?.frames?.length) fd.append('frames', JSON.stringify(ctx.frames))
         const res = await fetchWithTimeout(backendBase() + '/api/report/split', { method: 'POST', body: fd }, 90_000)
         if (!res.ok) return null
         const data = await res.json().catch(() => null)
