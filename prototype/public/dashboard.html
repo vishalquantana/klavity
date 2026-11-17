@@ -38942,7 +38942,7 @@
                 if (s.status === "running") {
                   var ntElapsed = s.createdAt ? fmtSec(Math.floor((Date.now() - s.createdAt) / 1000)) : "";
                   var ntLimit = s.limitMs ? fmtSec(Math.round(s.limitMs / 1000)) : "";
-                  var ntTimeStr = ntElapsed ? (ntElapsed + (ntLimit ? " / " + ntLimit + " max" : "")) : "";
+                  var ntTimeStr = ntElapsed || "";
                   box.innerHTML = html
                     + liveViewHtml(sessionId)
                     + '<div class="nt-live">' + (_ntVerifying ? 'AutoSim is verifying…' : 'AutoSim is driving…') + (ntTimeStr ? ' <span class="muted" style="font-size:11px">(' + esc(ntTimeStr) + ')</span>' : '') + '</div>'
@@ -39099,7 +39099,7 @@
                 if (s.status === "running") {
                   var wzElapsed = s.createdAt ? fmtSec(Math.floor((Date.now() - s.createdAt) / 1000)) : "";
                   var wzLimit = s.limitMs ? fmtSec(Math.round(s.limitMs / 1000)) : "";
-                  var wzTimeStr = wzElapsed ? (wzElapsed + (wzLimit ? " / " + wzLimit + " max" : "")) : "";
+                  var wzTimeStr = wzElapsed || "";
                   box.innerHTML = html
                     + liveViewHtml(sessionId)
                     + '<div class="nt-live">' + (_ntVerifying ? 'AutoSim is verifying…' : 'AutoSim is driving…') + (wzTimeStr ? ' <span class="muted" style="font-size:11px">(' + esc(wzTimeStr) + ')</span>' : '') + '</div>'
