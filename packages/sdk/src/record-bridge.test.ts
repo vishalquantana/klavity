@@ -93,6 +93,21 @@ describe('record-bridge', () => {
     expect(bridge.active()).toBe(false)
   })
 
+  // KD-3080: a "Report Multiple Issues" walkthrough must still be recognisable after the page changed.
+  it('carries the recording purpose across a navigation', async () => {
+    bridge = createRecordBridge({ backendUrl: BACKEND, projectId: 'p1', onRecordingArrived: vi.fn() })
+    bridge.start(undefined, 'multi')
+    const session = sessionOf(fakeWin)
+    expect(JSON.parse(sessionStorage.getItem('klavity_rec_window')!).purpose).toBe('multi')
+    bridge.dispose() // the page unloads; sessionStorage survives
+
+    const onRecordingArrived = vi.fn()
+    bridge = createRecordBridge({ backendUrl: BACKEND, projectId: 'p1', onRecordingArrived })
+    msg({ type: 'klavity-rec', session, kind: 'done', recording: { id: 'rec_3', blob: new Blob(['x'], { type: 'video/webm' }), mime: 'video/webm', durationMs: 9000, bytes: 1, width: 1, height: 1, screenOnly: false } })
+    await vi.waitFor(() => expect(onRecordingArrived).toHaveBeenCalledTimes(1))
+    expect(onRecordingArrived.mock.calls[0][1]).toBe('multi')
+  })
+
   it('a cancel from the recorder window resolves null', async () => {
     bridge = createRecordBridge({ backendUrl: BACKEND, projectId: 'p1', onRecordingArrived: vi.fn() })
     const p = bridge.start()!

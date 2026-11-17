@@ -188,6 +188,27 @@ export function grabVideoFrame(src: string, atSec: number, maxW = 960, timeoutMs
   })
 }
 
+// KD-3080: frames sampled evenly across a walkthrough so the split analysis SEES the screens the reporter is
+// talking about (page names, labels, visible values, error text) instead of working from the narration alone.
+// One frame per ~10s, 2..SPLIT_FRAME_MAX. Best-effort: stops at the first frame that can't be decoded.
+export const SPLIT_FRAME_MAX = 8
+export type SplitFrame = { atSec: number; dataUrl: string }
+export function splitFrameTimes(durationSec: number, max = SPLIT_FRAME_MAX): number[] {
+  const d = Number(durationSec)
+  if (!isFinite(d) || d <= 0) return []
+  const n = Math.max(2, Math.min(max, Math.ceil(d / 10)))
+  return Array.from({ length: n }, (_, i) => Math.round(((i + 0.5) * d / n) * 10) / 10)
+}
+export async function sampleSplitFrames(src: string, durationSec: number): Promise<SplitFrame[]> {
+  const out: SplitFrame[] = []
+  for (const atSec of splitFrameTimes(durationSec)) {
+    const dataUrl = await grabVideoFrame(src, atSec, 768, 4000)
+    if (!dataUrl) break
+    out.push({ atSec, dataUrl })
+  }
+  return out
+}
+
 // KD-995: a split issue's card description — the Enhance layout when the issue carries a draft, else its
 // plain description.
 export function splitIssueBody(issue: SplitIssueLike): string {
@@ -521,7 +542,9 @@ export interface ModalCallbacks {
   // transcribes it and returns each distinct issue the reporter narrated. With 2+ issues the composer shows an
   // editable review panel; on Submit the main ticket becomes issue #1 (it keeps the video + screenshots) and each
   // other ticked issue is filed through onSubmit as its own ticket. null / 0-1 issues → nothing changes.
-  onSplitRecording?: (audio: Blob, ctx?: { text?: string }) => Promise<SplitIssueLike[] | null>
+  // KD-3080: ctx.frames are screenshots sampled across the clip (with their timestamps) for the host to forward,
+  // so the analysis is grounded in what was on screen, not only in the narration.
+  onSplitRecording?: (audio: Blob, ctx?: { text?: string; frames?: SplitFrame[] }) => Promise<SplitIssueLike[] | null>
   onSubmit: (payload: {
     // Coarse report type kept for back-compat consumers (extension/message protocol) — always a valid
     // ReportType. For Task/Query this is 'bug' (they are bug-like, non-feature); the precise value is `kind`.
@@ -606,7 +629,13 @@ export interface ModalCallbacks {
   // KD-1074: fired with the current list whenever a recording is added, replaced or removed, so the host can
   // persist it (the widget keeps it in the evidence session so minimize → resume doesn't lose the video).
   onRecordingsChange?: (recordings: ReportRecording[]) => void
-  onRecord?: (onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => Promise<ReportRecording | null>
+  // KD-3080: `opts.purpose === 'multi'` marks a "Report Multiple Issues" walkthrough, so a host whose recorder
+  // outlives the page (the PX4 recorder window) can hand the clip back for analysis after a navigation.
+  onRecord?: (onPhase?: (phase: 'consent' | 'recording' | 'preview') => void, opts?: { purpose?: 'multi' }) => Promise<ReportRecording | null>
+  // KD-3080: id of a seeded recording (in initialRecordings) that was captured as a "Report Multiple Issues"
+  // walkthrough but finished after the composer that started it was unloaded. The composer analyses it on open,
+  // exactly as if the reporter had just stopped the recording here.
+  initialMultiRecordingId?: string
   // KLA-505: server-side LIVE DICTATION for the Voice button. When provided AND MediaRecorder is available,
   // the composer PREFERS this over the flaky Web Speech backend: it records short mic segments and hands each
   // as an audio Blob to this callback, which POSTs it to the STT endpoint (POST /api/voice/transcribe) and
@@ -2787,10 +2816,27 @@ export function buildModal(
       if (phase === 'recording' && seq === multiSeq) { multiState = 'recording'; paintMultiCard() }
     }
     let rec: ReportRecording | null = null
-    try { rec = await callbacks.onRecord!(onPhase) } catch { rec = null }
+    try { rec = await callbacks.onRecord!(onPhase, { purpose: 'multi' }) } catch { rec = null }
     finally { host.style.display = ''; lockComposer(false) }
     if (seq !== multiSeq || _closed) return
     if (!rec) { multiState = multiItems ? 'done' : 'idle'; paintMultiCard(); return }
+    await analyseMulti(rec, seq)
+  }
+
+  // KD-3080: a walkthrough that finished after a page navigation arrives as a seeded recording — analyse it on
+  // open instead of leaving it as a plain attachment.
+  function resumeMulti(id: string) {
+    const rec = recordings.find((r) => r.id === id)
+    if (!rec || !callbacks.onSplitRecording || multiState !== 'idle') return
+    const seq = ++multiSeq
+    multiState = 'processing'
+    // Deferred a tick: this is called while the composer is still being built.
+    void Promise.resolve().then(() => { if (seq === multiSeq && !_closed) return analyseMulti(rec, seq) })
+  }
+
+  // Attach the walkthrough clip, run the split analysis and open the review.
+  async function analyseMulti(rec: ReportRecording, seq: number) {
+    multiNotice = ''
     // Show the walkthrough like a Record me clip: a gallery tile + the playable hero preview. A new walkthrough
     // replaces the previous one in place.
     // A walkthrough report is video-first: drop the default snap (and any other un-annotated screenshot) so
@@ -2798,7 +2844,8 @@ export function buildModal(
     for (let i = screenshots.length - 1; i >= 0; i--) {
       if (!(annotationsByIndex[i]?.shapes?.length)) removeScreenshotAt(i)
     }
-    const prevIdx = multiRec ? recordings.indexOf(multiRec) : -1
+    const seededIdx = recordings.indexOf(rec)
+    const prevIdx = seededIdx >= 0 ? seededIdx : (multiRec ? recordings.indexOf(multiRec) : -1)
     if (prevIdx >= 0) recordings[prevIdx] = rec
     else recordings.push(rec)
     activeRecordingIndex = prevIdx >= 0 ? prevIdx : recordings.length - 1
@@ -2812,7 +2859,15 @@ export function buildModal(
     let issues: SplitIssueLike[] | null = null
     try {
       const blob = rec.blob || await (await fetch(rec.dataUrl)).blob()
-      issues = await callbacks.onSplitRecording!(blob, { text: desc.value.trim() })
+      let frames: SplitFrame[] = []
+      let frameUrl: string | null = null
+      try {
+        if (rec.blob) { try { frameUrl = URL.createObjectURL(rec.blob) } catch { frameUrl = null } }
+        frames = await sampleSplitFrames(frameUrl || rec.dataUrl, (rec.durationMs || 0) / 1000)
+      } catch { frames = [] }
+      finally { if (frameUrl) { try { URL.revokeObjectURL(frameUrl) } catch { /* ignore */ } } }
+      if (seq !== multiSeq || _closed) return
+      issues = await callbacks.onSplitRecording!(blob, { text: desc.value.trim(), ...(frames.length ? { frames } : {}) })
     } catch { issues = null }
     if (seq !== multiSeq || _closed) return
     const usable = (issues || []).filter((i) => i && (String(i.title || '').trim() || String(i.description || '').trim()))
@@ -2867,7 +2922,17 @@ export function buildModal(
     const onEnhance = callbacks.onEnhance
     const it = multiItems?.find((x) => x.id === id)
     if (!onEnhance || !it) return
-    const text = String(it.narration || '').trim() || it.title
+    // KD-3080: issues raised in the same breath share one stretch of narration. Handing that same text to
+    // Enhance for each of them wrote every ticket about the same thing (identical titles). When the narration
+    // isn't this issue's alone, describe the issue with the split's own per-issue wording instead.
+    const norm = (s: unknown) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ')
+    const own = norm(it.narration)
+    const shared = !!own && (multiItems || []).some((o) => {
+      const other = o.id === id ? '' : norm(o.narration)
+      return !!other && (other === own || other.includes(own) || own.includes(other))
+    })
+    const splitWording = [it.title, it.actualResult, it.expectedResult ? `Expected: ${it.expectedResult}` : ''].map((s) => String(s || '').trim()).filter(Boolean).join('\n')
+    const text = (!shared && String(it.narration || '').trim()) || splitWording || it.title
     const mark = (on: boolean) => { for (const list of [multiItems, multiOriginal]) { const m = list?.find((x) => x.id === id); if (m) m.enhancing = on } }
     mark(true)
     renderMultiReview()
@@ -2875,6 +2940,9 @@ export function buildModal(
     try { draft = await onEnhance(text, { images: shot ? 1 : 0, ...(shot ? { shot } : {}) }) } catch { draft = null }
     if (seq !== multiSeq || _closed) return
     mark(false)
+    // A draft whose title repeats another ticket's is about that other issue — keep this one's split draft.
+    const sum = norm(draft?.summary)
+    if (sum && (multiItems || []).some((o) => o.id !== id && norm(o.title) === sum)) draft = null
     if (draft) {
       for (const list of [multiItems, multiOriginal]) {
         const m = list?.find((x) => x.id === id)
@@ -4577,6 +4645,7 @@ export function buildModal(
   if (multiEnabled) {
     paintMultiCard()
     shadowRoot.getElementById('klavity-multi-start')?.addEventListener('click', () => { void startMulti() })
+    if (callbacks.initialMultiRecordingId) resumeMulti(callbacks.initialMultiRecordingId)
   }
 
   // Region capture button — only rendered when the host provides onRegionCapture

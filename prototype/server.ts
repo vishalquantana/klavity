@@ -168,7 +168,7 @@ import { extractKeyframes } from "./lib/keyframes"
 import { updateFeedbackTitle, updateFeedbackAnnotations } from "./lib/db"
 import { transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeAudioBytes, transcribeConfigured, TRANSCRIBE_MODEL, TRANSCRIBE_MAX_BYTES, activeTranscribeModel } from "./lib/transcribe"
 // KD-995: split one Record-me walkthrough into separate tickets (POST /api/report/split).
-import { splitTranscriptIntoIssues } from "./lib/issue-split"
+import { splitTranscriptIntoIssues, parseSplitFrames, SPLIT_MAX_FRAMES, SPLIT_FRAME_MAX_CHARS } from "./lib/issue-split"
 import { DeepgramRelay, deepgramConfigured, deepgramCostUsd, evaluateVoiceStreamUpgrade, createVoiceStreamWsHandlers, VOICE_STREAM_MAX_SESSION_MS, type VoiceStreamData } from "./lib/deepgram-stream"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
@@ -4926,7 +4926,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   // toggle, per-IP + per-project caps). Best-effort: any failure returns { issues: [] } (never 500).
   if (req.method === "POST" && path === "/api/report/split") {
     if (!rlAllow(`split:ip:${clientIp(req, server)}`, 10, 60_000)) return wjson({ error: "rate limited", issues: [] }, 429)
-    const SIZE_CEIL = TRANSCRIBE_MAX_BYTES + 64 * 1024 // clip cap + multipart framing overhead
+    // clip cap + the sampled frames (KD-3080) + multipart framing overhead
+    const SIZE_CEIL = TRANSCRIBE_MAX_BYTES + SPLIT_MAX_FRAMES * SPLIT_FRAME_MAX_CHARS + 64 * 1024
     const declaredLen = Number(req.headers.get("content-length") || 0)
     if (declaredLen > SIZE_CEIL) return wjson({ error: "payload too large", issues: [] }, 413)
     const bounded = await readBodyBounded(req, SIZE_CEIL)
@@ -4982,18 +4983,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
     const pageUrl = String(form.get("pageUrl") || "").slice(0, 300)
     const note = String(form.get("text") || "").slice(0, 2000)
+    // KD-3080: screenshots the composer sampled across the clip — the model sees the screens, not just the words.
+    const frames = parseSplitFrames(form.get("frames"), { maxFrames: SPLIT_MAX_FRAMES, maxChars: SPLIT_FRAME_MAX_CHARS })
     const issues = await splitTranscriptIntoIssues(transcript, {
       llm: async (input, systemPrompt) => {
+        // Transcript + reporter note + page URL are UNTRUSTED (spoken/typed user content) → fenced as data.
+        const textPart = "VIDEO WALKTHROUGH TRANSCRIPT (untrusted — the reporter narrating):\n" + wrapUntrusted(input) +
+          "\n\nREPORTER NOTE (untrusted):\n" + wrapUntrusted(note || "(none)") +
+          "\n\nPAGE URL (untrusted):\n" + wrapUntrusted(pageUrl || "(unknown)")
+        const userParts: any[] = [{ type: "text", text: textPart + (frames.length ? "\n\nVIDEO FRAMES (untrusted screen content) follow, each labelled with its time in the recording." : "") }]
+        for (const f of frames) {
+          userParts.push({ type: "text", text: `FRAME at ${f.atSec.toFixed(1)}s:` })
+          userParts.push({ type: "image_url", image_url: { url: f.dataUrl } })
+        }
         const { content } = await chat(
           [
             { role: "system", content: systemPrompt + UNTRUSTED_GUARD },
-            {
-              role: "user",
-              // Transcript + reporter note + page URL are UNTRUSTED (spoken/typed user content) → fenced as data.
-              content: "VIDEO WALKTHROUGH TRANSCRIPT (untrusted — the reporter narrating):\n" + wrapUntrusted(input) +
-                "\n\nREPORTER NOTE (untrusted):\n" + wrapUntrusted(note || "(none)") +
-                "\n\nPAGE URL (untrusted):\n" + wrapUntrusted(pageUrl || "(unknown)"),
-            },
+            { role: "user", content: frames.length ? userParts : textPart },
           ],
           3000, true,
           // feature tag 'report-split' → budget-gated + cost-logged like every other LLM call.
@@ -9559,7 +9565,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   // gated on !isReservedSlug, so a page/route is never shadowed; a non-existent key-shaped path 404s.
   const prettyTicketMatch =
     path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/t\/([A-Za-z0-9_-]{1,80})$/) ||
-    path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/([A-Za-z][A-Za-z0-9]{1,9}-\d+)$/)
+    // KD-1074: also <KEY>-SIM-<n> — a Sim Report's own number (separate sequence from tickets).
+    path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/([A-Za-z][A-Za-z0-9]{1,9}-(?:[Ss][Ii][Mm]-)?\d+)$/)
   if (req.method === "GET" && prettyTicketMatch && !isReservedSlug(prettyTicketMatch[1])) {
     if (!rlAllow("ticket:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
     const res = await resolveWorkspaceTicket(prettyTicketMatch[1], prettyTicketMatch[2]).catch(() => null)
@@ -12585,7 +12592,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return {
             id: f.id, simName: p?.name ?? null, simSource: p?.simSource ?? null,
             // #745: pretty-permalink parts — per-project sequence + workspace slug + project key.
-            seqNum: f.seqNum ?? null, slug: aliasInfo.slug, ticketKey: aliasInfo.ticketKey,
+            seqNum: f.seqNum ?? null, simSeqNum: f.simSeqNum ?? null, slug: aliasInfo.slug, ticketKey: aliasInfo.ticketKey,
             // PX4 #411: surface the reporter's explicit composer Title when present + non-empty;
             // otherwise fall back to the historical observation-derived title (back-compat).
             title: (f.title && f.title.trim()) ? f.title : f.observation, priority: f.priority,
@@ -13881,6 +13888,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           suggestedLabels: await getSuggestedLabels(fid, fbRow.projectId),
           // KLA-200: human-readable sequential number
           seqNum: fbRow.seqNum ?? null,
+          simSeqNum: fbRow.simSeqNum ?? null, // KD-1074: Sim Report number (<KEY>-SIM-<n>)
           // #745: workspace slug + project ticket_key so the client can build the pretty
           // /<slug>/<KEY>-<n> permalink (falls back to /t/<fb_id> when un-backfilled). Member-gated.
           ...(await projectAliasInfo(fbRow.projectId).catch(() => ({ slug: null, ticketKey: null, projectName: null }))),
@@ -15574,7 +15582,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // GET /api/projects/:id/triage — un-triaged feedback queue (any project member)
       if (req.method === "GET" && sub === "/triage") {
         const triage = await listTriageFeedback(proj.id)
-        return json({ triage })
+        // KD-1074: attach the project key + workspace slug so Sim Reports render as <KEY>-SIM-<n> and link to
+        // /<slug>/<KEY>-SIM-<n> (one lookup per request — every item belongs to this project).
+        const alias = await projectAliasInfo(proj.id).catch(() => ({ slug: null, ticketKey: null, projectName: null }))
+        return json({ triage: triage.map((t: any) => ({ ...t, slug: t.slug ?? alias.slug, ticketKey: t.ticketKey ?? alias.ticketKey })) })
       }
 
       // ── KLA-255: needsConfirm / pending sim-match queue ───────────────────────────────────────
