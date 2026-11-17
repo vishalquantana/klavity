@@ -91,14 +91,12 @@ describe.skipIf(!RUN)("isChecked (real browser)", () => {
   })
 })
 
-// These fixtures use IDENTICAL link names on purpose: a link with a unique visible name now gets a role=link[name=…s] selector
-// (covered in trails-semantic-selectors.test.ts), and page.count() here is plain CSS. Identical names leave only the positional path.
 describe.skipIf(!RUN)("stableSelector last-resort path (real browser)", () => {
   // PX4 project list: bare links in repeated wrappers have no id/name/aria-label. The saved selector must match exactly ONE element.
   const LIST = `<!doctype html><html><body><div class="wrap">
-    <section><div class="row"><div class="cell"><div class="name"><a href="/p/1">Open</a></div></div></div></section>
-    <section><div class="row"><div class="cell"><div class="name"><a href="/p/2">Open</a></div></div></div></section>
-    <section><div class="row"><div class="cell"><div class="name"><a href="/p/3">Open</a></div></div></div></section>
+    <section><div class="row"><div class="cell"><div class="name"><a href="/p/1">Project one</a></div></div></div></section>
+    <section><div class="row"><div class="cell"><div class="name"><a href="/p/2">Project two</a></div></div></div></section>
+    <section><div class="row"><div class="cell"><div class="name"><a href="/p/3">Project three</a></div></div></div></section>
   </div></body></html>`
   test("a bare link in a repeated list gets a selector that resolves to exactly that link", async () => {
     const page = await open()
@@ -116,13 +114,13 @@ describe.skipIf(!RUN)("stableSelector last-resort path (real browser)", () => {
   })
   test("anchors on the nearest ancestor with a unique id", async () => {
     const page = await open()
-    await page.goto("data:text/html," + encodeURIComponent('<div id="list"><div><span><a href="/x">go</a></span></div><div><span><a href="/y">go</a></span></div></div>'), 15_000)
+    await page.goto("data:text/html," + encodeURIComponent('<div id="list"><div><span><a href="/x">x</a></span></div><div><span><a href="/y">y</a></span></div></div>'), 15_000)
     const s = await page.stableSelector("a[href='/y']")
     expect(s!.startsWith("body>")).toBe(false)
     expect(await page.count(s!)).toBe(1)
   })
   test("uses the shortest unique path, so a shifted body-level div does not break it (v15 Projects-nav drift)", async () => {
-    const NAV = (extra: string) => `<!doctype html><html><body>${extra}<div><p>a</p></div><div><nav><ul><li><a href="/h">Open</a></li><li><a href="/p">Open</a></li></ul></nav></div><div><p>b</p></div></body></html>`
+    const NAV = (extra: string) => `<!doctype html><html><body>${extra}<div><p>a</p></div><div><nav><ul><li><a href="/h">Home</a></li><li><a href="/p">Projects</a></li></ul></nav></div><div><p>b</p></div></body></html>`
     const page = await open()
     await page.goto("data:text/html," + encodeURIComponent(NAV("")), 15_000)
     const s = await page.stableSelector("a[href='/p']")
