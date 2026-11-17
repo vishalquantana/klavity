@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI responsive design testing across three viewport widths">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <rect x="0" y="0" width="800" height="3" fill="#6366f1" opacity="0.5"/>
+
+  <!-- desktop viewport: passing -->
+  <rect x="48" y="96" width="300" height="196" rx="10" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="1.6"/>
+  <line x1="48" y1="126" x2="348" y2="126" stroke="#6366f1" stroke-width="1.2" opacity="0.55"/>
+  <circle cx="66" cy="111" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="80" cy="111" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="68" y="146" width="128" height="54" rx="5" fill="#6366f1" opacity="0.4"/>
+  <rect x="208" y="146" width="120" height="54" rx="5" fill="#f5f0e8" opacity="0.1"/>
+  <rect x="68" y="216" width="260" height="9" rx="4" fill="#f5f0e8" opacity="0.14"/>
+  <rect x="68" y="236" width="196" height="9" rx="4" fill="#f5f0e8" opacity="0.14"/>
+  <rect x="68" y="260" width="84" height="20" rx="6" fill="#4ade80" opacity="0.28" stroke="#4ade80" stroke-width="1.2"/>
+  <polyline points="300,262 308,272 324,252" fill="none" stroke="#4ade80" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- tablet viewport: passing -->
+  <rect x="392" y="118" width="150" height="174" rx="9" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="1.6"/>
+  <line x1="392" y1="144" x2="542" y2="144" stroke="#6366f1" stroke-width="1.2" opacity="0.55"/>
+  <rect x="408" y="160" width="118" height="42" rx="5" fill="#6366f1" opacity="0.4"/>
+  <rect x="408" y="214" width="118" height="9" rx="4" fill="#f5f0e8" opacity="0.14"/>
+  <rect x="408" y="232" width="88" height="9" rx="4" fill="#f5f0e8" opacity="0.14"/>
+  <rect x="408" y="258" width="76" height="20" rx="6" fill="#4ade80" opacity="0.28" stroke="#4ade80" stroke-width="1.2"/>
+  <polyline points="506,262 513,271 528,252" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- phone viewport: overflowing / failing -->
+  <rect x="586" y="100" width="104" height="212" rx="12" fill="#f5f0e8" opacity="0.05" stroke="#f87171" stroke-width="1.8"/>
+  <line x1="586" y1="126" x2="690" y2="126" stroke="#f87171" stroke-width="1.2" opacity="0.6"/>
+  <rect x="600" y="142" width="128" height="44" rx="5" fill="#f87171" opacity="0.26" stroke="#f87171" stroke-width="1.4" stroke-dasharray="5 4"/>
+  <rect x="600" y="200" width="120" height="9" rx="4" fill="#f87171" opacity="0.3"/>
+  <rect x="600" y="218" width="74" height="9" rx="4" fill="#f5f0e8" opacity="0.14"/>
+  <rect x="600" y="248" width="30" height="16" rx="5" fill="#f87171" opacity="0.22" stroke="#f87171" stroke-width="1.2"/>
+  <line x1="645" y1="256" x2="675" y2="256" stroke="#f87171" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M700 150 l22 0" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M714 142 l10 8 -10 8" fill="none" stroke="#f87171" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="638" cy="334" r="15" fill="#f87171" opacity="0.18" stroke="#f87171" stroke-width="1.8"/>
+  <line x1="638" y1="327" x2="638" y2="336" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+  <circle cx="638" cy="341" r="1.6" fill="#f87171"/>
+
+  <!-- AI agent sweep arrow across viewports -->
+  <path d="M70 366 C 260 346, 470 346, 660 366" fill="none" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="10 7"/>
+  <circle cx="70" cy="366" r="7" fill="#6366f1"/>
+  <circle cx="366" cy="352" r="5" fill="#6366f1" opacity="0.7"/>
+  <path d="M652 359 l12 7 -12 7" fill="none" stroke="#6366f1" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- width ruler marks -->
+  <line x1="48" y1="70" x2="348" y2="70" stroke="#f5f0e8" stroke-width="1.4" opacity="0.22"/>
+  <line x1="392" y1="70" x2="542" y2="70" stroke="#f5f0e8" stroke-width="1.4" opacity="0.22"/>
+  <line x1="586" y1="70" x2="690" y2="70" stroke="#f5f0e8" stroke-width="1.4" opacity="0.22"/>
+  <line x1="48" y1="62" x2="48" y2="78" stroke="#6366f1" stroke-width="2"/>
+  <line x1="690" y1="62" x2="690" y2="78" stroke="#f87171" stroke-width="2"/>
+</svg>

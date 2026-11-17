@@ -1083,5 +1083,12 @@
     "excerpt": "Start with the two or three flows that cost you money if they break, write one end-to-end test each, and run them on every deploy.",
     "category": "Guides",
     "date": "2026-11-16"
+  },
+  {
+    "slug": "ai-responsive-design-testing",
+    "title": "AI Responsive Design Testing: A Practical QA Guide",
+    "excerpt": "AI responsive design testing runs agents across viewport widths to find layout and interaction failures before your client opens the site on a phone.",
+    "category": "Guides",
+    "date": "2026-11-17"
   }
 ]

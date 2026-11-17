@@ -1,0 +1,199 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Responsive Design Testing: A Practical QA Guide · Klavity</title>
+<meta name="description" content="AI responsive design testing runs agents across viewport widths to find layout and interaction failures before your client opens the site on a phone.">
+<link rel="canonical" href="https://klavity.in/blog/ai-responsive-design-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI Responsive Design Testing: A Practical QA Guide"><meta property="og:description" content="AI responsive design testing runs agents across viewport widths to find layout and interaction failures before your client opens the site on a phone.">
+<meta property="og:url" content="https://klavity.in/blog/ai-responsive-design-testing"><meta property="og:image" content="https://klavity.in/blog/ai-responsive-design-testing.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI Responsive Design Testing: A Practical QA Guide"><meta name="twitter:description" content="AI responsive design testing runs agents across viewport widths to find layout and interaction failures before your client opens the site on a phone."><meta name="twitter:image" content="https://klavity.in/blog/ai-responsive-design-testing.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI Responsive Design Testing: A Practical QA Guide","description":"AI responsive design testing runs agents across viewport widths to find layout and interaction failures before your client opens the site on a phone.","datePublished":"2026-11-17","dateModified":"2026-11-17","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-responsive-design-testing.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-responsive-design-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI Responsive Design Testing: A Practical QA Guide","item":"https://klavity.in/blog/ai-responsive-design-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-responsive-design-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is AI responsive design testing?","acceptedAnswer":{"@type":"Answer","text":"It is the use of AI agents to load a site at many viewport widths and pointer types, attempt real user journeys, and report layout and interaction failures such as horizontal overflow, unreachable controls, clipped text and menus that do not open on touch. Unlike a screenshot grid, it tests whether a task can be completed at that width, not just how the page looks."}},{"@type":"Question","name":"How is responsive testing different from cross-browser testing?","acceptedAnswer":{"@type":"Answer","text":"Responsive testing varies viewport width, height, orientation and pointer type, catching overflow, unreachable controls and tap targets that are too small. Cross-browser testing varies the rendering engine and browser version, catching unsupported CSS, input differences and engine-specific quirks. They find different defects, so one does not substitute for the other."}},{"@type":"Question","name":"Which breakpoints should I test?","acceptedAnswer":{"@type":"Answer","text":"Start from the widths in the site's own analytics, then cover the dense clusters around 360-390px, 768px, 1024px and 1280px and up. Also test just below each of your own CSS breakpoints, since layouts break at the edge of a media query rather than in the middle of a range, and test short viewport heights and scaled-up text."}},{"@type":"Question","name":"Does AI replace manual responsive QA?","acceptedAnswer":{"@type":"Answer","text":"No. AI covers breadth and repetition — many viewports, every deploy, every journey — and catches objective failures like overflow, small tap targets and hover-only controls. Whether a mobile layout looks balanced and on-brand remains a human judgment."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-11-17</div>
+    <h1>AI Responsive Design Testing: A Practical QA Guide</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI responsive design testing across three viewport widths">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <rect x="0" y="0" width="800" height="3" fill="#6366f1" opacity="0.5"/>
+
+  <!-- desktop viewport: passing -->
+  <rect x="48" y="96" width="300" height="196" rx="10" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="1.6"/>
+  <line x1="48" y1="126" x2="348" y2="126" stroke="#6366f1" stroke-width="1.2" opacity="0.55"/>
+  <circle cx="66" cy="111" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="80" cy="111" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="68" y="146" width="128" height="54" rx="5" fill="#6366f1" opacity="0.4"/>
+  <rect x="208" y="146" width="120" height="54" rx="5" fill="#f5f0e8" opacity="0.1"/>
+  <rect x="68" y="216" width="260" height="9" rx="4" fill="#f5f0e8" opacity="0.14"/>
+  <rect x="68" y="236" width="196" height="9" rx="4" fill="#f5f0e8" opacity="0.14"/>
+  <rect x="68" y="260" width="84" height="20" rx="6" fill="#4ade80" opacity="0.28" stroke="#4ade80" stroke-width="1.2"/>
+  <polyline points="300,262 308,272 324,252" fill="none" stroke="#4ade80" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- tablet viewport: passing -->
+  <rect x="392" y="118" width="150" height="174" rx="9" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="1.6"/>
+  <line x1="392" y1="144" x2="542" y2="144" stroke="#6366f1" stroke-width="1.2" opacity="0.55"/>
+  <rect x="408" y="160" width="118" height="42" rx="5" fill="#6366f1" opacity="0.4"/>
+  <rect x="408" y="214" width="118" height="9" rx="4" fill="#f5f0e8" opacity="0.14"/>
+  <rect x="408" y="232" width="88" height="9" rx="4" fill="#f5f0e8" opacity="0.14"/>
+  <rect x="408" y="258" width="76" height="20" rx="6" fill="#4ade80" opacity="0.28" stroke="#4ade80" stroke-width="1.2"/>
+  <polyline points="506,262 513,271 528,252" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- phone viewport: overflowing / failing -->
+  <rect x="586" y="100" width="104" height="212" rx="12" fill="#f5f0e8" opacity="0.05" stroke="#f87171" stroke-width="1.8"/>
+  <line x1="586" y1="126" x2="690" y2="126" stroke="#f87171" stroke-width="1.2" opacity="0.6"/>
+  <rect x="600" y="142" width="128" height="44" rx="5" fill="#f87171" opacity="0.26" stroke="#f87171" stroke-width="1.4" stroke-dasharray="5 4"/>
+  <rect x="600" y="200" width="120" height="9" rx="4" fill="#f87171" opacity="0.3"/>
+  <rect x="600" y="218" width="74" height="9" rx="4" fill="#f5f0e8" opacity="0.14"/>
+  <rect x="600" y="248" width="30" height="16" rx="5" fill="#f87171" opacity="0.22" stroke="#f87171" stroke-width="1.2"/>
+  <line x1="645" y1="256" x2="675" y2="256" stroke="#f87171" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M700 150 l22 0" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M714 142 l10 8 -10 8" fill="none" stroke="#f87171" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="638" cy="334" r="15" fill="#f87171" opacity="0.18" stroke="#f87171" stroke-width="1.8"/>
+  <line x1="638" y1="327" x2="638" y2="336" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+  <circle cx="638" cy="341" r="1.6" fill="#f87171"/>
+
+  <!-- AI agent sweep arrow across viewports -->
+  <path d="M70 366 C 260 346, 470 346, 660 366" fill="none" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="10 7"/>
+  <circle cx="70" cy="366" r="7" fill="#6366f1"/>
+  <circle cx="366" cy="352" r="5" fill="#6366f1" opacity="0.7"/>
+  <path d="M652 359 l12 7 -12 7" fill="none" stroke="#6366f1" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- width ruler marks -->
+  <line x1="48" y1="70" x2="348" y2="70" stroke="#f5f0e8" stroke-width="1.4" opacity="0.22"/>
+  <line x1="392" y1="70" x2="542" y2="70" stroke="#f5f0e8" stroke-width="1.4" opacity="0.22"/>
+  <line x1="586" y1="70" x2="690" y2="70" stroke="#f5f0e8" stroke-width="1.4" opacity="0.22"/>
+  <line x1="48" y1="62" x2="48" y2="78" stroke="#6366f1" stroke-width="2"/>
+  <line x1="690" y1="62" x2="690" y2="78" stroke="#f87171" stroke-width="2"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI responsive design testing uses AI agents to open a site at many viewport widths, attempt real journeys, and report where the layout blocked them. It goes beyond screenshot grids because it tests task completion, not appearance. Most automated suites run at a single viewport — Playwright defaults to 1280x720 — so a green E2E run says nothing about mobile unless you deliberately parameterise it across widths.</div>
+    <div class="prose"><p><strong>AI responsive design testing</strong> uses AI agents to open your site at many viewport widths, interact with it the way someone on that device would, and report the layout and interaction failures they hit — containers that overflow, buttons that cannot be tapped, text clipped mid-sentence, menus that never open on touch. It replaces the manual ritual of dragging a browser window narrower and squinting at it. The important difference from a screenshot grid is that an AI agent does not merely photograph each breakpoint: it tries to finish the job — open the nav, fill the form, reach checkout — and tells you where the layout stopped it. That turns "this looks a bit off at 390px" into "a user on a 390px-wide phone cannot submit the contact form."</p>
+
+<h2>What is AI responsive design testing, exactly?</h2>
+<p>It operates on three layers, and most tools only cover the first:</p>
+<ul>
+<li><strong>Layout assertions.</strong> Measurable, objective facts about the rendered page at a given width: does the document scroll sideways, does an element escape its parent, is a control smaller than the minimum usable size, does text get truncated by <em>overflow: hidden</em>.</li>
+<li><strong>Interaction checks.</strong> Whether the controls actually work with a touch pointer rather than a mouse — hover-dependent menus, drag handles, custom dropdowns, anything with a <em>:hover</em> trigger and no click or focus equivalent.</li>
+<li><strong>Task completion.</strong> Whether a full journey survives the viewport end to end. This is the layer that catches the bugs clients report, because clients do not audit your CSS — they try to do something and fail.</li>
+</ul>
+<p>AI matters mostly for the second and third layers. Layer one is arithmetic; the hard part was always the open-ended "use the site and tell me what broke."</p>
+
+<h2>Why do responsive bugs reach the client before the agency catches them?</h2>
+<p>Three structural reasons, all fixable:</p>
+<p><strong>The build environment is not the viewing environment.</strong> Sites get built on wide desktop monitors and reviewed in the same place. The client opens the staging link on their phone, in bed, at 11pm. That is often the first time anyone has loaded the page at that width with real content in it.</p>
+<p><strong>Responsive bugs are conditional, so they hide from your test suite.</strong> A broken layout at 360px is invisible at 1280px. And automated suites usually run at exactly one width — Playwright's default viewport, for example, is 1280×720 unless you configure a device or set it yourself. A fully green E2E run tells you nothing about mobile unless you deliberately parameterised it across viewports. It is an easy false sense of security: the suite is green because it never looked.</p>
+<p><strong>Content changes after sign-off.</strong> The layout was tested with the copy from the design file. Then the client puts in a longer product name or a photo with a different aspect ratio, and a flex row that fit perfectly now overflows. Responsive QA done once, before content load, expires.</p>
+
+<h2>How does this differ from AI cross-browser testing?</h2>
+<p>They vary different dimensions and catch different defects. Teams often buy one and assume it covers the other.</p>
+<table>
+<tr><th>Dimension</th><th>What varies</th><th>Typical failures it catches</th></tr>
+<tr><td>Responsive testing</td><td>Viewport width and height, orientation, pointer type, text scaling</td><td>Overflow and sideways scroll, unreachable controls, collapsed nav that won't open, tap targets too small, sticky header eating a short screen</td></tr>
+<tr><td><a href="/blog/ai-cross-browser-testing">Cross-browser testing</a></td><td>Rendering engine and browser version</td><td>Unsupported CSS features, date and number input differences, font rendering, Safari-specific layout quirks</td></tr>
+<tr><td>Visual regression</td><td>Time — the same page before and after a change</td><td>Unintended visual drift from a CSS or dependency change</td></tr>
+</table>
+<p>A thorough pre-launch pass needs all three. If you only have budget for one, responsive wins for client sites, because viewport variance is where the traffic actually is.</p>
+
+<h2>Which responsive failures can AI testing reliably catch?</h2>
+<p>These are the concrete, checkable ones worth building into any responsive pass:</p>
+<ol>
+<li><strong>Horizontal overflow.</strong> When the document's scroll width exceeds its client width, the page scrolls sideways. It is nearly always one offending element — a fixed-width table, an unconstrained image, a long unbroken string — and it is objectively detectable rather than a matter of taste.</li>
+<li><strong>Tap targets below the usable minimum.</strong> WCAG 2.2 success criterion 2.5.8 (Target Size, Minimum) sets 24×24 CSS pixels at AA, while Apple's Human Interface Guidelines have long recommended 44×44 points for touch controls. Dense desktop icon rows frequently fail both once they carry over to mobile.</li>
+<li><strong>Inputs that trigger zoom on iOS.</strong> Mobile Safari zooms the page when a user focuses a text input whose font size is under 16px — the layout then appears broken to the user even though the CSS is "correct." A fully automated check catches this from the computed font size.</li>
+<li><strong>Hover-only interactions.</strong> Navigation or tooltips exposed only on <em>:hover</em> are unreachable on a touch device with no click or focus fallback. This is an extremely common cause of "the menu doesn't work on my iPhone."</li>
+<li><strong>Reflow at narrow widths.</strong> WCAG 1.4.10 (Reflow) asks that content not require two-dimensional scrolling at a width equivalent to 320 CSS pixels. Testing at 320px is a good proxy for both accessibility conformance and small-phone usability.</li>
+<li><strong>Short-viewport failures.</strong> A sticky header plus a cookie banner plus a fixed CTA bar can leave almost no room on a landscape phone, pushing the submit button of a form off-screen with no way to scroll to it.</li>
+</ol>
+<p>What AI will not settle for you is whether the mobile layout looks <em>good</em>. Balance, rhythm and brand feel stay human judgments. Breadth and repetition are what you delegate.</p>
+
+<h2>What does a working AI responsive testing workflow look like?</h2>
+<ol>
+<li><strong>Choose viewports from data, not from a device list.</strong> Pull the top widths from the site's own analytics where it exists. For a new build, cover the dense clusters: roughly 360–390px (most Android and iPhone handsets), 768px (tablet portrait), 1024px, and 1280px and up.</li>
+<li><strong>Test journeys, not pages.</strong> "Load the homepage at 390px" is a weak test. "On a 390px phone, find the contact page from the homepage, fill the form and submit it" is the test that matches how a client will discover the bug. This is what persona-style testing with <a href="/sims">Sims</a> is for — it runs the journey as a person would, at the viewport you specify.</li>
+<li><strong>Run it on every deploy preview, not at launch.</strong> Responsive regressions arrive with ordinary CSS changes. Wiring the pass into CI means the broken breakpoint is caught by the build, not by the client. See <a href="/blog/ai-qa-complete-guide">the complete guide to AI QA</a> for how the pieces fit into a pipeline.</li>
+<li><strong>Insist on reproducible evidence.</strong> A responsive bug report without the viewport dimensions is close to useless — it is a common cause of "cannot reproduce" on layout tickets, because the developer opens it on a desktop and sees nothing wrong. <a href="/snap">Snap</a> captures viewport size, device pixel ratio, console errors and the DOM state with the report, so a right-click from the client arrives actionable.</li>
+<li><strong>Convert every confirmed break into a standing test.</strong> Once a breakpoint has failed, it should be asserted forever. <a href="/autosim">AutoSim</a> keeps those journeys running across viewports and repairs its own selectors when the markup shifts, which is what usually kills hand-written mobile E2E tests.</li>
+</ol>
+
+<h2>How do you pick which breakpoints to test?</h2>
+<p>Three rules that catch disproportionately more than a long device matrix:</p>
+<ul>
+<li><strong>Test just below each of your own CSS breakpoints.</strong> Layouts break at the edge of a media query, not in the comfortable middle of a range. If you have a breakpoint at 768px, test 767px.</li>
+<li><strong>Test the awkward in-between widths.</strong> Large-phone-landscape and small-tablet widths, around 640–900px, are where desktop and mobile layouts both fit badly and where most agencies never look.</li>
+<li><strong>Test height as well as width, and test with scaled-up text.</strong> Short viewports and a user's larger default font size both reflow the page in ways width-only testing misses entirely.</li>
+</ul>
+<p>If you are assembling a broader pre-launch pass around this, the <a href="/blog/pre-launch-qa-checklist-for-web-agencies">pre-launch QA checklist for web agencies</a> covers where responsive fits among the other gates.</p>
+
+<h2>Is this worth it for a small team or a solo build?</h2>
+<p>It is arguably more valuable there. A larger team has someone who checks the phone out of habit; a solo developer or a founder shipping from Cursor, Lovable or v0 has no second pair of eyes, and AI-generated components tend to be written against the desktop case first. Automated breadth across viewports is the cheapest safety net when you are the only reviewer.</p>
+
+<h2>Scan your next client site free</h2>
+<p>Klavity runs AI persona journeys across the viewports your users actually have, flags the layout and interaction failures they hit, and gives your client a right-click bug reporter that captures the viewport automatically. <a href="/onboarding"><strong>Try Klavity free</strong></a> — point it at your next staging link before the client opens it on their phone.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Parameterise E2E runs across viewports — a single-viewport green suite tells you nothing about mobile</li><li>Test journeys at each width, not page loads, so you catch blocked tasks not just visual drift</li><li>Test just below your own CSS breakpoints, plus 320px for WCAG reflow</li><li>Capture viewport size in every bug report to stop 'cannot reproduce' on layout tickets</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is AI responsive design testing?</summary><p>It is the use of AI agents to load a site at many viewport widths and pointer types, attempt real user journeys, and report layout and interaction failures such as horizontal overflow, unreachable controls, clipped text and menus that do not open on touch. Unlike a screenshot grid, it tests whether a task can be completed at that width, not just how the page looks.</p></details><details><summary>How is responsive testing different from cross-browser testing?</summary><p>Responsive testing varies viewport width, height, orientation and pointer type, catching overflow, unreachable controls and tap targets that are too small. Cross-browser testing varies the rendering engine and browser version, catching unsupported CSS, input differences and engine-specific quirks. They find different defects, so one does not substitute for the other.</p></details><details><summary>Which breakpoints should I test?</summary><p>Start from the widths in the site's own analytics, then cover the dense clusters around 360-390px, 768px, 1024px and 1280px and up. Also test just below each of your own CSS breakpoints, since layouts break at the edge of a media query rather than in the middle of a range, and test short viewport heights and scaled-up text.</p></details><details><summary>Does AI replace manual responsive QA?</summary><p>No. AI covers breadth and repetition — many viewports, every deploy, every journey — and catches objective failures like overflow, small tap targets and hover-only controls. Whether a mobile layout looks balanced and on-brand remains a human judgment.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
