@@ -63,6 +63,47 @@ describe('#448 composer locks + auto-dismisses after submit', () => {
     vi.useRealTimers()
   })
 
+  // KD-3087: Submit must disable on the first click and STAY disabled for the whole upload — async paths
+  // that refresh the Submit state (a background full-page render / screenshot landing mid-upload) used to
+  // re-enable it, inviting a duplicate submission. A failed submit re-enables it so the user can retry.
+  it('KD-3087: Submit stays disabled for the whole upload and a double-click files only one report', async () => {
+    vi.useFakeTimers()
+    let rejectSubmit!: (e: Error) => void
+    const onSubmit = vi.fn(() => new Promise<{ issueKey: string; issueUrl: string }>((_res, rej) => { rejectSubmit = rej }))
+    const c = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit })
+    c.addScreenshot(PNG)
+    const submit = q(c, '#klavity-submit') as HTMLButtonElement
+    expect(submit.disabled).toBe(false)
+
+    submit.click(); submit.click() // rapid double-click
+    expect(submit.disabled).toBe(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+
+    // A screenshot landing mid-upload (e.g. the background full-page render) must not re-enable Submit.
+    c.addScreenshot(PNG)
+    expect(submit.disabled).toBe(true)
+    submit.click()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+
+    // Failure → Submit comes back so the reporter can retry.
+    rejectSubmit(new Error('network down'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(submit.disabled).toBe(false)
+    expect(submit.textContent).toBe('Submit')
+    vi.useRealTimers()
+  })
+
+  // KD-3087: the entrance animation must not pin Submit at opacity:1 (fill-mode both did, so a DISABLED Submit
+  // looked fully clickable). jsdom can't run animations, so pin the CSS contract instead.
+  it('KD-3087: a disabled Submit is visibly faded (entrance animation does not hold opacity)', () => {
+    const c = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: 'X', issueUrl: '' }) })
+    const css = Array.from(c.shadowRoot.querySelectorAll('style')).map((s: any) => s.textContent).join('\n')
+    expect(css).toContain('.klavity-submit:disabled{opacity:.5')
+    expect(css).toContain('.kl-side>.klavity-submit{animation-fill-mode:backwards}')
+  })
+
   it('hovering the confirmation PAUSES the countdown; leaving resumes it', async () => {
     vi.useFakeTimers()
     const onClose = vi.fn()
