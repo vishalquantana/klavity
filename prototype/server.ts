@@ -9565,7 +9565,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   // gated on !isReservedSlug, so a page/route is never shadowed; a non-existent key-shaped path 404s.
   const prettyTicketMatch =
     path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/t\/([A-Za-z0-9_-]{1,80})$/) ||
-    path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/([A-Za-z][A-Za-z0-9]{1,9}-\d+)$/)
+    // KD-1074: also <KEY>-SIM-<n> — a Sim Report's own number (separate sequence from tickets).
+    path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/([A-Za-z][A-Za-z0-9]{1,9}-(?:[Ss][Ii][Mm]-)?\d+)$/)
   if (req.method === "GET" && prettyTicketMatch && !isReservedSlug(prettyTicketMatch[1])) {
     if (!rlAllow("ticket:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
     const res = await resolveWorkspaceTicket(prettyTicketMatch[1], prettyTicketMatch[2]).catch(() => null)
@@ -12591,7 +12592,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return {
             id: f.id, simName: p?.name ?? null, simSource: p?.simSource ?? null,
             // #745: pretty-permalink parts — per-project sequence + workspace slug + project key.
-            seqNum: f.seqNum ?? null, slug: aliasInfo.slug, ticketKey: aliasInfo.ticketKey,
+            seqNum: f.seqNum ?? null, simSeqNum: f.simSeqNum ?? null, slug: aliasInfo.slug, ticketKey: aliasInfo.ticketKey,
             // PX4 #411: surface the reporter's explicit composer Title when present + non-empty;
             // otherwise fall back to the historical observation-derived title (back-compat).
             title: (f.title && f.title.trim()) ? f.title : f.observation, priority: f.priority,
@@ -13887,6 +13888,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           suggestedLabels: await getSuggestedLabels(fid, fbRow.projectId),
           // KLA-200: human-readable sequential number
           seqNum: fbRow.seqNum ?? null,
+          simSeqNum: fbRow.simSeqNum ?? null, // KD-1074: Sim Report number (<KEY>-SIM-<n>)
           // #745: workspace slug + project ticket_key so the client can build the pretty
           // /<slug>/<KEY>-<n> permalink (falls back to /t/<fb_id> when un-backfilled). Member-gated.
           ...(await projectAliasInfo(fbRow.projectId).catch(() => ({ slug: null, ticketKey: null, projectName: null }))),
@@ -15580,7 +15582,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // GET /api/projects/:id/triage — un-triaged feedback queue (any project member)
       if (req.method === "GET" && sub === "/triage") {
         const triage = await listTriageFeedback(proj.id)
-        return json({ triage })
+        // KD-1074: attach the project key + workspace slug so Sim Reports render as <KEY>-SIM-<n> and link to
+        // /<slug>/<KEY>-SIM-<n> (one lookup per request — every item belongs to this project).
+        const alias = await projectAliasInfo(proj.id).catch(() => ({ slug: null, ticketKey: null, projectName: null }))
+        return json({ triage: triage.map((t: any) => ({ ...t, slug: t.slug ?? alias.slug, ticketKey: t.ticketKey ?? alias.ticketKey })) })
       }
 
       // ── KLA-255: needsConfirm / pending sim-match queue ───────────────────────────────────────
