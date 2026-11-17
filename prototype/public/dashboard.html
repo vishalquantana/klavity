@@ -18149,6 +18149,24 @@
     [data-view="triage"] .tg-chip.on { font-weight: 500; }
     .sr-sim-pill > span { color: var(--paper); font-weight: 500; }
     .sr-sim-pill select { font-weight: 600; font-size: 13px; }
+    /* Sim Reports "Sim:" filter — styled menu (hover, selected ✓ state, divider, counts) replacing the native list. */
+    .sr-sim-kdd { position: relative; cursor: default; }
+    .sr-sim-kdd:has(.sr-sim-btn[aria-expanded="true"]), .sr-sim-kdd:focus-within { border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(99, 102, 241, .14); }
+    .sr-sim-kdd .sr-sim-btn { min-width: 0; max-width: 200px; padding: 0 2px; gap: 6px; border: 0; border-radius: 6px; background: transparent; box-shadow: none; color: var(--paper); font: 600 13px var(--body); text-transform: none; }
+    .sr-sim-kdd .sr-sim-btn:hover, .sr-sim-kdd .sr-sim-btn[aria-expanded="true"] { background: transparent; border: 0; box-shadow: none; }
+    .sr-sim-kdd .sr-sim-btn:focus-visible { box-shadow: none; }
+    .sr-sim-kdd .kdd-caret { margin-left: 2px; color: var(--paper-dim); }
+    .sr-sim-menu { left: auto; right: 0; top: calc(100% + 8px); z-index: 60; min-width: 220px; max-width: 300px; max-height: 320px; overflow-y: auto; }
+    .sr-sim-menu .sr-sim-item { gap: 8px; padding: 8px 10px; color: var(--paper); font-weight: 500; text-transform: none; transition: background .12s ease, color .12s ease; }
+    .sr-sim-menu .sr-sim-item:hover, .sr-sim-menu .sr-sim-item:focus-visible { background: var(--ink-3); outline: none; }
+    .sr-sim-menu .sr-sim-item:focus-visible { box-shadow: inset 0 0 0 1.5px var(--indigo); }
+    .sr-sim-menu .sr-sim-item[aria-checked="true"] { background: rgba(99, 102, 241, .12); color: var(--indigo); font-weight: 600; }
+    .sr-sim-menu .sr-sim-item .kdd-txt { flex: 1 1 auto; min-width: 0; }
+    .sr-sim-check { flex: none; color: var(--indigo); visibility: hidden; }
+    .sr-sim-item[aria-checked="true"] .sr-sim-check { visibility: visible; }
+    .sr-sim-count { flex: none; margin-left: 8px; padding: 1px 7px; border-radius: 999px; background: var(--ink-3); color: var(--paper-dim); font: 500 11px/16px var(--body); }
+    .sr-sim-item[aria-checked="true"] .sr-sim-count { background: rgba(99, 102, 241, .16); color: var(--indigo); }
+    .sr-sim-sep { height: 1px; margin: 4px 6px; background: var(--line); flex: none; }
     [data-theme="dark"] .sr-toggle { background: rgba(255, 255, 255, .06); }
     .sr-toggle { margin: 0; }
     @media (max-width: 480px) {
@@ -21956,6 +21974,57 @@
       lb.addEventListener("click", () => { if (_tgView === "list") return; _tgView = "list"; sync(); renderTriageItems(tgVisibleItems()) })
       bb.addEventListener("click", () => { if (_tgView === "board") return; _tgView = "board"; sync(); renderTriageItems(tgVisibleItems()) })
     }
+    // Sim Reports header "Sim:" filter menu (kdd skin). Toggles the menu, picks an option (writes the hidden
+    // <select id="tgSimFilter"> and fires its change handler, which re-renders), arrow-key navigation, Escape and
+    // outside-click close. The document-level listeners are attached once; the button/menu are re-wired per render.
+    function closeSimFilterMenu(focusBtn) {
+      const menu = document.getElementById("tgSimMenu"), btn = document.getElementById("tgSimBtn")
+      if (!menu || menu.classList.contains("hide")) return
+      menu.classList.add("hide")
+      if (btn) { btn.setAttribute("aria-expanded", "false"); if (focusBtn) btn.focus() }
+    }
+    function wireSimFilterMenu(sel) {
+      const btn = document.getElementById("tgSimBtn"), menu = document.getElementById("tgSimMenu")
+      if (!btn || !menu || !sel) return
+      const items = () => Array.from(menu.querySelectorAll(".kdd-item"))
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation()
+        if (!menu.classList.contains("hide")) { closeSimFilterMenu(false); return }
+        menu.classList.remove("hide")
+        btn.setAttribute("aria-expanded", "true")
+        const cur = menu.querySelector('.kdd-item[aria-checked="true"]') || items()[0]
+        if (cur) cur.focus()
+      })
+      btn.addEventListener("keydown", (ev) => {
+        if ((ev.key === "ArrowDown" || ev.key === "ArrowUp") && menu.classList.contains("hide")) { ev.preventDefault(); btn.click() }
+      })
+      menu.addEventListener("click", (ev) => {
+        ev.stopPropagation()
+        const item = ev.target.closest(".kdd-item")
+        if (!item) return
+        const val = item.getAttribute("data-val")
+        closeSimFilterMenu(true)
+        if (sel.value !== val) { sel.value = val; sel.dispatchEvent(new Event("change", { bubbles: true })) }
+      })
+      menu.addEventListener("keydown", (ev) => {
+        const list = items(), i = list.indexOf(document.activeElement)
+        if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+          ev.preventDefault()
+          const n = list.length, next = i < 0 ? 0 : (i + (ev.key === "ArrowDown" ? 1 : n - 1)) % n
+          if (list[next]) list[next].focus()
+        } else if (ev.key === "Home" || ev.key === "End") {
+          ev.preventDefault(); const t = ev.key === "Home" ? list[0] : list[list.length - 1]; if (t) t.focus()
+        } else if (ev.key === "Escape" || ev.key === "Tab") {
+          if (ev.key === "Escape") ev.preventDefault()
+          closeSimFilterMenu(ev.key === "Escape")
+        }
+      })
+      if (!window.__srSimMenuDocWired) {
+        window.__srSimMenuDocWired = true
+        document.addEventListener("click", (e) => { if (!e.target.closest || !e.target.closest(".sr-sim-kdd")) closeSimFilterMenu(false) })
+        document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSimFilterMenu(false) })
+      }
+    }
     // JTBD 3.10: sentiment filter (Critical / positive / all …) + bulk-dismiss-by-Sim. Both live in the
     // #triageFilters bar above the list so a reviewer can hide non-actionable positives or clear a noisy
     // Sim's observations in one action, rather than dismissing 60 flooded observations one by one.
@@ -22041,6 +22110,15 @@
       const simOpts = [`<option value="all">All Sims</option>`]
         .concat(simKeys.map(k => `<option value="${esc(k)}"${_triageSim === k ? " selected" : ""}>${esc(simLabel(k))}</option>`))
         .join("")
+      // Sim filter menu: styled options (hover, selected ✓, divider after "All Sims", per-Sim count) instead of the
+      // browser's unstyled native list. The hidden <select id="tgSimFilter"> stays the state holder.
+      const simCheck = `<svg class="sr-sim-check" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>`
+      const simItem = (val, label, count) => `<button type="button" class="kdd-item sr-sim-item" role="menuitemradio" aria-checked="${_triageSim === val}" data-val="${esc(val)}">${simCheck}<span class="kdd-txt">${esc(label)}</span><span class="sr-sim-count">${count}</span></button>`
+      const simMenuHtml = simItem("all", "All Sims", all.length)
+        + (simKeys.length ? `<div class="sr-sim-sep" role="separator"></div>` : "")
+        + simKeys.map(k => simItem(k, simLabel(k), simCount(k))).join("")
+      const simCurLabel = _triageSim === "all" ? "All Sims" : simLabel(_triageSim)
+      const simCaret = `<svg class="kdd-caret" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>`
       const canDismissSim = _triageSim !== "all" && simCount(_triageSim) > 0
       const simDismissBtn = canDismissSim
         ? `<button type="button" class="btn btn-ghost btn-sm" id="tgSimDismiss" title="Dismiss every new report from this Sim">Dismiss all ${simCount(_triageSim)} from ${esc(simLabel(_triageSim))}</button>`
@@ -22053,7 +22131,10 @@
       // bulk 'dismiss all from Sim' button and the clear-filters button are gone (the board columns already split by priority).
       host.innerHTML = `<div class="tg-filter-row">${sentHtml}</div>`
       const simHost = $("triageSimHost")
-      if (simHost) simHost.innerHTML = `<label class="sr-sim-pill"><span>Sim:</span><select id="tgSimFilter" aria-label="Filter by originating Sim">${simOpts}</select></label>`
+      if (simHost) simHost.innerHTML = `<div class="sr-sim-pill sr-sim-kdd kdd" data-kdd="sim"><span>Sim:</span>`
+        + `<button type="button" class="kdd-btn sr-sim-btn" id="tgSimBtn" aria-haspopup="menu" aria-expanded="false" aria-label="Filter by originating Sim"><span class="kdd-txt">${esc(simCurLabel)}</span>${simCaret}</button>`
+        + `<div class="kdd-menu hide sr-sim-menu" id="tgSimMenu" role="menu" aria-label="Filter by originating Sim">${simMenuHtml}</div>`
+        + `<select id="tgSimFilter" class="kdd-native" tabindex="-1" aria-hidden="true">${simOpts}</select></div>`
       const hdrCount = $("triageHdrCount"); if (hdrCount) hdrCount.textContent = String(all.length)
       host.querySelectorAll("[data-tg-sent]").forEach(b => b.addEventListener("click", () => {
         _triageSentiment = b.getAttribute("data-tg-sent"); _tgSelected.clear(); renderTriageView()
@@ -22177,6 +22258,7 @@
 
       const simSel = $("tgSimFilter")
       if (simSel) simSel.addEventListener("change", () => { _triageSim = simSel.value; _tgSelected.clear(); renderTriageView() })
+      wireSimFilterMenu(simSel)
       const simDis = host.querySelector("#tgSimDismiss")
       if (simDis) simDis.addEventListener("click", (ev) => {
         const ids = (_triageItems || []).filter(t => tgSimKey(t) === _triageSim).map(t => String(t.id))
