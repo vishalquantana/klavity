@@ -23530,12 +23530,18 @@
             host.innerHTML = svg
           }
 
+          // KD: the drill-down title shows the day as DD-MM-YYYY ("Reports on 12-09-2026"); the bucket key / API param stays
+          // YYYY-MM-DD. Anything that isn't a plain YYYY-MM-DD is shown unchanged.
+          function trendDayDMY(day) {
+            const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""))
+            return m ? m[3] + "-" + m[2] + "-" + m[1] : String(day || "")
+          }
           async function drillTrend(day) {
             const drill = $("trendDrill"), list = $("trendDrillList"), title = $("trendDrillTitle")
             if (!drill || !list) return
             const meta = TREND_SERIES_META.find((m) => m.key === _trendSeries) || TREND_SERIES_META[0]
             drill.classList.remove("hide")
-            title.innerHTML = '<i style="display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:7px;background:' + meta.color + '"></i>' + esc(meta.label + " on " + day)
+            title.innerHTML = '<i style="display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:7px;background:' + meta.color + '"></i>' + esc(meta.label + " on " + trendDayDMY(day))
             list.innerHTML = '<div class="trend-empty" style="padding:14px">Loading…</div>'
             const pid = curProjId()
             try {
