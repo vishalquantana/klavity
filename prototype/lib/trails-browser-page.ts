@@ -510,7 +510,28 @@ function fingerprintBody(el: Element): Fingerprint {
   }
 }
 
-function stableSelectorBody(el: Element): string | null {
+// A selector is POSITIONAL when it depends on sibling order (`:nth-of-type`, `:nth-child`, `:first-child`...), which drifts when a list,
+// sidebar or table gains/loses/reorders items. Quoted text (names, has-text) is ignored so a label like "a:nth-child(2)" can't trip it.
+// Lets a later Trail-quality check find positional-only steps without storing extra metadata on the fingerprint.
+export function isPositionalSelector(sel: string): boolean {
+  const bare = sel.replace(/"(?:\\.|[^"\\])*"/g, '""')
+  return /:(nth-of-type|nth-child|nth-last-child|nth-last-of-type|first-child|last-child|first-of-type|last-of-type|only-child|only-of-type)\b/.test(bare)
+}
+
+// A selector produced by the role + accessible-name tiers (`role=link[name="X"s]`, optionally scoped `tr:has-text("Y") >> role=…`).
+// These are Playwright selector-engine strings: replay resolves them with page.locator(), the Puppeteer author adapter never executes them.
+const SEMANTIC_TAIL = /role=([a-z]+)\[name="((?:\\.|[^"\\])*)"s\]$/
+function isSemanticSelector(sel: string): boolean { return SEMANTIC_TAIL.test(sel) && (sel.startsWith("role=") || sel.includes(" >> role=")) }
+
+// Large-page safeguard: the scoped (`container:has-text(…) >> role=…`) tier costs ~rows x labels (measured 1.4 s at 3,000 rows, 8.9 s at 10,000 -
+// near the author's 8-10 s stableSelector bound, after which the author would lose the unique positional path). With this many or more interactive
+// candidates of the target's role on the page the scoped tier is skipped and the existing positional fallback is used. The role + name tier is not capped.
+export const SCOPED_TIER_MAX_CANDIDATES = 3000
+
+// opts.skipSemantic = the caller's engine cross-check rejected the semantic candidate -> go straight to the positional path.
+// opts.maxScoped    = skip the scoped tier at/above this many same-role candidates (adapters pass SCOPED_TIER_MAX_CANDIDATES; in-page code cannot see module constants).
+function stableSelectorBody(el: Element, opts?: { skipSemantic?: boolean; maxScoped?: number }): string | null {
+  const skipSemantic = !!opts?.skipSemantic, maxScoped = opts?.maxScoped ?? Infinity
   const esc = (v: string) => v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
   const tag = el.tagName.toLowerCase()
   // Each candidate must resolve to EXACTLY ONE element AND that element must be `el` itself — else a replay
@@ -530,6 +551,99 @@ function stableSelectorBody(el: Element): string | null {
   // "text") — otherwise a bare `<input>` would build `input[type="text"]` and could anchor onto a DIFFERENT
   // explicit text input. Absent/invalid attribute → skip (fall through to the positional path).
   if (tag === "input") { const ty = el.getAttribute("type"); if (ty) { const s = `input[type="${esc(ty)}"]`; if (uniq(s)) return s } }
+  // Semantic tiers (links / buttons with a visible name but no id/aria-label/testid): `role=<role>[name="<accessible name>"s]` - the same signal
+  // replay's heal tier uses (getByRole exact) - validated here to match EXACTLY this element among the page's visible elements of that role. When the
+  // name repeats (the same "Edit" in every table row), scope it to the nearest row/item/card/dialog that has distinguishing text:
+  // `tr:has-text("Acme") >> role=button[name="Edit"s]`. Position-independent, so inserted list items / shifted wrappers do not break it.
+  // Anything ambiguous falls through to the positional path below. Playwright's `s` flag = case-sensitive exact match on the whitespace-normalised name.
+  if (!skipSemantic) {
+    const sem = ((): string | null => {
+      const escQ = (v: string) => v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+      const norm = (s: string) => s.replace(/\s+/g, " ").trim()
+      const roleOf = (n: Element): string => {
+        const r = (n.getAttribute("role") || "").trim().split(/\s+/)[0].toLowerCase()
+        if (r) return r
+        const t = n.tagName.toLowerCase()
+        if (t === "a") return n.hasAttribute("href") ? "link" : ""
+        if (t === "button") return "button"
+        if (t === "input") return /^(button|submit|reset|image)$/.test((n.getAttribute("type") || "").toLowerCase()) ? "button" : ""
+        return ""
+      }
+      const selfHidden = (n: Element) => { const cs = getComputedStyle(n); return cs.display === "none" || cs.visibility === "hidden" || cs.visibility === "collapse" }
+      // hidden for accessibility = display:none / visibility:hidden on it, display:none or aria-hidden on it or any ancestor (getByRole ignores these by default)
+      const hiddenForAria = (n: Element): boolean => {
+        for (let c: Element | null = n; c; c = c.parentElement) { if (c.getAttribute("aria-hidden") === "true" || getComputedStyle(c).display === "none") return true }
+        return selfHidden(n)
+      }
+      // accessible-name text from content: hidden / aria-hidden subtrees are skipped; block-level children are space separated; <img> contributes its alt.
+      const textOf = (n: Node, isRoot: boolean, depth: number): string => {
+        if (depth > 15) return ""
+        if (n.nodeType === 3) return n.textContent || ""
+        if (n.nodeType !== 1) return ""
+        const e = n as Element, t = e.tagName.toLowerCase()
+        if (/^(script|style|noscript|template|svg)$/.test(t)) return ""
+        if (!isRoot && (e.getAttribute("aria-hidden") === "true" || selfHidden(e))) return ""
+        if (t === "img") return e.getAttribute("alt") || ""
+        let s = ""
+        for (const c of Array.from(e.childNodes)) s += textOf(c, false, depth + 1)
+        const d = getComputedStyle(e).display
+        return d === "inline" || d === "contents" ? s : " " + s + " "
+      }
+      const nameOf = (n: Element): string => {
+        const lb = n.getAttribute("aria-labelledby")
+        if (lb) {
+          const refs = lb.trim().split(/\s+/).map((id) => document.getElementById(id)).filter(Boolean) as Element[]
+          const s = norm(refs.map((r) => textOf(r, true, 0)).join(" "))
+          if (s) return s
+        }
+        const al = norm(n.getAttribute("aria-label") || "")
+        if (al) return al
+        if (n.tagName.toLowerCase() === "input") {
+          const ty = (n.getAttribute("type") || "").toLowerCase()
+          const v = norm(n.getAttribute("value") || "")
+          const nm = ty === "image" ? norm(n.getAttribute("alt") || "") || v || "Submit" : v || (ty === "submit" ? "Submit" : ty === "reset" ? "Reset" : "")
+          if (nm) return nm
+        }
+        return norm(textOf(n, true, 0)) || norm(n.getAttribute("title") || "")
+      }
+      const ELIGIBLE = /^(link|button|tab|menuitem)$/
+      const role = roleOf(el)
+      if (!ELIGIBLE.test(role) || hiddenForAria(el)) return null
+      const name = nameOf(el)
+      if (!name || name.length > 80) return null
+      const matches = (root: ParentNode): Element[] =>
+        Array.from(root.querySelectorAll("a[href],button,input,[role]")).filter((n) => roleOf(n) === role && !hiddenForAria(n) && nameOf(n) === name)
+      const leaf = `role=${role}[name="${escQ(name)}"s]`
+      const all = matches(document)
+      if (all.length === 1 && all[0] === el) return leaf
+      // Large page: skip the (quadratic-ish) scoped tier and fall through to the positional path. Counted without any style work, so this check is cheap.
+      if (Array.from(document.querySelectorAll("a[href],button,input,[role]")).filter((n) => roleOf(n) === role).length >= maxScoped) return null
+      // Scoped: nearest few row / list-item / card / dialog ancestors; try their own visible text (never the target's) as the distinguishing label.
+      const CONTAINER = 'tr,li,article,dialog,[role="row"],[role="listitem"],[role="dialog"]'
+      let c: Element | null = el.parentElement ? el.parentElement.closest(CONTAINER) : null
+      for (let tries = 0; c && tries < 3; tries++, c = c.parentElement ? c.parentElement.closest(CONTAINER) : null) {
+        const tg = c.tagName.toLowerCase()
+        const csel = /^(tr|li|article|dialog)$/.test(tg) ? tg : `[role="${escQ(c.getAttribute("role") || "")}"]`
+        const labels: string[] = []
+        const walker = document.createTreeWalker(c, NodeFilter.SHOW_TEXT)
+        for (let tn = walker.nextNode(); tn && labels.length < 12; tn = walker.nextNode()) {
+          const pe = tn.parentElement
+          if (!pe || el.contains(pe) || /^(script|style|noscript)$/i.test(pe.tagName) || hiddenForAria(pe)) continue
+          const seg = norm(tn.textContent || "")
+          if (seg.length >= 2 && seg.length <= 60 && /[\p{L}\p{N}]/u.test(seg) && !labels.includes(seg)) labels.push(seg)
+        }
+        for (const lab of labels) {
+          const want = lab.toLowerCase()
+          const scopes = Array.from(document.querySelectorAll(csel)).filter((s) => norm(s.textContent || "").toLowerCase().includes(want))
+          const hit = new Set<Element>()
+          for (const s of scopes) for (const m of matches(s)) hit.add(m)
+          if (hit.size === 1 && hit.has(el)) return `${csel}:has-text("${escQ(lab)}") >> ${leaf}`
+        }
+      }
+      return null
+    })()
+    if (sem) return sem
+  }
   // Last resort (a bare <a>/<div>/<td> - e.g. the "1st project" link in a list): the fingerprint's domPath is only the last 4 levels,
   // NOT anchored to the page, so it can match dozens of elements (dev, 2026-11-16: 21 matches -> replay "ambiguous_selector"). Build the
   // path from the nearest ancestor with a unique id (else <body>) down to el, and keep it only if it resolves to exactly `el`.
@@ -758,7 +872,20 @@ class PlaywrightPage implements BrowserPage {
     await loc.evaluate((el: Element, v: string) => el.setAttribute("data-kref", v), id)
     return { selector: `[data-kref="${id}"]`, count }
   }
-  async stableSelector(selector: string) { try { return await this.page.locator(selector).first().evaluate(stableSelectorBody) } catch { return null } }
+  async stableSelector(selector: string) {
+    try {
+      const loc = this.page.locator(selector).first()
+      const first = await loc.evaluate(stableSelectorBody, { maxScoped: SCOPED_TIER_MAX_CANDIDATES })
+      if (!first || !isSemanticSelector(first)) return first
+      // Cross-check with the REAL selector engine replay uses: it must resolve to exactly this element, else fall back to the positional path.
+      const found = this.page.locator(first)
+      if ((await found.count()) === 1) {
+        const [a, b] = [await loc.elementHandle(), await found.elementHandle()]
+        if (a && b && await a.evaluate((x: Element, y: Element) => x === y, b)) return first
+      }
+      return await loc.evaluate(stableSelectorBody, { skipSemantic: true })
+    } catch { return null }
+  }
   async click(selector: string, timeoutMs: number) { await clickWithTransitionFallback(this.page.locator(selector), timeoutMs) }
   async fill(selector: string, value: string, timeoutMs: number, sensitive = false) {
     const loc = this.page.locator(selector)
@@ -939,7 +1066,25 @@ export class PuppeteerPage implements BrowserPage {
   async targetCheck(selector: string, label: string) { return await this.page.evaluate(targetCheckBody, { selector, label }) }
   async selectCheck(selector: string, value: string) { return await this.page.evaluate(selectCheckBody, { selector, value }) }
   async krefFor(selector: string) { return await this.page.evaluate(pwSelectorKrefBody, { selector, id: freshKref() }) }
-  async stableSelector(selector: string) { try { return await this.page.$eval(selector, stableSelectorBody) } catch { return null } }
+  async stableSelector(selector: string) {
+    try {
+      const first = await this.page.$eval(selector, stableSelectorBody, { maxScoped: SCOPED_TIER_MAX_CANDIDATES })
+      if (!first || !isSemanticSelector(first)) return first
+      // Puppeteer has no Playwright selector engine, so cross-check the role + name with Chrome's own accessibility tree for this exact element.
+      // Any mismatch or failure -> the positional path (conservative: never save a semantic selector that was not confirmed).
+      const tail = first.match(SEMANTIC_TAIL)!
+      const handle = await this.page.$(selector)
+      let ok = false
+      try {
+        const ax = handle ? await this.page.accessibility.snapshot({ root: handle, interestingOnly: false }) : null
+        const want = tail[2].replace(/\\(.)/g, "$1")
+        ok = !!ax && String(ax.role) === tail[1] && String(ax.name ?? "").replace(/\s+/g, " ").trim() === want
+        if (!ok) console.warn(`[trails-browser-page] semantic selector not confirmed by the accessibility tree (want ${tail[1]} "${want}", got ${ax?.role} "${ax?.name}"); using the positional path`)
+      } catch (e) { console.warn("[trails-browser-page] accessibility cross-check failed; using the positional path:", String((e as any)?.message ?? e).slice(0, 120)) }
+      finally { await handle?.dispose().catch(() => {}) }
+      return ok ? first : await this.page.$eval(selector, stableSelectorBody, { skipSemantic: true })
+    } catch { return null }
+  }
   async click(selector: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }); await this.page.click(selector) }
   async fill(selector: string, value: string, timeoutMs: number, sensitive = false) {
     const el = await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs })
