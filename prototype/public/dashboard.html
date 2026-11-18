@@ -2,6 +2,7 @@
 <html lang="en">
 
 <head>
+  <script src="/project-history.js"></script>
   <script type="text/javascript">
     (function (c, l, a, r, i, t, y) {
       c[a] = c[a] || function () { (c[a].q = c[a].q || []).push(arguments) };
@@ -4884,6 +4885,59 @@
       font-size: 11.5px;
       color: var(--paper-faint);
       white-space: nowrap
+    }
+
+    /* Bulk-bar dropdowns (Status / Priority / Label add+remove) in the shared .kdd skin, sized to sit
+       next to the bar's inputs and buttons. Label names keep their case; long lists scroll. */
+    .bulk-kdd .kdd-btn {
+      min-width: 0;
+      height: 28px;
+      padding: 0 8px 0 10px;
+      gap: 6px;
+      background: var(--ink-2);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 500;
+      text-transform: none
+    }
+
+    .bulk-kdd .kdd-btn:hover {
+      background: var(--ink-3);
+      border-color: var(--indigo)
+    }
+
+    .bulk-kdd .kdd-caret {
+      margin-left: 2px
+    }
+
+    .bulk-kdd .kdd-menu {
+      min-width: 170px;
+      max-height: 260px;
+      overflow-y: auto;
+      z-index: 60;
+      /* Slim scrollbar (no arrow buttons) instead of the chunky OS default. */
+      scrollbar-width: thin;
+      scrollbar-color: var(--line) transparent
+    }
+
+    .bulk-kdd .kdd-menu::-webkit-scrollbar {
+      width: 4px
+    }
+
+    .bulk-kdd .kdd-menu::-webkit-scrollbar-button {
+      display: none
+    }
+
+    .bulk-kdd .kdd-menu::-webkit-scrollbar-thumb {
+      background: var(--line);
+      border-radius: 4px
+    }
+
+    .bulk-kdd .kdd-item {
+      padding: 7px 10px;
+      font-size: 12.5px;
+      text-transform: none
     }
 
     @media(max-width:900px) {
@@ -21215,6 +21269,9 @@
       if (data.active && data.active.id) {
         if (!superseded) swrWrite(dashCacheKey(data.active.id), data)
         try { localStorage.setItem(DASH_LAST_KEY, data.active.id) } catch (e) { }
+        // KD-3089: a bare /dashboard resolves its project here, not from the URL — record it as this tab's selected
+        // project so /project-history.js knows which project Back must not leave.
+        try { if (!activeProjectParam() && window.klavNoteProject) window.klavNoteProject(data.active.id) } catch (e) { }
         // KLAVITYKLA-299: silently update the URL so it reflects the active project even when
         // the user landed on /dashboard without a ?project= param (bookmarkable; back/forward safe).
         // KLAVITYKLA-187 fix: keep the CURRENT path (e.g. /sim/new) and its other query params —
@@ -21469,6 +21526,32 @@
       } catch (e) { /* network blip — retry next tick */ }
       finally { _boardRevInFlight = false }
     }
+    // KD-3090: live Overview metric cards (Feedback received / Sims / Teammates / Tickets filed). They only changed
+    // when the full /api/dashboard poll applied: every 25s at best, and never while dashLiveBusy() paused it (an
+    // input focused, a modal or ticket open, rows selected) - so they read stale until a manual reload. This cheap
+    // poll reads just the four numbers from GET /api/projects/:id/dashboard-counts every ~10s while Overview is the
+    // visible view, on focus / tab-visible, and on entering Overview (window.klavRefreshStats). It only rewrites the
+    // four numbers, so unlike the full poll it is safe to run while the user is busy elsewhere on the page.
+    let _liveStats = null   // { pid, at, feedback, tickets, sims, team } - newest counts-only read
+    let _statsInFlight = false
+    async function statsTick() {
+      if (_statsInFlight || document.hidden || !state) return
+      if ((document.body.getAttribute("data-view") || "overview") !== "overview") return
+      const pid = curProjId()
+      if (!pid) return
+      _statsInFlight = true
+      const at = Date.now()   // request ISSUE time, compared against _dashLastAppliedRequestAt in renderStats
+      try {
+        const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/dashboard-counts")
+        if (!r || !r.ok) return
+        const d = await r.json().catch(() => null)
+        if (!d || curProjId() !== pid) return   // project switched mid-request -> drop it
+        _liveStats = { pid, at, feedback: d.feedback, tickets: d.tickets, sims: d.sims, team: d.team }
+        if (typeof renderStats === "function") renderStats()
+      } catch (e) { /* network blip - retry next tick */ }
+      finally { _statsInFlight = false }
+    }
+    window.klavRefreshStats = statsTick
     ; (function initDashLiveness() {
       if (window.__klavLivenessInit) return
       window.__klavLivenessInit = true
@@ -21481,6 +21564,10 @@
       setInterval(boardRevTick, 15000)
       window.addEventListener("focus", boardRevTick)
       document.addEventListener("visibilitychange", () => { if (!document.hidden) boardRevTick() })
+      // KD-3090: Overview metric cards - cheap counts poll + fire on focus / tab-visible.
+      setInterval(statsTick, 10000)
+      window.addEventListener("focus", statsTick)
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) statsTick() })
     })()
 
     // KLA-200: if the URL contains ?ticket=<id>, switch to the Tickets view and open that ticket's detail.
@@ -24058,10 +24145,15 @@
             // Overview metric cards — populate the 4 stat numbers (this paints instantly from the
             // SWR-cached state on repeat loads). Always resolve to a value so the skeleton placeholder
             // is replaced even when a count is missing/null: a dash, never an endless shimmer.
-            setT("stFeedback", c.feedback != null ? c.feedback : "—")
-            setT("stSims", (state && state.sims || []).length)
-            setT("stTeam", (state && state.members || []).length)
-            setT("stTickets", c.tickets != null ? c.tickets : "—")
+            // KD-3090: prefer the counts-only poll's numbers when they were requested AFTER the dashboard payload
+            // in `state` (same project) - they are the fresher read. A newer full dashboard apply wins again.
+            const _pidNow = state && state.active && state.active.id
+            const live = (_liveStats && _liveStats.pid === _pidNow && _liveStats.at > _dashLastAppliedRequestAt) ? _liveStats : {}
+            const pick = (lv, fallback) => lv != null ? lv : fallback
+            setT("stFeedback", pick(live.feedback, c.feedback != null ? c.feedback : "—"))
+            setT("stSims", pick(live.sims, (state && state.sims || []).length))
+            setT("stTeam", pick(live.team, (state && state.members || []).length))
+            setT("stTickets", pick(live.tickets, c.tickets != null ? c.tickets : "—"))
             const sevEl = $("kpiSev")
             if (sevEl) sevEl.innerHTML =
               `<div class="sg hi" data-sev="high" role="button" tabindex="0" title="View critical issues"><b>${sev.high || 0}</b><span>Critical</span></div>` +
@@ -31391,17 +31483,31 @@
             bar.id = "tktBulkBar"
 
             const labels = state._labels || []
-            const labelOpts = labels.map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("")
+
+            // Bulk dropdowns use the same custom .kdd skin as the ticket panel: a native <select>'s open
+            // option list is drawn by the OS and ignores our CSS (no padding/hover/spacing), which is why the
+            // "+ add…" label menu looked unstyled. The hidden <select> keeps its id and still fires `change`,
+            // so the handlers below are unchanged. These are ACTIONS, not state: the trigger always shows the
+            // placeholder and the select is reset after each pick (see wiring below).
+            const bulkKdd = (id, placeholder, ariaLabel, items) =>
+              `<span class="kdd bulk-kdd">` +
+              `<button type="button" class="kdd-btn" aria-haspopup="menu" aria-expanded="false" aria-label="${esc(ariaLabel)}"><span class="kdd-txt">${esc(placeholder)}</span><svg class="kdd-caret" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>` +
+              `<span class="kdd-menu hide" role="menu" aria-label="${esc(ariaLabel)}">${items.map(it => `<button type="button" class="kdd-item" role="menuitem" data-val="${esc(it.v)}">${it.sw || ""}<span class="kdd-txt">${esc(it.t)}</span></button>`).join("")}</span>` +
+              `<select class="kdd-native" id="${id}" aria-hidden="true" tabindex="-1"><option value="">${esc(placeholder)}</option>${items.map(it => `<option value="${esc(it.v)}">${esc(it.t)}</option>`).join("")}</select>` +
+              `</span>`
+            const statusItems = STATUS_ORDER.map(s => ({ v: s, t: STATUS_LABELS[s], sw: `<span class="prop-dot ds-${s}"></span>` }))
+            const priItems = ["urgent", "high", "medium", "low"].map(p => ({ v: p, t: p.charAt(0).toUpperCase() + p.slice(1), sw: `<span class="prop-sq dp-${p}"></span>` }))
+            const labelItems = labels.map(l => ({ v: l.id, t: l.name }))
 
             bar.innerHTML =
               `<span class="bulk-count">${_bulkSelected.size} selected</span>` +
               `<button class="btn btn-ghost btn-sm" id="bulkClear" type="button" style="padding:4px 8px;font-size:11px">${window.kicon("x", { size: 11 })} Clear</button>` +
               `<span class="bulk-sep"></span>` +
               `<span class="bulk-lbl">Status:</span>` +
-              `<select class="bulk-sel" id="bulkStatus"><option value="">— change —</option>${STATUS_ORDER.map(s => `<option value="${s}">${STATUS_LABELS[s]}</option>`).join("")}</select>` +
+              bulkKdd("bulkStatus", "— change —", "Change status", statusItems) +
               `<span class="bulk-sep"></span>` +
               `<span class="bulk-lbl">Priority:</span>` +
-              `<select class="bulk-sel" id="bulkPriority"><option value="">— change —</option><option value="urgent">Urgent</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>` +
+              bulkKdd("bulkPriority", "— change —", "Change priority", priItems) +
               `<span class="bulk-sep"></span>` +
               `<span class="bulk-lbl">Assignee:</span>` +
               `<input class="bulk-inp" id="bulkAssignee" type="email" list="tktAssigneeOptions" placeholder="name@company.com" autocomplete="off" />` +
@@ -31410,8 +31516,8 @@
               (labels.length ? (
                 `<span class="bulk-sep"></span>` +
                 `<span class="bulk-lbl">Label:</span>` +
-                `<select class="bulk-sel" id="bulkAddLabel"><option value="">+ add…</option>${labelOpts}</select>` +
-                `<select class="bulk-sel" id="bulkRemoveLabel"><option value="">− remove…</option>${labelOpts}</select>`
+                bulkKdd("bulkAddLabel", "+ add…", "Add label", labelItems) +
+                bulkKdd("bulkRemoveLabel", "− remove…", "Remove label", labelItems)
               ) : "") +
               `<span class="bulk-sep"></span>` +
               `<button class="btn btn-ghost btn-sm" id="bulkClose" type="button" style="font-size:12px">Close all</button>` +
@@ -31423,12 +31529,79 @@
             const doAction = async (body) => {
               const isLabelOp = body.addLabelId !== undefined || body.removeLabelId !== undefined
               if (isLabelOp) {
+                // In-app confirm (klavConfirm), not the browser's native confirm() ("dev.klavity.in says …").
                 const n = _bulkSelected.size
-                if (!confirm(`${bulkActionLabel(body)} on ${n} ticket${n === 1 ? "" : "s"}?`)) return
+                const adding = body.addLabelId !== undefined
+                const lblId = adding ? body.addLabelId : body.removeLabelId
+                const lbl = labels.find(l => String(l.id) === String(lblId))
+                const lblName = lbl ? `"${lbl.name}"` : "this label"
+                const tickets = `${n} ticket${n === 1 ? "" : "s"}`
+                const ok = await klavConfirm({
+                  title: adding ? `Add label to ${tickets}?` : `Remove label from ${tickets}?`,
+                  message: adding
+                    ? `${lblName} will be added to the ${n === 1 ? "selected ticket" : `${n} selected tickets`}.`
+                    : `${lblName} will be removed from the ${n === 1 ? "selected ticket" : `${n} selected tickets`}.`,
+                  confirmText: adding ? "Add label" : "Remove label",
+                  danger: false,
+                  icon: adding ? "check-circle" : "x",
+                })
+                // These dropdowns are actions, not state: put them back on "+ add…" / "− remove…".
+                ;["#bulkAddLabel", "#bulkRemoveLabel"].forEach(s => { const el = bar.querySelector(s); if (el) el.value = "" })
+                if (!ok) return
               }
               // #704: label ops always take the blocking path (boardBulkOptimistic returns null for them).
               await applyBulkAction(projId, body, onDone, opts && opts.optimistic)
             }
+
+            // Bulk dropdown skins: open/close the menu; a pick sets the hidden select, fires `change` (the
+            // handlers read e.target.value synchronously), then resets it so the same option can be picked again.
+            const closeBulkMenus = (keep) => bar.querySelectorAll(".bulk-kdd").forEach(k => {
+              if (k === keep) return
+              const m = k.querySelector(".kdd-menu"), b = k.querySelector(".kdd-btn")
+              if (m && !m.classList.contains("hide")) { m.classList.add("hide"); b.setAttribute("aria-expanded", "false") }
+            })
+            bar.querySelectorAll(".bulk-kdd").forEach(kdd => {
+              const btn = kdd.querySelector(".kdd-btn"), menu = kdd.querySelector(".kdd-menu"), sel = kdd.querySelector(".kdd-native")
+              btn.addEventListener("click", ev => {
+                ev.stopPropagation()
+                const willOpen = menu.classList.contains("hide")
+                closeBulkMenus(kdd)
+                menu.classList.toggle("hide", !willOpen)
+                btn.setAttribute("aria-expanded", String(willOpen))
+                if (willOpen) { const first = menu.querySelector(".kdd-item"); if (first) first.focus() }
+              })
+              menu.addEventListener("click", ev => {
+                const it = ev.target.closest(".kdd-item"); if (!it) return
+                ev.stopPropagation()
+                menu.classList.add("hide"); btn.setAttribute("aria-expanded", "false")
+                sel.value = it.getAttribute("data-val")
+                sel.dispatchEvent(new Event("change", { bubbles: true }))
+                sel.value = ""
+              })
+              menu.addEventListener("keydown", ev => {
+                const items = [...menu.querySelectorAll(".kdd-item")], i = items.indexOf(document.activeElement)
+                if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+                  ev.preventDefault()
+                  const n = items.length; if (!n) return
+                  items[(i + (ev.key === "ArrowDown" ? 1 : n - 1) + n) % n].focus()
+                } else if (ev.key === "Escape") {
+                  ev.preventDefault(); menu.classList.add("hide"); btn.setAttribute("aria-expanded", "false"); btn.focus()
+                }
+              })
+            })
+            // Outside click / Escape closes any open bulk menu. Capture phase so containers that stop
+            // propagation can't swallow it; unbound once the bar leaves the DOM (lists/boards re-render it).
+            const onBulkDocClick = ev => {
+              if (!bar.isConnected) { unbindBulkDoc(); return }
+              closeBulkMenus(ev.target instanceof Element ? ev.target.closest(".bulk-kdd") : null)
+            }
+            const onBulkDocKey = ev => {
+              if (!bar.isConnected) { unbindBulkDoc(); return }
+              if (ev.key === "Escape") closeBulkMenus(null)
+            }
+            const unbindBulkDoc = () => { document.removeEventListener("click", onBulkDocClick, true); document.removeEventListener("keydown", onBulkDocKey, true) }
+            document.addEventListener("click", onBulkDocClick, true)
+            document.addEventListener("keydown", onBulkDocKey, true)
 
             bar.querySelector("#bulkClear").addEventListener("click", () => {
               _bulkSelected.clear()
@@ -35806,6 +35979,9 @@
                 // Skipped on the very FIRST (initial-load) call, which runs BEFORE the boot deep-link open, so a
                 // legitimate ?ticket= deep link still opens on load.
                 if (window.__klavSetViewReady && v !== 'tickets') window.__klavDeepLinkNavAway = true;
+                // KD-3089: a user navigation between views gets its own history entry so browser Back/Forward move
+                // between views inside a project. The boot call and a Back/Forward-driven call only rewrite the URL.
+                var _pushView = !!window.__klavSetViewReady && !window.__klavViewFromPop;
                 window.__klavSetViewReady = true;
                 // KLA-563: if the dedicated ticket page is open and we're leaving Tickets (via the sidebar — the page
                 // has no scrim, unlike the panel), tear it down so returning to Tickets shows the board, not a stale
@@ -35834,7 +36010,10 @@
                   if (v !== 'tickets') _u.searchParams.delete('ticket');
                   // KD-2255: the Projects & Test Cases sub-tab's state belongs to the AutoSims view only.
                   if (v !== 'autosims') ['asp', 'asp_tc', 'asp_tab'].forEach(function (k) { _u.searchParams.delete(k) });
-                  history.replaceState(null, '', v === 'overview' ? (_u.pathname + _u.search) : (_u.pathname + _u.search + '#' + v));
+                  var _viewUrl = v === 'overview' ? (_u.pathname + _u.search) : (_u.pathname + _u.search + '#' + v);
+                  // KD-3089: push only when the address actually changes (re-selecting the same view adds nothing).
+                  if (_pushView && _viewUrl !== location.pathname + location.search + location.hash) history.pushState(null, '', _viewUrl);
+                  else history.replaceState(null, '', _viewUrl);
                 } catch (e) { }
                 window.scrollTo(0, 0);
                 if (v === 'triage') { if (typeof renderTriage === 'function') renderTriage(); }
@@ -35846,6 +36025,8 @@
                 if (v === 'overview') {
                   if (typeof window.renderChecklist === 'function') window.renderChecklist();
                   if (typeof window.renderFinishSetup === 'function') window.renderFinishSetup();
+                  // KD-3090: re-read the metric cards now - a Sim/teammate/ticket may have changed on another view.
+                  if (typeof window.klavRefreshStats === 'function') window.klavRefreshStats();
                   if (reopenFinish) {
                     var _fs = document.getElementById('finishSetup');
                     if (_fs) { _fs.classList.remove('hide'); if (_fs.scrollIntoView) _fs.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
@@ -35876,6 +36057,17 @@
               }
               window.setView = setView;
               window.klavSetView = setView; // exposed so card-go buttons (onclick="setView(...)") and inline handlers can call it
+              // KD-3089: browser Back/Forward between view entries shows that view again. Ticket entries (state.tkt, /t/…)
+              // are left to the ticket handler; an entry whose view is already showing (e.g. ?ticket= panels) is a no-op.
+              window.addEventListener('popstate', function (ev) {
+                if (ev && ev.state && ev.state.tkt) return;
+                if (/^\/t\//.test(location.pathname)) return;
+                var hv = String(location.hash || '').replace(/^#/, '').split('/')[0].split('?')[0] || 'overview';
+                if (VIEWS.indexOf(hv) < 0) hv = 'overview';
+                if (hv === document.body.getAttribute('data-view')) return;
+                window.__klavViewFromPop = true;
+                try { setView(hv); } finally { window.__klavViewFromPop = false; }
+              });
               // #677: collapsible sidebar (icon rail) — toggle body.side-collapsed and persist the preference.
               (function () {
                 var KEY = 'klav-side-collapsed';
