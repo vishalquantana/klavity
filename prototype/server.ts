@@ -14419,7 +14419,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
     }
     // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-    const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/people|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk(?:\/delete)?|\/bulk-delete|\/rev|\/deleted(?:\/[^/]+\/restore)?)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
+    const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/people|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk(?:\/delete)?|\/bulk-delete|\/rev|\/deleted(?:\/[^/]+\/restore)?)?|\/recurring|\/dashboard-counts|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
     if (projMatch) {
       const pid = projMatch[1]
       const sub = projMatch[2] || ""
@@ -15682,6 +15682,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const row: any = r.rows[0] || {}
         const rev = String(row.c ?? 0) + ":" + String(row.cr ?? 0) + ":" + String(row.u ?? 0)
         return json({ rev })
+      }
+
+      // KD-3090: GET /api/projects/:id/dashboard-counts — just the four Overview metric numbers (Feedback received,
+      // Sims, Teammates, Tickets filed), computed exactly as /api/dashboard computes them. The Overview polls this
+      // cheaply so the cards stay live even while the full dashboard poll is paused (input focused, modal open…)
+      // and right after an in-tab change, instead of waiting for (or needing) a full reload.
+      if (req.method === "GET" && sub === "/dashboard-counts") {
+        const [c, personas, members] = await Promise.all([dashboardCounts(proj.id), listPersonas(proj.id), membersOfProject(proj.id)])
+        return json({ feedback: c.feedback, tickets: c.tickets, sims: personas.length, team: members.length })
       }
 
       // GET /api/projects/:id/tickets — paginated, filterable ticket list (any project member, KLA-169)

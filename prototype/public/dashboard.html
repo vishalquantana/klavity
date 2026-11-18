@@ -21469,6 +21469,32 @@
       } catch (e) { /* network blip — retry next tick */ }
       finally { _boardRevInFlight = false }
     }
+    // KD-3090: live Overview metric cards (Feedback received / Sims / Teammates / Tickets filed). They only changed
+    // when the full /api/dashboard poll applied: every 25s at best, and never while dashLiveBusy() paused it (an
+    // input focused, a modal or ticket open, rows selected) - so they read stale until a manual reload. This cheap
+    // poll reads just the four numbers from GET /api/projects/:id/dashboard-counts every ~10s while Overview is the
+    // visible view, on focus / tab-visible, and on entering Overview (window.klavRefreshStats). It only rewrites the
+    // four numbers, so unlike the full poll it is safe to run while the user is busy elsewhere on the page.
+    let _liveStats = null   // { pid, at, feedback, tickets, sims, team } - newest counts-only read
+    let _statsInFlight = false
+    async function statsTick() {
+      if (_statsInFlight || document.hidden || !state) return
+      if ((document.body.getAttribute("data-view") || "overview") !== "overview") return
+      const pid = curProjId()
+      if (!pid) return
+      _statsInFlight = true
+      const at = Date.now()   // request ISSUE time, compared against _dashLastAppliedRequestAt in renderStats
+      try {
+        const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/dashboard-counts")
+        if (!r || !r.ok) return
+        const d = await r.json().catch(() => null)
+        if (!d || curProjId() !== pid) return   // project switched mid-request -> drop it
+        _liveStats = { pid, at, feedback: d.feedback, tickets: d.tickets, sims: d.sims, team: d.team }
+        if (typeof renderStats === "function") renderStats()
+      } catch (e) { /* network blip - retry next tick */ }
+      finally { _statsInFlight = false }
+    }
+    window.klavRefreshStats = statsTick
     ; (function initDashLiveness() {
       if (window.__klavLivenessInit) return
       window.__klavLivenessInit = true
@@ -21481,6 +21507,10 @@
       setInterval(boardRevTick, 15000)
       window.addEventListener("focus", boardRevTick)
       document.addEventListener("visibilitychange", () => { if (!document.hidden) boardRevTick() })
+      // KD-3090: Overview metric cards - cheap counts poll + fire on focus / tab-visible.
+      setInterval(statsTick, 10000)
+      window.addEventListener("focus", statsTick)
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) statsTick() })
     })()
 
     // KLA-200: if the URL contains ?ticket=<id>, switch to the Tickets view and open that ticket's detail.
@@ -24058,10 +24088,15 @@
             // Overview metric cards — populate the 4 stat numbers (this paints instantly from the
             // SWR-cached state on repeat loads). Always resolve to a value so the skeleton placeholder
             // is replaced even when a count is missing/null: a dash, never an endless shimmer.
-            setT("stFeedback", c.feedback != null ? c.feedback : "—")
-            setT("stSims", (state && state.sims || []).length)
-            setT("stTeam", (state && state.members || []).length)
-            setT("stTickets", c.tickets != null ? c.tickets : "—")
+            // KD-3090: prefer the counts-only poll's numbers when they were requested AFTER the dashboard payload
+            // in `state` (same project) - they are the fresher read. A newer full dashboard apply wins again.
+            const _pidNow = state && state.active && state.active.id
+            const live = (_liveStats && _liveStats.pid === _pidNow && _liveStats.at > _dashLastAppliedRequestAt) ? _liveStats : {}
+            const pick = (lv, fallback) => lv != null ? lv : fallback
+            setT("stFeedback", pick(live.feedback, c.feedback != null ? c.feedback : "—"))
+            setT("stSims", pick(live.sims, (state && state.sims || []).length))
+            setT("stTeam", pick(live.team, (state && state.members || []).length))
+            setT("stTickets", pick(live.tickets, c.tickets != null ? c.tickets : "—"))
             const sevEl = $("kpiSev")
             if (sevEl) sevEl.innerHTML =
               `<div class="sg hi" data-sev="high" role="button" tabindex="0" title="View critical issues"><b>${sev.high || 0}</b><span>Critical</span></div>` +
@@ -35846,6 +35881,8 @@
                 if (v === 'overview') {
                   if (typeof window.renderChecklist === 'function') window.renderChecklist();
                   if (typeof window.renderFinishSetup === 'function') window.renderFinishSetup();
+                  // KD-3090: re-read the metric cards now - a Sim/teammate/ticket may have changed on another view.
+                  if (typeof window.klavRefreshStats === 'function') window.klavRefreshStats();
                   if (reopenFinish) {
                     var _fs = document.getElementById('finishSetup');
                     if (_fs) { _fs.classList.remove('hide'); if (_fs.scrollIntoView) _fs.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
