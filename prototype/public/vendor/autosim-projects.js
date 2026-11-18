@@ -29,6 +29,9 @@
     '.asp-switch{padding:18px 26px 0}',
     '#aspRoot .asp-crumbs{font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--paper-faint);margin-bottom:14px;display:flex;flex-wrap:wrap;gap:6px}',
     '#aspRoot .asp-crumbs a{color:var(--indigo);text-decoration:none}',
+    '#aspRoot .asp-back{display:inline-flex;align-items:center;gap:4px;margin-bottom:10px;color:var(--paper-dim);font:600 12.5px var(--body);text-decoration:none;cursor:pointer;transition:color .15s}',
+    '#aspRoot .asp-back:hover,#aspRoot .asp-back:focus-visible{color:var(--indigo);outline:none}',
+    '#aspRoot .asp-back svg{flex-shrink:0}',
     '#aspRoot .head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}',
     '#aspRoot .lead{color:var(--paper-dim);font-size:14px;margin-top:4px;max-width:70ch;white-space:pre-wrap}',
     '#aspRoot .actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}',
@@ -191,8 +194,17 @@
   })
   window.addEventListener('popstate', function () { if (document.body.getAttribute('data-view') === 'autosims') sync() })
 
-  function crumbs(items) {
+  // back = { to: <state for go(); null = the AutoSims sub-tab>, label } — every level gets a "← <parent>"
+  // button above the breadcrumb, so the flow never relies on the breadcrumb or the browser's Back alone.
+  function crumbs(items, back) {
     $('aspCrumbs').innerHTML = items.join('<span aria-hidden="true">/</span>')
+    var b = $('aspBack')
+    if (!b) { b = document.createElement('div'); b.id = 'aspBack'; $('aspCrumbs').parentNode.insertBefore(b, $('aspCrumbs')) }
+    b.innerHTML = back
+      ? '<a class="asp-back" href="' + esc(urlFor(back.to)) + '" data-asp-nav="' + esc(JSON.stringify(back.to)) + '">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>' +
+        esc(back.label) + '</a>'
+      : ''
   }
   function setSwitch(on) {
     var c = card(); if (!c) return
@@ -234,7 +246,7 @@
   function bindPager(key, fn) { document.querySelectorAll('[data-pg-' + key + ']').forEach(function (b) { b.onclick = function () { fn(Number(b.getAttribute('data-pg-' + key))) } }) }
 
   async function renderList() {
-    crumbs(['<span>Projects</span>'])
+    crumbs(['<span>Projects</span>'], { to: null, label: 'Back to AutoSims' })
     var d = await api('GET', '/api/autosim-projects')
     role = d.role; listData = d.projects
     $('aspMain').innerHTML =
@@ -306,7 +318,7 @@
   async function renderProject(apId, tab) {
     await loadProject(apId)
     var p = cur.project
-    crumbs([navLink({ asp: 'list' }, 'Projects'), '<span>' + esc(p.name) + '</span>'])
+    crumbs([navLink({ asp: 'list' }, 'Projects'), '<span>' + esc(p.name) + '</span>'], { to: { asp: 'list' }, label: 'Back to Projects' })
     var TABS = [['overview', 'Overview'], ['credentials', 'Credentials'], ['groups', 'Test Case Groups'], ['test-cases', 'Test Cases']]
     if (!TABS.some(function (t) { return t[0] === tab })) tab = 'overview'
     $('aspMain').innerHTML =
@@ -582,7 +594,7 @@
     var tc = cur.testCases.find(function (t) { return t.id === tcId })
     if (!tc) { var e = new Error('This test case no longer exists.'); e.status = 404; throw e }
     var p = cur.project, P = encodeURIComponent(cur.projectId)
-    crumbs([navLink({ asp: 'list' }, 'Projects'), navLink({ asp: p.id }, p.name), navLink({ asp: p.id, tab: 'test-cases' }, 'Test Cases'), '<span>' + esc(tc.name) + '</span>'])
+    crumbs([navLink({ asp: 'list' }, 'Projects'), navLink({ asp: p.id }, p.name), navLink({ asp: p.id, tab: 'test-cases' }, 'Test Cases'), '<span>' + esc(tc.name) + '</span>'], { to: { asp: p.id, tab: 'test-cases' }, label: 'Back to Test Cases' })
     var auto = cur.trails.filter(function (t) { return t.testCaseId === tc.id })[0] || null
     var cred = credOf(tc)
     var tcBase = '/api/autosim-projects/' + encodeURIComponent(p.id) + '/test-cases/' + encodeURIComponent(tc.id)
@@ -708,7 +720,8 @@
           '<td><span class="asp-pill ' + res[1] + '">' + esc(res[0]) + '</span>' + (r.findings ? '<div class="muted">' + plural(r.findings, 'finding') + '</div>' : '') + '</td>' +
           '<td>' + steps + '</td><td>' + esc(fmtDur(r.durationMs)) + '</td><td class="muted">' + esc(mode) + '</td><td class="muted">' + esc(r.trigger) + '</td>' +
           '<td><div class="actions"><button class="btn btn-ghost btn-sm" data-steps="' + esc(r.runId) + '" aria-expanded="' + !!openRuns[r.runId] + '">' + (openRuns[r.runId] ? 'Hide steps' : 'Steps') + '</button>' +
-          '<a class="btn btn-ghost btn-sm" href="/autosims/walk/' + esc(encodeURIComponent(r.runId)) + '?project=' + P + '">Report</a>' +
+          // from= lets the report page offer "Back to test case" (it only accepts a /dashboard path).
+          '<a class="btn btn-ghost btn-sm" href="/autosims/walk/' + esc(encodeURIComponent(r.runId)) + '?project=' + P + '&from=' + encodeURIComponent(urlFor({ asp: cur.project.id, tc: tc.id })) + '">Report</a>' +
           (r.durationMs != null ? '<a class="btn btn-ghost btn-sm" href="/api/trails/walks/' + esc(encodeURIComponent(r.runId)) + '/report.pdf?project=' + P + '" target="_blank" rel="noopener">PDF</a>' : '') +
           '</div></td></tr>' +
           (openRuns[r.runId] ? '<tr class="asp-steps-row"><td colspan="7"><div id="aspSteps_' + esc(r.runId) + '" class="muted">Loading steps…</div></td></tr>' : '')

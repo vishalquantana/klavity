@@ -2734,39 +2734,20 @@ async function mount() {
   await configReady
 }
 
-// ── Non-blocking background-upload pill ─────────────────────────────────────────────────────────
-// Lives at the WIDGET layer (its OWN shadow host on document.body) so it PERSISTS after the report
-// modal + backdrop dismiss on Submit — the page is never blocked while a (possibly 16MB+) recording
-// uploads; the user can scroll/click/file another report meanwhile. Three states:
+// ── Non-blocking background-upload REPORTS PANEL ──────────────────────────────────────────────────
+// Lives at the WIDGET layer (its OWN shadow host on document.body) so it PERSISTS after the report modal +
+// backdrop dismiss on Submit — the page is never blocked while a (possibly 16MB+) recording uploads; the user can
+// scroll/click/file another report meanwhile.
+// KD-3092: every report filed this session is a ROW inside ONE "Your reports" panel (bottom-right) instead of its
+// own auto-vanishing toast — the toast disappeared ~4s after "Report sent", so with several tickets (e.g. a
+// multi-issue report) the reporter could not see all the ticket IDs. The panel stays until the reporter closes it
+// with its × ; each row shows its ticket ID as a link straight to that ticket. Row states:
 //   • uploading — spinner + progress bar + "screenshot + recording · 9.8 / 16 MB" byte readout
-//   • success   — "Report sent" + quotable ref + optional "Open in Klavity" link; auto-dismiss ~4s
-//                 (hover/focus pauses — mirrors the modal's armAutodismiss / SUBMIT_AUTOCLOSE_MS)
+//   • success   — screenshot thumbnail + "Report sent" + ticket-ID link + "Open in Klavity"
 //   • failure   — "Upload didn't finish · Retry" (Retry re-sends the RETAINED payload — no re-capture)
-// A dismiss (×) is always present. Dynamic values go in via textContent/href (never innerHTML) — XSS-safe.
-const PILL_AUTODISMISS_MS = 4000
-// #475: failed pills persist far longer than success (so the user can read the error / hit Retry) but still
-// auto-clear so a string of failures never stacks up the screen forever.
-const PILL_FAIL_AUTODISMISS_MS = 30000
-
-// #475: vertical stacking geometry + a slot registry so concurrent upload pills never overlap. The old code
-// positioned each new pill by counting existing pills (querySelectorAll(...).length); once one dismissed, the
-// stale count let a new pill land on top of an existing one. Instead we keep an ordered registry: each pill
-// takes the next slot on creation, and REMOVAL reflows every remaining pill down to compact the stack — so the
-// lowest free slot is always reused and no two pills ever share a slot.
-const PILL_BASE_PX = 78
-const PILL_SLOT_PX = 58
-const pillStack: HTMLElement[] = []
-function reflowPillStack(): void {
-  // Prune any host that left the DOM out-of-band (defensive: a pill should always exit via remove(), but this
-  // keeps the slot math correct even if a host is torn down some other way) then position the survivors.
-  for (let i = pillStack.length - 1; i >= 0; i--) { if (!pillStack[i].isConnected) pillStack.splice(i, 1) }
-  pillStack.forEach((h, i) => { h.style.bottom = `${PILL_BASE_PX + i * PILL_SLOT_PX}px` })
-}
-function addPillToStack(host: HTMLElement): void { pillStack.push(host); reflowPillStack() }
-function removePillFromStack(host: HTMLElement): void {
-  const i = pillStack.indexOf(host)
-  if (i >= 0) { pillStack.splice(i, 1); reflowPillStack() }
-}
+// Closing the panel while a report is still uploading only hides it: it comes back when that report finishes, so a
+// ticket ID is never missed. Dynamic values go in via textContent/href (never innerHTML) — XSS-safe.
+const TRAY_BOTTOM_PX = 78   // clears the launcher button
 
 function pillDisplayRef(issueKey: string): string {
   const m = /^fb_([0-9a-f]{8})[0-9a-f-]+$/i.exec(issueKey)
@@ -2835,98 +2816,154 @@ export interface UploadPill {
   dismiss: () => void
 }
 
-export function createUploadPill(opts: { totalBytesHint?: number; label?: string; thumbnail?: string } = {}): UploadPill {
-  const host = document.createElement("div")
-  host.setAttribute("data-klavity-ui", "upload-pill")
-  // #475: register in the shared slot stack (takes the lowest free slot, reflows the rest on removal) so a
-  // second report filed mid-upload sits above — never on top of — the first. `bottom` is driven by
-  // reflowPillStack(), not a stale querySelectorAll count.
-  host.style.cssText = "position:fixed;right:18px;z-index:2147483646;pointer-events:none"
-  document.body.appendChild(host)
-  addPillToStack(host)
-  const root = host.attachShadow({ mode: "open" })
-  const style = document.createElement("style")
-  style.textContent = `
-    .pill{pointer-events:auto;position:relative;display:flex;align-items:center;gap:9px;background:#19140f;color:#fff;border-radius:12px;padding:9px 12px;box-shadow:0 10px 30px rgba(0,0,0,.28);min-width:210px;max-width:330px;font:13px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;animation:klp-in .22s cubic-bezier(.16,1,.3,1) both}
+type TrayRow = { el: HTMLElement; busy: () => boolean }
+type Tray = { host: HTMLElement; panel: HTMLElement; list: HTMLElement; summary: HTMLElement; rows: TrayRow[]; refresh: () => void }
+let _tray: Tray | null = null
+
+function trayCss(): string {
+  return `
+    .tray{pointer-events:auto;display:flex;flex-direction:column;width:360px;max-width:calc(100vw - 36px);max-height:min(70vh,560px);background:linear-gradient(180deg,#fbf7f0,#f2ece1);color:#2a2119;border:1px solid #e4dccd;border-radius:16px;box-shadow:0 22px 46px -16px rgba(40,30,20,.55);font:13px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;animation:klp-in .22s cubic-bezier(.16,1,.3,1) both;overflow:hidden}
+    .tray[hidden]{display:none}
     @keyframes klp-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
     @keyframes klp-sp{to{transform:rotate(360deg)}}
-    .pill.out{opacity:0;transform:translateY(8px);transition:opacity .25s ease,transform .25s ease}
-    .ic{width:20px;height:20px;flex:0 0 auto;display:grid;place-items:center}
-    .ic svg{width:18px;height:18px}
-    .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:klp-sp .8s linear infinite}
-    .tx{flex:1;min-width:0}
-    .tx b{font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .tx .sub{opacity:.72;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
-    .x{opacity:.6;cursor:pointer;font-size:15px;line-height:1;padding:0 2px;flex:0 0 auto;user-select:none}
-    .x:hover{opacity:1}
-    .prog{position:absolute;left:10px;right:10px;bottom:5px;height:3px;background:rgba(255,255,255,.18);border-radius:999px;overflow:hidden}
-    .prog>i{display:block;height:100%;background:#6366f1;width:0;border-radius:999px;transition:width .2s ease}
-    .pill.err{background:#4a1620}
-    a{color:#c7d2fe;text-decoration:none;font-weight:600}
-    a:hover{text-decoration:underline}
-    /* #651 — SUCCESS "Report sent" = Option D (warm cream card + screenshot thumbnail, text-link flavour). */
-    .pill.ok{background:linear-gradient(180deg,#fbf7f0,#f2ece1);color:#2a2119;border:1px solid #e4dccd;border-radius:16px;padding:14px;box-shadow:0 22px 46px -16px rgba(40,30,20,.55);align-items:center;gap:13px;max-width:360px}
-    .pill.ok .thumbwrap{position:relative;flex:0 0 auto;display:block}
-    .pill.ok .thumb{display:block;width:60px;height:46px;border-radius:9px;object-fit:cover;object-position:top left;border:1px solid #d9cfbc;background:#e9e1d2;box-shadow:0 2px 6px -2px rgba(40,30,20,.3)}
-    .pill.ok .thumb.kmark{display:grid;place-items:center;font-weight:800;color:#6366f1;background:#eef0ff;font-size:22px;line-height:1}
-    .pill.ok .badge{position:absolute;right:-6px;bottom:-6px;width:22px;height:22px;border-radius:50%;background:#16a34a;color:#fff;display:grid;place-items:center;border:2px solid #f7f2ea;box-shadow:0 1px 3px rgba(40,30,20,.35);animation:klp-pop .5s cubic-bezier(.16,1,.3,1) .12s both}
-    .pill.ok .badge svg{width:12px;height:12px;stroke:currentColor;stroke-width:2.4;fill:none;stroke-linecap:round;stroke-linejoin:round}
-    .pill.ok .tx b{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:800;letter-spacing:-.01em;white-space:nowrap;overflow:visible}
-    .pill.ok .klogo{width:19px;height:19px;flex:0 0 auto;border-radius:5px;background:#6366f1;color:#fff;display:inline-grid;place-items:center;font-weight:800;font-size:11px}
-    .pill.ok .tx .sub{opacity:1;color:#6b5f4e;font-size:12.5px;white-space:normal;margin-top:3px}
-    .pill.ok .refc{font-family:ui-monospace,Menlo,monospace;background:#eadfce;padding:1px 6px;border-radius:5px;color:#4a3f2e}
-    .pill.ok a.open{color:#6366f1;font-weight:700;white-space:nowrap}
-    .pill.ok .x{color:#a89a84;align-self:flex-start}
-    .pill.ok .x:hover{color:#5a4f3e}
-    .pill.ok .prog{background:rgba(0,0,0,.07);border-radius:999px}
-    .pill.ok .prog>i{background:linear-gradient(90deg,#6366f1,#818cf8)}
     @keyframes klp-pop{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
-    @keyframes klp-shrink{from{width:100%}to{width:0}}
-    @media (prefers-reduced-motion: reduce){.pill,.spin,.prog>i,.pill.ok .badge{animation:none!important;transition:none!important}}
+    .hd{display:flex;align-items:center;gap:9px;padding:12px 12px 10px 14px;border-bottom:1px solid #e6ddcd}
+    .klogo{width:20px;height:20px;flex:0 0 auto;border-radius:5px;background:#6366f1;color:#fff;display:inline-grid;place-items:center;font-weight:800;font-size:11px}
+    .hd .tt{flex:1;min-width:0}
+    .hd .tt b{display:block;font-size:14.5px;font-weight:800;letter-spacing:-.01em}
+    .hd .tt .sm{display:block;color:#6b5f4e;font-size:12px}
+    .tray-x{flex:0 0 auto;width:28px;height:28px;border-radius:8px;border:0;background:transparent;color:#8a7c66;cursor:pointer;display:grid;place-items:center;font-size:18px;line-height:1;padding:0}
+    .tray-x:hover{background:#eadfce;color:#2a2119}
+    .tray-x:focus-visible{outline:2px solid #6366f1;outline-offset:1px}
+    .rows{overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px}
+    .pill{position:relative;display:flex;align-items:center;gap:11px;background:#fffdf9;border:1px solid #e9e0d0;border-radius:12px;padding:10px 11px 12px}
+    .ic{width:22px;height:22px;flex:0 0 auto;display:grid;place-items:center;color:#6b5f4e}
+    .ic svg{width:18px;height:18px}
+    .spin{width:16px;height:16px;border:2px solid rgba(99,102,241,.25);border-top-color:#6366f1;border-radius:50%;animation:klp-sp .8s linear infinite}
+    .tx{flex:1;min-width:0}
+    .tx b{font-weight:700;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13.5px}
+    .tx .sub{color:#6b5f4e;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;margin-top:2px}
+    .prog{position:absolute;left:11px;right:11px;bottom:5px;height:3px;background:rgba(0,0,0,.07);border-radius:999px;overflow:hidden}
+    .prog>i{display:block;height:100%;background:linear-gradient(90deg,#6366f1,#818cf8);width:0;border-radius:999px;transition:width .2s ease}
+    .pill.err{background:#fff4f4;border-color:#f3c9c9}
+    .pill.err .ic{color:#b42318}
+    a{color:#6366f1;text-decoration:none;font-weight:700}
+    a:hover{text-decoration:underline}
+    .pill.ok .thumbwrap{position:relative;flex:0 0 auto;display:block}
+    .pill.ok .thumb{display:block;width:56px;height:42px;border-radius:8px;object-fit:cover;object-position:top left;border:1px solid #d9cfbc;background:#e9e1d2}
+    .pill.ok .thumb.kmark{display:grid;place-items:center;font-weight:800;color:#6366f1;background:#eef0ff;font-size:20px;line-height:1}
+    .pill.ok .badge{position:absolute;right:-6px;bottom:-6px;width:20px;height:20px;border-radius:50%;background:#16a34a;color:#fff;display:grid;place-items:center;border:2px solid #fffdf9;animation:klp-pop .5s cubic-bezier(.16,1,.3,1) .12s both}
+    .pill.ok .badge svg{width:11px;height:11px;stroke:currentColor;stroke-width:2.4;fill:none;stroke-linecap:round;stroke-linejoin:round}
+    .pill.ok .tx .sub{white-space:normal}
+    .refc{font-family:ui-monospace,Menlo,monospace;background:#eadfce;padding:1px 6px;border-radius:5px;color:#4a3f2e;font-weight:700}
+    a.refc{color:#3f3fbf}
+    a.refc:hover{background:#e0e1ff;text-decoration:none}
+    a.open{white-space:nowrap}
+    @media (prefers-reduced-motion: reduce){.tray,.spin,.prog>i,.pill.ok .badge{animation:none!important;transition:none!important}}
   `
-  root.appendChild(style)
+}
 
+// The single "Your reports" panel — created on the first report, reused by every later one.
+function getTray(): Tray {
+  if (_tray && _tray.host.isConnected) return _tray
+  const host = document.createElement("div")
+  host.setAttribute("data-klavity-ui", "report-tray")
+  host.style.cssText = `position:fixed;right:18px;bottom:${TRAY_BOTTOM_PX}px;z-index:2147483646;pointer-events:none`
+  document.body.appendChild(host)
+  const root = host.attachShadow({ mode: "open" })
+  const style = document.createElement("style"); style.textContent = trayCss(); root.appendChild(style)
+  const panel = document.createElement("div"); panel.className = "tray"
+  panel.setAttribute("role", "region"); panel.setAttribute("aria-label", "Your reports")
+  const hd = document.createElement("div"); hd.className = "hd"
+  const logo = document.createElement("span"); logo.className = "klogo"; logo.textContent = "K"
+  const tt = document.createElement("span"); tt.className = "tt"
+  const h = document.createElement("b"); h.textContent = "Your reports"
+  const summary = document.createElement("span"); summary.className = "sm"; summary.setAttribute("aria-live", "polite")
+  tt.append(h, summary)
+  const x = document.createElement("button"); x.type = "button"; x.className = "tray-x"; x.textContent = "×"
+  x.setAttribute("aria-label", "Close"); x.title = "Close"
+  hd.append(logo, tt, x)
+  const list = document.createElement("div"); list.className = "rows"
+  panel.append(hd, list)
+  root.appendChild(panel)
+  const tray: Tray = {
+    host, panel, list, summary, rows: [],
+    refresh: () => {
+      const n = tray.rows.length
+      if (!n) { safeRemove(host); if (_tray === tray) _tray = null; return }
+      const sent = tray.rows.filter((r) => r.el.dataset.sent === "1").length
+      const busy = tray.rows.filter((r) => r.busy()).length
+      const failed = n - sent - busy
+      const parts: string[] = []
+      parts.push(n === 1 ? (sent ? "1 sent" : busy ? "Sending…" : "Not sent yet") : `${sent} of ${n} sent`)
+      if (n > 1 && busy) parts.push(`${busy} uploading`)
+      if (failed) parts.push(`${failed} need${failed === 1 ? "s" : ""} attention`)
+      summary.textContent = parts.join(" · ")
+    },
+  }
+  // × : close the panel. Finished reports leave with it; one still uploading keeps going and brings the panel
+  // back when it finishes, so its ticket ID is never missed.
+  x.addEventListener("click", () => {
+    tray.rows = tray.rows.filter((r) => { if (r.busy()) return true; safeRemove(r.el); return false })
+    if (tray.rows.length) panel.hidden = true
+    tray.refresh()
+  })
+  _tray = tray
+  return tray
+}
+
+export function createUploadPill(opts: { totalBytesHint?: number; label?: string; thumbnail?: string } = {}): UploadPill {
   const pill = document.createElement("div"); pill.className = "pill"
   const ic = document.createElement("span"); ic.className = "ic"
   const tx = document.createElement("span"); tx.className = "tx"
   const title = document.createElement("b")
   const sub = document.createElement("span"); sub.className = "sub"
   tx.append(title, sub)
-  const x = document.createElement("span"); x.className = "x"; x.textContent = "×"; x.setAttribute("role", "button"); x.setAttribute("aria-label", "Dismiss"); x.title = "Dismiss"
   const prog = document.createElement("div"); prog.className = "prog"
   const progFill = document.createElement("i"); prog.appendChild(progFill)
-  pill.append(ic, tx, x, prog)
-  root.appendChild(pill)
+  pill.append(ic, tx, prog)
+
+  let busy = true
+  let removed = false
+  const row: TrayRow = { el: pill, busy: () => busy }
+  // A row changed state: make sure it is in the (possibly re-created) panel, show the panel when the row just
+  // FINISHED (it may have been closed while this was uploading) and refresh the summary.
+  const changed = (reveal: boolean) => {
+    if (removed) return
+    const t = getTray()
+    if (!t.rows.includes(row)) { t.rows.push(row); t.list.appendChild(pill) }
+    if (reveal) t.panel.hidden = false
+    t.refresh()
+    if (reveal && !busy) { try { pill.scrollIntoView({ block: "nearest" }) } catch { /* not in a layout engine */ } }
+  }
 
   let totalBytes = opts.totalBytesHint || 0
   const label = opts.label || "report"
-  // #651: the report's own captured screenshot (raw data URL), rendered as the success toast's thumbnail.
+  // #651: the report's own captured screenshot (raw data URL), rendered as the row's thumbnail once sent.
   // Only http(s)/data image URLs are honoured; anything else falls back to the Klavity 'K' mark tile.
   const thumbnail = pillSafeImageSrc(opts.thumbnail)
-  let dismissTimer: ReturnType<typeof setTimeout> | null = null
-  let armed = false
 
   const remove = () => {
-    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
-    removePillFromStack(host) // #475: free the slot + reflow remaining pills so the next one never overlaps
-    pill.classList.add("out")
-    setTimeout(() => safeRemove(host), 260)
+    removed = true
+    safeRemove(pill)
+    const t = _tray
+    if (t) { t.rows = t.rows.filter((r) => r !== row); t.refresh() }
   }
-  x.addEventListener("click", remove)
 
-  const setSpinner = () => { ic.textContent = ""; const s = document.createElement("span"); s.className = "spin"; ic.appendChild(s) }
-  const setIcon = (name: string) => { ic.innerHTML = icon(name, { size: 18 }) } // static icon SVG, no user data
+  const restoreIc = () => { const tw = pill.querySelector(".thumbwrap"); if (tw) pill.replaceChild(ic, tw) }
+  const setSpinner = () => { restoreIc(); ic.textContent = ""; const s = document.createElement("span"); s.className = "spin"; ic.appendChild(s) }
+  const setIcon = (name: string) => { restoreIc(); ic.innerHTML = icon(name, { size: 18 }) } // static icon SVG, no user data
 
   const uploading = () => {
-    pill.classList.remove("ok", "err")
-    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
-    armed = false
+    pill.classList.remove("ok", "err"); delete pill.dataset.sent
+    busy = true
     sub.style.whiteSpace = ""; sub.title = ""   // undo the wrapped, long failure explanation
     setSpinner()
     title.textContent = "Uploading your report…"
     sub.textContent = totalBytes ? `${label} · 0 / ${fmtMB(totalBytes)} MB` : label
     prog.style.display = ""
     progFill.style.width = "0"
+    changed(false)
   }
 
   const progress = (pct: number, loaded?: number, total?: number) => {
@@ -2935,10 +2972,19 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
     if (typeof loaded === "number" && totalBytes) sub.textContent = `${label} · ${fmtMB(loaded)} / ${fmtMB(totalBytes)} MB`
   }
 
+  // The ticket-ID chip — a link straight to that ticket when the server gave us its URL.
+  const refChip = (ref: string, linkUrl: string): HTMLElement => {
+    const r = linkUrl ? document.createElement("a") : document.createElement("span")
+    r.className = "refc"; r.textContent = ref
+    if (linkUrl) { const a = r as HTMLAnchorElement; a.href = linkUrl; a.target = "_blank"; a.rel = "noopener"; a.title = `Open ${ref}` }
+    return r
+  }
+
   const success = (issueKey: string, issueUrl: string) => {
-    pill.classList.remove("err"); pill.classList.add("ok")
-    // #651 Option D: replace the leading status icon with the captured-screenshot thumbnail (green 'sent'
-    // check badge overlapping it). If no shot is available, fall back to the Klavity 'K' mark tile.
+    busy = false
+    pill.classList.remove("err"); pill.classList.add("ok"); pill.dataset.sent = "1"
+    // #651 Option D: the captured-screenshot thumbnail (green 'sent' check badge overlapping it) replaces the
+    // status icon. No shot → the Klavity 'K' mark tile.
     const thumbWrap = document.createElement("span"); thumbWrap.className = "thumbwrap"
     let thumbEl: HTMLElement
     if (thumbnail) {
@@ -2951,41 +2997,22 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
     // static check glyph (no user data) — inline SVG, no emoji (CI emoji guard)
     badge.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
     thumbWrap.append(thumbEl, badge)
+    restoreIc()
     pill.replaceChild(thumbWrap, ic)
-
-    // Title: indigo 'K' logo chip + "Report sent".
-    title.textContent = ""
-    const logo = document.createElement("span"); logo.className = "klogo"; logo.textContent = "K"
-    title.append(logo, document.createTextNode("Report sent"))
-
-    // Sub: "Filed as <ref-mono-chip> · <Open in Klavity ↗>" — graceful "We filed it." when neither exists.
-    progFill.style.width = "100%"
+    title.textContent = "Report sent"
+    // Sub: "Filed as <ID link> · Open in Klavity ↗" — graceful "We filed it." when neither exists.
+    prog.style.display = "none"
     sub.textContent = ""
     const ref = pillFriendlyRef(issueKey, issueUrl)
     const linkUrl = pillSafeHttpUrl(issueUrl)
-    if (ref) {
-      sub.appendChild(document.createTextNode("Filed as "))
-      const r = document.createElement("span"); r.className = "refc"; r.textContent = ref; sub.appendChild(r)
-    }
+    if (ref) { sub.appendChild(document.createTextNode("Filed as ")); sub.appendChild(refChip(ref, linkUrl)) }
     if (linkUrl) {
       if (ref) sub.appendChild(document.createTextNode(" · "))
       const a = document.createElement("a"); a.className = "open"; a.href = linkUrl; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Open in Klavity ↗"
       sub.appendChild(a)
     }
     if (!ref && !linkUrl) sub.textContent = "We filed it."
-
-    // Slim indigo auto-dismiss bar: countdown-shrink over ~4s, paused/resumed in lockstep with the timer.
-    progFill.style.animation = `klp-shrink ${PILL_AUTODISMISS_MS}ms linear forwards`
-    // Auto-dismiss ~4s; hover/focus pauses and resumes with only the remaining time.
-    let remaining = PILL_AUTODISMISS_MS
-    let started = 0
-    const arm = () => { if (armed) return; armed = true; started = Date.now(); dismissTimer = setTimeout(remove, remaining); progFill.style.animationPlayState = "running" }
-    const pause = () => { if (!dismissTimer) return; clearTimeout(dismissTimer); dismissTimer = null; armed = false; remaining = Math.max(0, remaining - (Date.now() - started)); progFill.style.animationPlayState = "paused" }
-    pill.addEventListener("mouseenter", pause)
-    pill.addEventListener("mouseleave", arm)
-    pill.addEventListener("focusin", pause)
-    pill.addEventListener("focusout", arm)
-    arm()
+    changed(true)
   }
 
   const retrying = (attempt: number, maxAttempts: number, reason: string) => {
@@ -3003,52 +3030,36 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
 
   // The ticket was created, but some evidence didn't reach storage: warn (not "failed") and offer to re-send just the missing parts.
   const partial = (missing: number, onRetry: () => void) => {
-    pill.classList.remove("ok"); pill.classList.add("err")
-    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
-    armed = false
+    busy = false
+    pill.classList.remove("ok"); pill.classList.add("err"); pill.dataset.sent = "1"
     setIcon("triangle-alert")
     title.textContent = "Report sent — some files didn't upload"
     sub.textContent = ""
     const a = document.createElement("a"); a.href = "#"; a.textContent = "Retry"
-    a.addEventListener("click", (e) => { e.preventDefault(); if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null } armed = false; onRetry() })
+    a.addEventListener("click", (e) => { e.preventDefault(); onRetry() })
     sub.append(document.createTextNode(`${missing} file${missing === 1 ? "" : "s"} missing · `), a)
     prog.style.display = "none"
-    dismissTimer = setTimeout(remove, PILL_FAIL_AUTODISMISS_MS)   // same long window as a failure so it never lingers forever
+    changed(true)
   }
 
   const failure = (onRetry: () => void, message?: string, retryLabel?: string) => {
-    pill.classList.remove("ok"); pill.classList.add("err")
-    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
-    armed = false
+    busy = false
+    pill.classList.remove("ok"); pill.classList.add("err"); delete pill.dataset.sent
     setIcon("x-circle")
     title.textContent = "Upload didn't finish"
     sub.textContent = ""
     const a = document.createElement("a"); a.href = "#"; a.textContent = retryLabel || "Retry"
-    a.addEventListener("click", (e) => {
-      e.preventDefault()
-      if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null } // #475: clear the fail-timer on retry
-      armed = false
-      onRetry()
-    })
+    a.addEventListener("click", (e) => { e.preventDefault(); onRetry() })
     sub.append(document.createTextNode((message || "check your connection") + " · "), a)
     // A long, important explanation (e.g. "it may already have been created") must be READABLE, not cut off by the one-line ellipsis.
     if ((message || "").length > 70) { sub.style.whiteSpace = "normal"; sub.title = message || "" }
     prog.style.display = "none"
-    // #475: failed pills used to persist forever and stack up. Auto-dismiss after a long window (30s, well past
-    // the 4s success window so the user can read the error / retry); the × dismisses instantly, retry clears it.
-    // Hover/focus pauses and resumes with only the remaining time (same affordance as success).
-    let remaining = PILL_FAIL_AUTODISMISS_MS
-    let started = 0
-    const arm = () => { if (armed) return; armed = true; started = Date.now(); dismissTimer = setTimeout(remove, remaining) }
-    const pause = () => { if (!dismissTimer) return; clearTimeout(dismissTimer); dismissTimer = null; armed = false; remaining = Math.max(0, remaining - (Date.now() - started)) }
-    pill.addEventListener("mouseenter", pause)
-    pill.addEventListener("mouseleave", arm)
-    pill.addEventListener("focusin", pause)
-    pill.addEventListener("focusout", arm)
-    arm()
+    changed(true)
   }
 
+  // A new report always opens the panel (even if the reporter closed it earlier).
   uploading()
+  changed(true)
   return { uploading, progress, success, failure, retrying, waiting, partial, dismiss: remove }
 }
 
