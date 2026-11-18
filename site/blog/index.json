@@ -1090,5 +1090,12 @@
     "excerpt": "AI responsive design testing runs agents across viewport widths to find layout and interaction failures before your client opens the site on a phone.",
     "category": "Guides",
     "date": "2026-11-17"
+  },
+  {
+    "slug": "vibe-coded-app-performance-issues",
+    "title": "Vibe Coded App Performance Issues: Why Your App Is Slow",
+    "excerpt": "Vibe coded app performance issues come from N+1 queries, missing indexes, client-side filtering and unoptimised images. Here's how to find and fix them.",
+    "category": "Guides",
+    "date": "2026-11-18"
   }
 ]

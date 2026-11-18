@@ -3,6 +3,7 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
+- [Vibe Coded App Performance Issues: Why Your App Is Slow](https://klavity.in/blog/vibe-coded-app-performance-issues) — Vibe coded app performance issues come from N+1 queries, missing indexes, client-side filtering and unoptimised images. Here's how to find and fix them.
 - [AI Responsive Design Testing: A Practical QA Guide](https://klavity.in/blog/ai-responsive-design-testing) — AI responsive design testing runs agents across viewport widths to find layout and interaction failures before your client opens the site on a phone.
 - [How to Add Tests to a Vibe-Coded App: A 6-Step Guide](https://klavity.in/blog/how-to-add-tests-to-a-vibe-coded-app) — Start with the two or three flows that cost you money if they break, write one end-to-end test each, and run them on every deploy.
 - [AI Form Testing: Catch Broken Forms Before Clients Do](https://klavity.in/blog/ai-form-testing) — AI form testing uses AI agents to fill, submit and verify your forms end to end, catching silent submit failures before a client finds them.

@@ -1,0 +1,195 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vibe Coded App Performance Issues: Why Your App Is Slow · Klavity</title>
+<meta name="description" content="Vibe coded app performance issues come from N+1 queries, missing indexes, client-side filtering and unoptimised images. Here's how to find and fix them.">
+<link rel="canonical" href="https://klavity.in/blog/vibe-coded-app-performance-issues">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Vibe Coded App Performance Issues: Why Your App Is Slow"><meta property="og:description" content="Vibe coded app performance issues come from N+1 queries, missing indexes, client-side filtering and unoptimised images. Here's how to find and fix them.">
+<meta property="og:url" content="https://klavity.in/blog/vibe-coded-app-performance-issues"><meta property="og:image" content="https://klavity.in/blog/vibe-coded-app-performance-issues.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Vibe Coded App Performance Issues: Why Your App Is Slow"><meta name="twitter:description" content="Vibe coded app performance issues come from N+1 queries, missing indexes, client-side filtering and unoptimised images. Here's how to find and fix them."><meta name="twitter:image" content="https://klavity.in/blog/vibe-coded-app-performance-issues.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Vibe Coded App Performance Issues: Why Your App Is Slow","description":"Vibe coded app performance issues come from N+1 queries, missing indexes, client-side filtering and unoptimised images. Here's how to find and fix them.","datePublished":"2026-11-18","dateModified":"2026-11-18","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/vibe-coded-app-performance-issues.svg"}},"mainEntityOfPage":"https://klavity.in/blog/vibe-coded-app-performance-issues","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Vibe Coded App Performance Issues: Why Your App Is Slow","item":"https://klavity.in/blog/vibe-coded-app-performance-issues"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/vibe-coded-app-performance-issues"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Why is my vibe coded app slow even though it worked fine yesterday?","acceptedAnswer":{"@type":"Answer","text":"Because performance bugs scale with data, not with code. A missing index or an N+1 query behaves exactly like correct code on a few hundred rows, then degrades sharply as the table grows. Nothing changed in your code; the row count changed."}},{"@type":"Question","name":"What is an N+1 query and why does AI code produce so many?","acceptedAnswer":{"@type":"Answer","text":"An N+1 query is one query to fetch a list, plus one more query per item in it. AI assistants generate each component in isolation, so having every card fetch its own data is the natural self-contained answer. The cost only appears once the whole page is assembled."}},{"@type":"Question","name":"Can I just ask the AI to make my app faster?","acceptedAnswer":{"@type":"Answer","text":"Only after you have measured. Without profiling data the model guesses, and it will usually rewrite code that was not the bottleneck. Paste the specific slow query, the DevTools timing or the Lighthouse opportunity into the prompt and it becomes a far more reliable fix."}},{"@type":"Question","name":"How much test data do I need to catch performance problems?","acceptedAnswer":{"@type":"Answer","text":"Enough that a full table scan hurts. A few thousand rows in your largest tables is usually sufficient to make missing indexes and unpaginated lists obvious, and it is far closer to production than the handful of seed rows most generated apps ship with."}},{"@type":"Question","name":"Which should I fix first, the database or the front end?","acceptedAnswer":{"@type":"Answer","text":"Whichever your Network panel blames. If one API call dominates the waterfall, fix the query. If the largest rows are images and JavaScript bundles, fix the payload. Sorting requests by duration answers this in under a minute."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-11-18</div>
+    <h1>Vibe Coded App Performance Issues: Why Your App Is Slow</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Diagram comparing many per-row database queries against one batched query, with slow and fast timing bars">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="60" y="30" width="64" height="6" rx="3" fill="#6366f1"/>
+  <rect x="440" y="30" width="64" height="6" rx="3" fill="#6366f1" opacity="0.45"/>
+
+  <rect x="60" y="60" width="300" height="180" rx="12" fill="none" stroke="#f5f0e8" stroke-width="1.4" opacity="0.26"/>
+  <line x1="60" y1="90" x2="360" y2="90" stroke="#f5f0e8" stroke-width="1.2" opacity="0.18"/>
+  <circle cx="78" cy="75" r="3.6" fill="#6366f1" opacity="0.8"/>
+  <circle cx="92" cy="75" r="3.6" fill="#f5f0e8" opacity="0.28"/>
+  <circle cx="106" cy="75" r="3.6" fill="#f5f0e8" opacity="0.28"/>
+  <rect x="84" y="104" width="200" height="14" rx="4" fill="#f5f0e8" opacity="0.13"/>
+  <rect x="84" y="132" width="200" height="14" rx="4" fill="#f5f0e8" opacity="0.13"/>
+  <rect x="84" y="160" width="200" height="14" rx="4" fill="#f5f0e8" opacity="0.13"/>
+  <rect x="84" y="188" width="200" height="14" rx="4" fill="#f5f0e8" opacity="0.13"/>
+
+  <path d="M284 111 C 262 176, 236 232, 212 282" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.85"/>
+  <path d="M284 139 C 266 190, 240 240, 215 283" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.7"/>
+  <path d="M284 167 C 268 204, 244 248, 218 284" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.85"/>
+  <path d="M284 195 C 270 222, 246 258, 221 285" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.7"/>
+
+  <ellipse cx="210" cy="296" rx="58" ry="13" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.75"/>
+  <path d="M152 296 L152 330 C 152 337, 178 343, 210 343 C 242 343, 268 337, 268 330 L268 296" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.75"/>
+  <ellipse cx="210" cy="318" rx="58" ry="13" fill="none" stroke="#f87171" stroke-width="1.2" opacity="0.35"/>
+  <circle cx="310" cy="252" r="11" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.9"/>
+  <polyline points="310,245 310,252 316,255" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.9"/>
+
+  <rect x="440" y="60" width="300" height="180" rx="12" fill="none" stroke="#f5f0e8" stroke-width="1.4" opacity="0.26"/>
+  <line x1="440" y1="90" x2="740" y2="90" stroke="#f5f0e8" stroke-width="1.2" opacity="0.18"/>
+  <circle cx="458" cy="75" r="3.6" fill="#6366f1" opacity="0.8"/>
+  <circle cx="472" cy="75" r="3.6" fill="#f5f0e8" opacity="0.28"/>
+  <circle cx="486" cy="75" r="3.6" fill="#f5f0e8" opacity="0.28"/>
+  <rect x="464" y="104" width="200" height="14" rx="4" fill="#4ade80" opacity="0.2"/>
+  <rect x="464" y="132" width="200" height="14" rx="4" fill="#4ade80" opacity="0.2"/>
+  <rect x="464" y="160" width="200" height="14" rx="4" fill="#4ade80" opacity="0.2"/>
+  <rect x="464" y="188" width="200" height="14" rx="4" fill="#4ade80" opacity="0.2"/>
+
+  <path d="M590 240 L590 278" fill="none" stroke="#4ade80" stroke-width="3"/>
+  <polyline points="582,270 590,282 598,270" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  <ellipse cx="590" cy="296" rx="58" ry="13" fill="none" stroke="#4ade80" stroke-width="1.6" opacity="0.8"/>
+  <path d="M532 296 L532 330 C 532 337, 558 343, 590 343 C 622 343, 648 337, 648 330 L648 296" fill="none" stroke="#4ade80" stroke-width="1.6" opacity="0.8"/>
+  <polyline points="676,318 684,327 700,305" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+
+  <rect x="60" y="376" width="300" height="10" rx="5" fill="#f5f0e8" opacity="0.08"/>
+  <rect x="60" y="376" width="300" height="10" rx="5" fill="#f87171" opacity="0.8"/>
+  <rect x="440" y="376" width="300" height="10" rx="5" fill="#f5f0e8" opacity="0.08"/>
+  <rect x="440" y="376" width="86" height="10" rx="5" fill="#4ade80" opacity="0.9"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Vibe coded app performance issues almost always come from four patterns: queries that run once per row instead of once per page, missing database indexes, fetching whole tables and filtering in the browser, and full-size images rendered as thumbnails. They are invisible on small seed data and appear only at real scale. Measure with DevTools and EXPLAIN ANALYZE before changing anything.</div>
+    <div class="prose"><p>Most <strong>vibe coded app performance issues</strong> trace back to four patterns the AI had no reason to avoid: database queries that run once per row instead of once per page, missing indexes, whole tables fetched and then filtered in the browser, and full-size images shipped to render as thumbnails. None of them are visible while you build, because your seed data is tiny and your laptop is fast. They surface when real data and real users arrive. The fix order is always the same: measure before you change anything, fix the single worst offender, measure again.</p>
+
+<h2>What causes vibe coded app performance issues?</h2>
+<p>In apps generated with Cursor, Lovable, Bolt, v0 or Replit, slowness is rarely one big mistake. It is a stack of small, reasonable-looking decisions. These are the ones worth checking first:</p>
+<ul>
+<li><strong>The N+1 query.</strong> The list page fetches 50 orders, then each order card fetches its own customer. That is 51 round trips where one join would do. AI assistants produce this constantly, because each component was generated in isolation and fetching its own data is the self-contained answer.</li>
+<li><strong>No indexes.</strong> Generated schemas usually have a primary key and nothing else. A query filtering on <em>user_id</em> or <em>created_at</em> with no index on those columns forces a full table scan. At 200 rows nobody notices. At 200,000 the page times out.</li>
+<li><strong>Fetching everything, filtering client-side.</strong> <em>select *</em> on the whole table, then <em>.filter()</em> in JavaScript. It is correct, it passes every manual test, and it moves the entire dataset over the network on every page view.</li>
+<li><strong>No pagination.</strong> The dashboard renders every row that exists. Fine on day one, fatal at month six.</li>
+<li><strong>Unoptimised images.</strong> A 4&nbsp;MB upload rendered in a 120&nbsp;px avatar slot, no resizing, no lazy loading, no width and height attributes — which also causes layout to jump as images land.</li>
+<li><strong>Request waterfalls.</strong> Sequential <em>await</em> calls that do not depend on each other. Three independent 300&nbsp;ms fetches become 900&nbsp;ms instead of 300&nbsp;ms.</li>
+<li><strong>Re-render storms.</strong> State held too high in the tree, or new object and array literals passed as props, so a whole page re-renders on every keystroke in one input.</li>
+<li><strong>Dependency bloat.</strong> A whole date or utility library installed to use one function, bundled and shipped to every visitor.</li>
+</ul>
+
+<h2>Why does AI-generated code look fast while you are building it?</h2>
+<p>Because the conditions that expose the problem do not exist yet. Three structural reasons:</p>
+<p><strong>Your test data is tutorial-sized.</strong> A missing index, an N+1 query and a full-table fetch all behave identically to correct code when the table has a dozen rows. Performance bugs are the one class of defect that scale, rather than logic, makes visible — so the usual "it works when I click through it" check cannot catch them.</p>
+<p><strong>Each prompt is answered in isolation.</strong> The model writes one component, one route, one query at a time. Nothing in that context window describes how many queries the page as a whole will fire, so no single generated file looks wrong. The inefficiency is an emergent property of the assembled app.</p>
+<p><strong>Training data skews towards illustration.</strong> Tutorial and example code optimises for being readable and short, not for production data volumes. Caching, pagination, joins and indexes are the parts examples leave out, so they are the parts generated code tends to omit too — a close cousin of the problem described in <a href="/blog/ai-technical-debt">AI technical debt</a>.</p>
+
+<h2>How do you find out what is actually slow?</h2>
+<p>Do not guess, and do not start optimising the code you happen to remember writing. Open your browser's developer tools and work through four checks in order:</p>
+<ol>
+<li><strong>Network panel, sorted by duration.</strong> Reload the slow page and sort requests by time. If one API call dominates, the problem is on the server or in the database. If you see dozens of near-identical calls to the same endpoint, that is your N+1. If the biggest rows are images or JavaScript bundles, the problem is payload, not logic.</li>
+<li><strong>Lighthouse.</strong> Built into Chrome DevTools. Run it on the deployed URL rather than localhost, and read the opportunities list — it names unoptimised images, unused JavaScript and render-blocking resources specifically.</li>
+<li><strong>Performance panel recording.</strong> Record while you interact. Long unbroken blocks of scripting point at re-render problems; use the React DevTools Profiler to see which components re-rendered and why.</li>
+<li><strong>The database side.</strong> In Postgres (including Supabase and Neon) run <em>EXPLAIN ANALYZE</em> on the slow query. A sequential scan on a large table means you need an index. Hosted dashboards usually surface slowest queries directly.</li>
+</ol>
+<p>For judging the result, Google publishes the Core Web Vitals thresholds, assessed at the 75th percentile of real page loads:</p>
+<table>
+<tr><th>Metric</th><th>What it measures</th><th>Good</th><th>Poor</th></tr>
+<tr><td>LCP</td><td>Time until the main content renders</td><td>2.5s or less</td><td>Over 4s</td></tr>
+<tr><td>INP</td><td>Responsiveness to a user interaction</td><td>200ms or less</td><td>Over 500ms</td></tr>
+<tr><td>CLS</td><td>Unexpected layout shift during load</td><td>0.1 or less</td><td>Over 0.25</td></tr>
+</table>
+<p>These are the numbers to hold your app against — not a subjective sense that it "feels fine on my machine".</p>
+
+<h2>Which fixes give the biggest win first?</h2>
+<p>Match the symptom to the cause rather than refactoring broadly:</p>
+<table>
+<tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr>
+<tr><td>Dozens of identical API calls on one page</td><td>N+1 query</td><td>One query with a join or an <em>in</em> filter; fetch at the page level and pass data down</td></tr>
+<tr><td>One API call takes seconds, worsening over time</td><td>Missing index or full table scan</td><td>Add an index on the filtered and sorted columns; confirm with <em>EXPLAIN ANALYZE</em></td></tr>
+<tr><td>Huge JSON response, fast server</td><td>Fetching all rows, filtering client-side</td><td>Move filters, sorting and limits into the query; add pagination</td></tr>
+<tr><td>Slow first paint, large image requests</td><td>Unoptimised images</td><td>Resize and compress, serve modern formats, add lazy loading plus width and height</td></tr>
+<tr><td>Typing or clicking feels laggy</td><td>Re-render storm</td><td>Move state down to the component that uses it; memoise expensive children</td></tr>
+<tr><td>Page loads in steps, each waiting on the last</td><td>Request waterfall</td><td>Run independent fetches in parallel; move data fetching to the server where your framework supports it</td></tr>
+</table>
+<p>Two rules make this safe. Change one thing at a time, so you know which change helped. And test against realistic data volume — seed a few thousand rows before you declare a query fixed, or you have proved nothing.</p>
+
+<h2>How do you stop performance issues from coming back?</h2>
+<p>Re-prompting reintroduces these patterns. The next feature request regenerates a component that fetches its own data, and you are back where you started. What holds is a check that runs without you remembering to run it:</p>
+<ul>
+<li><strong>Run Lighthouse on every deploy</strong> and treat a dropping score as a failure, not as information. Even a manual run on the live URL after each release beats discovering it from a user.</li>
+<li><strong>Keep a seeded staging dataset</strong> that is larger than your real one. It is the only reliable way to make scale bugs appear before customers do.</li>
+<li><strong>Cover your money flows with tests that assert outcomes</strong>, so you notice when a page stops loading entirely. <a href="/blog/how-to-add-tests-to-a-vibe-coded-app">Adding tests to a vibe-coded app</a> is the lowest-effort version of this.</li>
+<li><strong>Make slowness easy to report.</strong> Users rarely file performance complaints, and when they do, they arrive as "it's slow sometimes" with no page, no timing and no network detail. <a href="/snap">Klavity Snap</a> captures the page, console and network activity at the moment of the right-click, which turns that into something diagnosable.</li>
+<li><strong>Exercise real journeys automatically.</strong> <a href="/sims">Sims</a> walk your app as personas and surface pages that fail or stall, and <a href="/autosim">AutoSim</a> keeps those journeys running as self-healing end-to-end tests so a regression shows up on the deploy that caused it. For how this fits a full process, see the <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</li>
+</ul>
+
+<h2>Find the slow pages before your users do</h2>
+<p>Performance problems in AI-generated apps are predictable, which makes them findable. Measure first, fix the worst thing, add a check that runs on every deploy — and get the evidence from real sessions instead of from a support message that says "it's slow". <a href="/onboarding">Try Klavity free</a> and scan your app before your next release.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Measure with DevTools and Lighthouse before changing any code</li><li>Check for N+1 queries and missing indexes first — they cause most slowdowns</li><li>Seed a few thousand rows so scale bugs appear before users find them</li><li>Run a performance check on every deploy, not once at launch</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Why is my vibe coded app slow even though it worked fine yesterday?</summary><p>Because performance bugs scale with data, not with code. A missing index or an N+1 query behaves exactly like correct code on a few hundred rows, then degrades sharply as the table grows. Nothing changed in your code; the row count changed.</p></details><details><summary>What is an N+1 query and why does AI code produce so many?</summary><p>An N+1 query is one query to fetch a list, plus one more query per item in it. AI assistants generate each component in isolation, so having every card fetch its own data is the natural self-contained answer. The cost only appears once the whole page is assembled.</p></details><details><summary>Can I just ask the AI to make my app faster?</summary><p>Only after you have measured. Without profiling data the model guesses, and it will usually rewrite code that was not the bottleneck. Paste the specific slow query, the DevTools timing or the Lighthouse opportunity into the prompt and it becomes a far more reliable fix.</p></details><details><summary>How much test data do I need to catch performance problems?</summary><p>Enough that a full table scan hurts. A few thousand rows in your largest tables is usually sufficient to make missing indexes and unpaginated lists obvious, and it is far closer to production than the handful of seed rows most generated apps ship with.</p></details><details><summary>Which should I fix first, the database or the front end?</summary><p>Whichever your Network panel blames. If one API call dominates the waterfall, fix the query. If the largest rows are images and JavaScript bundles, fix the payload. Sorting requests by duration answers this in under a minute.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

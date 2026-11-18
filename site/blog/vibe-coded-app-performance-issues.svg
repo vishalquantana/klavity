@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Diagram comparing many per-row database queries against one batched query, with slow and fast timing bars">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="60" y="30" width="64" height="6" rx="3" fill="#6366f1"/>
+  <rect x="440" y="30" width="64" height="6" rx="3" fill="#6366f1" opacity="0.45"/>
+
+  <rect x="60" y="60" width="300" height="180" rx="12" fill="none" stroke="#f5f0e8" stroke-width="1.4" opacity="0.26"/>
+  <line x1="60" y1="90" x2="360" y2="90" stroke="#f5f0e8" stroke-width="1.2" opacity="0.18"/>
+  <circle cx="78" cy="75" r="3.6" fill="#6366f1" opacity="0.8"/>
+  <circle cx="92" cy="75" r="3.6" fill="#f5f0e8" opacity="0.28"/>
+  <circle cx="106" cy="75" r="3.6" fill="#f5f0e8" opacity="0.28"/>
+  <rect x="84" y="104" width="200" height="14" rx="4" fill="#f5f0e8" opacity="0.13"/>
+  <rect x="84" y="132" width="200" height="14" rx="4" fill="#f5f0e8" opacity="0.13"/>
+  <rect x="84" y="160" width="200" height="14" rx="4" fill="#f5f0e8" opacity="0.13"/>
+  <rect x="84" y="188" width="200" height="14" rx="4" fill="#f5f0e8" opacity="0.13"/>
+
+  <path d="M284 111 C 262 176, 236 232, 212 282" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.85"/>
+  <path d="M284 139 C 266 190, 240 240, 215 283" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.7"/>
+  <path d="M284 167 C 268 204, 244 248, 218 284" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.85"/>
+  <path d="M284 195 C 270 222, 246 258, 221 285" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.7"/>
+
+  <ellipse cx="210" cy="296" rx="58" ry="13" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.75"/>
+  <path d="M152 296 L152 330 C 152 337, 178 343, 210 343 C 242 343, 268 337, 268 330 L268 296" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.75"/>
+  <ellipse cx="210" cy="318" rx="58" ry="13" fill="none" stroke="#f87171" stroke-width="1.2" opacity="0.35"/>
+  <circle cx="310" cy="252" r="11" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.9"/>
+  <polyline points="310,245 310,252 316,255" fill="none" stroke="#f87171" stroke-width="1.6" opacity="0.9"/>
+
+  <rect x="440" y="60" width="300" height="180" rx="12" fill="none" stroke="#f5f0e8" stroke-width="1.4" opacity="0.26"/>
+  <line x1="440" y1="90" x2="740" y2="90" stroke="#f5f0e8" stroke-width="1.2" opacity="0.18"/>
+  <circle cx="458" cy="75" r="3.6" fill="#6366f1" opacity="0.8"/>
+  <circle cx="472" cy="75" r="3.6" fill="#f5f0e8" opacity="0.28"/>
+  <circle cx="486" cy="75" r="3.6" fill="#f5f0e8" opacity="0.28"/>
+  <rect x="464" y="104" width="200" height="14" rx="4" fill="#4ade80" opacity="0.2"/>
+  <rect x="464" y="132" width="200" height="14" rx="4" fill="#4ade80" opacity="0.2"/>
+  <rect x="464" y="160" width="200" height="14" rx="4" fill="#4ade80" opacity="0.2"/>
+  <rect x="464" y="188" width="200" height="14" rx="4" fill="#4ade80" opacity="0.2"/>
+
+  <path d="M590 240 L590 278" fill="none" stroke="#4ade80" stroke-width="3"/>
+  <polyline points="582,270 590,282 598,270" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  <ellipse cx="590" cy="296" rx="58" ry="13" fill="none" stroke="#4ade80" stroke-width="1.6" opacity="0.8"/>
+  <path d="M532 296 L532 330 C 532 337, 558 343, 590 343 C 622 343, 648 337, 648 330 L648 296" fill="none" stroke="#4ade80" stroke-width="1.6" opacity="0.8"/>
+  <polyline points="676,318 684,327 700,305" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+
+  <rect x="60" y="376" width="300" height="10" rx="5" fill="#f5f0e8" opacity="0.08"/>
+  <rect x="60" y="376" width="300" height="10" rx="5" fill="#f87171" opacity="0.8"/>
+  <rect x="440" y="376" width="300" height="10" rx="5" fill="#f5f0e8" opacity="0.08"/>
+  <rect x="440" y="376" width="86" height="10" rx="5" fill="#4ade80" opacity="0.9"/>
+</svg>
