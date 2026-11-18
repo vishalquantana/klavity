@@ -4886,6 +4886,43 @@
       white-space: nowrap
     }
 
+    /* Bulk-bar dropdowns (Status / Priority / Label add+remove) in the shared .kdd skin, sized to sit
+       next to the bar's inputs and buttons. Label names keep their case; long lists scroll. */
+    .bulk-kdd .kdd-btn {
+      min-width: 0;
+      height: 28px;
+      padding: 0 8px 0 10px;
+      gap: 6px;
+      background: var(--ink-2);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 500;
+      text-transform: none
+    }
+
+    .bulk-kdd .kdd-btn:hover {
+      background: var(--ink-3);
+      border-color: var(--indigo)
+    }
+
+    .bulk-kdd .kdd-caret {
+      margin-left: 2px
+    }
+
+    .bulk-kdd .kdd-menu {
+      min-width: 170px;
+      max-height: 260px;
+      overflow-y: auto;
+      z-index: 60
+    }
+
+    .bulk-kdd .kdd-item {
+      padding: 7px 10px;
+      font-size: 12.5px;
+      text-transform: none
+    }
+
     @media(max-width:900px) {
       .kpis {
         grid-template-columns: 1fr 1fr
@@ -31391,17 +31428,31 @@
             bar.id = "tktBulkBar"
 
             const labels = state._labels || []
-            const labelOpts = labels.map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("")
+
+            // Bulk dropdowns use the same custom .kdd skin as the ticket panel: a native <select>'s open
+            // option list is drawn by the OS and ignores our CSS (no padding/hover/spacing), which is why the
+            // "+ add…" label menu looked unstyled. The hidden <select> keeps its id and still fires `change`,
+            // so the handlers below are unchanged. These are ACTIONS, not state: the trigger always shows the
+            // placeholder and the select is reset after each pick (see wiring below).
+            const bulkKdd = (id, placeholder, ariaLabel, items) =>
+              `<span class="kdd bulk-kdd">` +
+              `<button type="button" class="kdd-btn" aria-haspopup="menu" aria-expanded="false" aria-label="${esc(ariaLabel)}"><span class="kdd-txt">${esc(placeholder)}</span><svg class="kdd-caret" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>` +
+              `<span class="kdd-menu hide" role="menu" aria-label="${esc(ariaLabel)}">${items.map(it => `<button type="button" class="kdd-item" role="menuitem" data-val="${esc(it.v)}">${it.sw || ""}<span class="kdd-txt">${esc(it.t)}</span></button>`).join("")}</span>` +
+              `<select class="kdd-native" id="${id}" aria-hidden="true" tabindex="-1"><option value="">${esc(placeholder)}</option>${items.map(it => `<option value="${esc(it.v)}">${esc(it.t)}</option>`).join("")}</select>` +
+              `</span>`
+            const statusItems = STATUS_ORDER.map(s => ({ v: s, t: STATUS_LABELS[s], sw: `<span class="prop-dot ds-${s}"></span>` }))
+            const priItems = ["urgent", "high", "medium", "low"].map(p => ({ v: p, t: p.charAt(0).toUpperCase() + p.slice(1), sw: `<span class="prop-sq dp-${p}"></span>` }))
+            const labelItems = labels.map(l => ({ v: l.id, t: l.name }))
 
             bar.innerHTML =
               `<span class="bulk-count">${_bulkSelected.size} selected</span>` +
               `<button class="btn btn-ghost btn-sm" id="bulkClear" type="button" style="padding:4px 8px;font-size:11px">${window.kicon("x", { size: 11 })} Clear</button>` +
               `<span class="bulk-sep"></span>` +
               `<span class="bulk-lbl">Status:</span>` +
-              `<select class="bulk-sel" id="bulkStatus"><option value="">— change —</option>${STATUS_ORDER.map(s => `<option value="${s}">${STATUS_LABELS[s]}</option>`).join("")}</select>` +
+              bulkKdd("bulkStatus", "— change —", "Change status", statusItems) +
               `<span class="bulk-sep"></span>` +
               `<span class="bulk-lbl">Priority:</span>` +
-              `<select class="bulk-sel" id="bulkPriority"><option value="">— change —</option><option value="urgent">Urgent</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>` +
+              bulkKdd("bulkPriority", "— change —", "Change priority", priItems) +
               `<span class="bulk-sep"></span>` +
               `<span class="bulk-lbl">Assignee:</span>` +
               `<input class="bulk-inp" id="bulkAssignee" type="email" list="tktAssigneeOptions" placeholder="name@company.com" autocomplete="off" />` +
@@ -31410,8 +31461,8 @@
               (labels.length ? (
                 `<span class="bulk-sep"></span>` +
                 `<span class="bulk-lbl">Label:</span>` +
-                `<select class="bulk-sel" id="bulkAddLabel"><option value="">+ add…</option>${labelOpts}</select>` +
-                `<select class="bulk-sel" id="bulkRemoveLabel"><option value="">− remove…</option>${labelOpts}</select>`
+                bulkKdd("bulkAddLabel", "+ add…", "Add label", labelItems) +
+                bulkKdd("bulkRemoveLabel", "− remove…", "Remove label", labelItems)
               ) : "") +
               `<span class="bulk-sep"></span>` +
               `<button class="btn btn-ghost btn-sm" id="bulkClose" type="button" style="font-size:12px">Close all</button>` +
@@ -31429,6 +31480,56 @@
               // #704: label ops always take the blocking path (boardBulkOptimistic returns null for them).
               await applyBulkAction(projId, body, onDone, opts && opts.optimistic)
             }
+
+            // Bulk dropdown skins: open/close the menu; a pick sets the hidden select, fires `change` (the
+            // handlers read e.target.value synchronously), then resets it so the same option can be picked again.
+            const closeBulkMenus = (keep) => bar.querySelectorAll(".bulk-kdd").forEach(k => {
+              if (k === keep) return
+              const m = k.querySelector(".kdd-menu"), b = k.querySelector(".kdd-btn")
+              if (m && !m.classList.contains("hide")) { m.classList.add("hide"); b.setAttribute("aria-expanded", "false") }
+            })
+            bar.querySelectorAll(".bulk-kdd").forEach(kdd => {
+              const btn = kdd.querySelector(".kdd-btn"), menu = kdd.querySelector(".kdd-menu"), sel = kdd.querySelector(".kdd-native")
+              btn.addEventListener("click", ev => {
+                ev.stopPropagation()
+                const willOpen = menu.classList.contains("hide")
+                closeBulkMenus(kdd)
+                menu.classList.toggle("hide", !willOpen)
+                btn.setAttribute("aria-expanded", String(willOpen))
+                if (willOpen) { const first = menu.querySelector(".kdd-item"); if (first) first.focus() }
+              })
+              menu.addEventListener("click", ev => {
+                const it = ev.target.closest(".kdd-item"); if (!it) return
+                ev.stopPropagation()
+                menu.classList.add("hide"); btn.setAttribute("aria-expanded", "false")
+                sel.value = it.getAttribute("data-val")
+                sel.dispatchEvent(new Event("change", { bubbles: true }))
+                sel.value = ""
+              })
+              menu.addEventListener("keydown", ev => {
+                const items = [...menu.querySelectorAll(".kdd-item")], i = items.indexOf(document.activeElement)
+                if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+                  ev.preventDefault()
+                  const n = items.length; if (!n) return
+                  items[(i + (ev.key === "ArrowDown" ? 1 : n - 1) + n) % n].focus()
+                } else if (ev.key === "Escape") {
+                  ev.preventDefault(); menu.classList.add("hide"); btn.setAttribute("aria-expanded", "false"); btn.focus()
+                }
+              })
+            })
+            // Outside click / Escape closes any open bulk menu. Capture phase so containers that stop
+            // propagation can't swallow it; unbound once the bar leaves the DOM (lists/boards re-render it).
+            const onBulkDocClick = ev => {
+              if (!bar.isConnected) { unbindBulkDoc(); return }
+              closeBulkMenus(ev.target instanceof Element ? ev.target.closest(".bulk-kdd") : null)
+            }
+            const onBulkDocKey = ev => {
+              if (!bar.isConnected) { unbindBulkDoc(); return }
+              if (ev.key === "Escape") closeBulkMenus(null)
+            }
+            const unbindBulkDoc = () => { document.removeEventListener("click", onBulkDocClick, true); document.removeEventListener("keydown", onBulkDocKey, true) }
+            document.addEventListener("click", onBulkDocClick, true)
+            document.addEventListener("keydown", onBulkDocKey, true)
 
             bar.querySelector("#bulkClear").addEventListener("click", () => {
               _bulkSelected.clear()

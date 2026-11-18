@@ -148,14 +148,25 @@ test("Tickets list exposes multi-select and bulk actions", () => {
   // current selection into `ids` before PATCHing.
   expect(html).toContain("const ids = [..._bulkSelected]")
   expect(html).toContain("applyBulkAction(projId, body")
-  expect(html).toContain('id="bulkStatus"')
-  expect(html).toContain('id="bulkPriority"')
+  // Status / Priority / Label dropdowns are .kdd skins built by bulkKdd(id, …); the hidden <select>
+  // keeps the id so the change handlers stay bound to #bulkStatus etc.
+  expect(html).toContain('bulkKdd("bulkStatus"')
+  expect(html).toContain('bulkKdd("bulkPriority"')
   expect(html).toContain('id="bulkAssignee"')
   expect(html).toContain('id="bulkAssign"')
   expect(html).toContain('id="bulkClearAssignee"')
-  expect(html).toContain('id="bulkAddLabel"')
-  expect(html).toContain('id="bulkRemoveLabel"')
+  expect(html).toContain('bulkKdd("bulkAddLabel"')
+  expect(html).toContain('bulkKdd("bulkRemoveLabel"')
   expect(html).toContain('id="bulkClose"')
+})
+
+test("bulk-bar dropdowns use the styled .kdd menu, not a bare native <select> (unstyled OS option list)", () => {
+  expect(html).toContain('<span class="kdd bulk-kdd">')
+  expect(html).toContain('<select class="kdd-native" id="${id}"')
+  expect(html).not.toContain('<select class="bulk-sel" id="bulkAddLabel"')
+  expect(html).toContain(".bulk-kdd .kdd-menu {")
+  // A pick drives the hidden select's `change` (existing handlers), then resets it to the placeholder.
+  expect(html).toMatch(/sel\.dispatchEvent\(new Event\("change", \{ bubbles: true \}\)\)\s+sel\.value = ""/)
 })
 
 test("JTBD 2.14: bulk mutations are guarded by an undo toast that restores prior values", () => {
