@@ -6,3 +6,4 @@ public/uploads/
 
 # Generated Node walk-worker bundle (lib/walk-node-bridge.ts)
 .walk-worker/
+.tmp-uploads/

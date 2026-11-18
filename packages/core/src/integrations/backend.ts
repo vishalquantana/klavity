@@ -1,4 +1,5 @@
 import type { IntegrationConfig, ReportContext, SubmitResult, ReportFileAttachment, ReportRecording, Reporter, ClientInfo } from '../types'
+import { offloadLargeFiles, fetchTransport } from '../large-upload'
 
 // Manual data-URL -> Blob (no fetch(), so a strict connect-src CSP can't block it). Shared by every
 // surface that attaches recordings / file uploads to a /api/feedback submit (widget-lib re-exports it,
@@ -67,6 +68,8 @@ export interface FeedbackFormPayload {
   clientInfo?: ClientInfo
   /** PX4 #425: non-image file attachments (their own multipart `files` field). */
   files?: ReportFileAttachment[]
+  /** Large files already uploaded in chunks (core/large-upload.ts): signed refs → `file_refs` JSON. */
+  fileRefs?: string[]
   /** KLAVITYKLA-438 "Record me": video recordings (`recording` field(s) + `recording_meta` JSON). */
   recordings?: ReportRecording[]
   /** KLAVITYKLA-217: per-image annotation markup → `annotations_json`. */
@@ -102,6 +105,7 @@ export function buildFeedbackFormData(payload: FeedbackFormPayload): FormData {
       try { form.append('files', f.blob ?? dataUrlToBlob(f.dataUrl, f.type), f.name) } catch { /* skip a malformed data URL */ }
     }
   }
+  if (payload.fileRefs && payload.fileRefs.length) form.set('file_refs', JSON.stringify(payload.fileRefs))
   if (payload.recordings && payload.recordings.length) {
     const meta: Array<{ id: string; durationMs: number; width: number; height: number; bytes: number; mime: string; screenOnly: boolean }> = []
     for (const r of payload.recordings) {
@@ -145,6 +149,11 @@ export async function gzipReplayField(form: FormData): Promise<void> {
 
 export async function submitReport(config: IntegrationConfig): Promise<SubmitResult> {
   const { settings, type, description, context, screenshots, projectId, replayEvents } = config
+  const useKlavityAuth = settings.connectionMode === 'klavity' && !!settings.klavToken
+  // Files over the single-request caps are uploaded first, in chunks, and travel as signed refs. Files that
+  // fit keep the existing multipart path. A large file that can't be uploaded fails the submit (never dropped).
+  const { inline: inlineFiles, refs: newRefs } = await offloadLargeFiles(config.files, fetchTransport(settings.backendUrl, { token: useKlavityAuth ? settings.klavToken : undefined }), { projectId })
+  const fileRefs = [...(config.fileRefs || []), ...newRefs]
   // KLA-729: forward the full evidence set (Task/Query kind, title, reporter/clientInfo, files, recordings,
   // annotations, referrer) through the shared serializer so the persist-first backend receives the SAME
   // payload the widget sends. `kind` (Task/Query) supersedes the coarse `type` when present. All optional —
@@ -160,7 +169,8 @@ export async function submitReport(config: IntegrationConfig): Promise<SubmitRes
     referrer: config.referrer,
     reporter: config.reporter,
     clientInfo: config.clientInfo,
-    files: config.files,
+    files: inlineFiles.length ? inlineFiles : undefined,
+    fileRefs,
     recordings: config.recordings,
     annotations: config.annotations,
   })

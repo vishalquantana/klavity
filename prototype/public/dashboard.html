@@ -29930,8 +29930,13 @@
                 renderTicketsView()
               }
               if (typeof _tktBoardScrollY === "number" && _tktBoardScrollY > 0) {
-                try { window.scrollTo({ top: _tktBoardScrollY, behavior: "instant" }) }
-                catch (e) { window.scrollTo(0, _tktBoardScrollY) }
+                const _y = _tktBoardScrollY
+                const _restore = () => { try { window.scrollTo({ top: _y, behavior: "instant" }) } catch (e) { window.scrollTo(0, _y) } }
+                _restore()
+                // Browser Back (popstate) off the full ticket page: AFTER this handler the browser applies its own saved
+                // scroll for the board entry — recorded while the board was hidden, i.e. 0 — which threw the list back to the
+                // top. Re-apply once that has happened (next frames); a no-op when nothing moved it.
+                requestAnimationFrame(() => requestAnimationFrame(() => { if (Math.abs((window.scrollY || 0) - _y) > 2) _restore() }))
               }
             }
             _tktBoardScrollY = 0
@@ -29940,6 +29945,7 @@
             window.__klavTktInvoker = null
             _tktOriginContext = "tickets"
           }
+          window.klavCloseSingleTicket = closeSingleTicket   // the sidebar nav (separate <script>) uses it
 
           // ── Deleted tickets bin ───────────────────────────────────────────────────────────────────────
           // Deleting a ticket keeps a restorable copy for 30 days (GET /tickets/deleted, POST …/:id/restore).
@@ -36053,6 +36059,17 @@
                   var b = e.target && e.target.closest ? e.target.closest('.nv[data-go]') : null;
                   if (!b || !side.contains(b)) return;
                   var _go = b.getAttribute('data-go');
+                  // A full ticket page already counts as the Tickets view, so setView('tickets') alone left the user
+                  // on the ticket (it only tears the page down when LEAVING Tickets, and renderTicketsView() bails
+                  // while the page is open). Clicking "Tickets" there means "back to the tickets overview": close the
+                  // page the same way "← All Tickets" does (restores the board URL + re-mounts the board).
+                  if (_go === 'tickets' && window.__klavTktPageOpen && typeof window.klavCloseSingleTicket === 'function') {
+                    window.klavCloseSingleTicket();
+                    // Opened from Sim Reports, closing returns there — but the user asked for Tickets.
+                    if (document.body.getAttribute('data-view') !== 'tickets') setView('tickets');
+                    window.scrollTo(0, 0);
+                    return;
+                  }
                   // KLA-560: the deep-link "left" flag is now set inside setView() for every caller (including this
                   // one), so no per-call-site flag toggle is needed here anymore.
                   setView(_go);
