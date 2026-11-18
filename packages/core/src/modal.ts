@@ -3,7 +3,7 @@ import { Annotator, renderAnnotatedImage, extractAnnotationTexts } from './annot
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
 import { VoiceInput, LiveDictation, StreamingDictation, pickDictationMode, joinSpeechSegments, formatSpeechFinal } from './voice-input'
-import { maskNumbers } from './mask-numbers'
+import { maskNumbers, collectNumberRects, numberRectsToImage, bakeMaskRects, type NumberGeo, type MaskRect } from './mask-numbers'
 import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit, suppressesAutoCapturedAsk } from './report-clarity'
 import { safeRemove } from './safe-remove'
 import { klavityAttributionUrl } from './attribution'
@@ -992,6 +992,16 @@ export function buildModal(
   // Structured markup per screenshot index { w, h, shapes } so the ticket can re-render a
   // toggleable/zoomable overlay instead of baking the drawing into the uploaded image.
   const annotationsByIndex: Record<number, any> = {}
+  // KD-3088: "Mask numbers" must also work on a shot that is ALREADY taken (the toggle sits in the markup
+  // toolbar, i.e. after capture). Each capture taken with masking OFF records where the page's numbers were
+  // (numberGeoByUrl); toggling ON bakes solid boxes over them INTO the pixels (never an overlay: the raw image
+  // is what gets uploaded), toggling OFF swaps the original back. All keyed by image data URL, so crop / undo /
+  // retake / removal keep working without re-indexing.
+  const numberGeoByUrl = new Map<string, { geo: NumberGeo; capture?: ShotCapture }>()
+  const numberRectsByUrl = new Map<string, MaskRect[]>()   // resolved, in that image's own pixel space
+  const unmaskedOf = new Map<string, string>()             // masked url → original url
+  const maskedOf = new Map<string, string>()               // original url → masked url
+  let maskSeq = 0                                          // bumps on every toggle; stale async bakes bail
   // KLAVITYKLA-228/371: picked element from the on-page picker. Carries selector + human text snippet.
   // Rides on the annotations payload as `selector` + `selectorText` (top level) so the ticket links
   // the finding to the DOM node and the drawer can show the human-readable label alongside the selector.
@@ -1112,8 +1122,16 @@ export function buildModal(
   // Capture the current image+markup as the pre-op state, so undo restores exactly what was there before.
   const pushUndo = (index: number) => { (undoStacks[index] ??= []).push(snapshotShot(index)) }
   const restoreShot = (index: number, snap: UndoSnap) => {
-    screenshots[index] = snap.url
-    screenshotCompressed[index] = snap.compressed
+    // KD-3088: an undo snapshot may predate a Mask-numbers toggle — restore the variant matching the toggle
+    // NOW, so an Undo of a pen stroke can never bring masked numbers back (or re-mask after toggling off).
+    const swapped = maskOn ? maskedOf.get(snap.url) : unmaskedOf.get(snap.url)
+    if (swapped) {
+      screenshots[index] = swapped
+      screenshotCompressed[index] = callbacks.compressImage ? callbacks.compressImage(swapped) : Promise.resolve(swapped)
+    } else {
+      screenshots[index] = snap.url
+      screenshotCompressed[index] = snap.compressed
+    }
     if (snap.ann) annotationsByIndex[index] = cloneAnn(snap.ann)
     else delete annotationsByIndex[index]
   }
@@ -2523,6 +2541,59 @@ export function buildModal(
     if (fireAdded) { try { callbacks.onShotAdded?.(dataUrl, quality) } catch { /* host persistence best-effort */ } }
   }
 
+  // KD-3088: start a capture. With masking ON the page's digits are masked in the DOM for the capture (as
+  // before); with it OFF we record where the digits are instead, so masking can still be applied afterwards.
+  function beginCapture(): { restore: (() => void) | null; geo: NumberGeo | null } {
+    let geo: NumberGeo | null = null
+    if (!maskOn) { try { geo = collectNumberRects(document.body) } catch { geo = null } }
+    return { restore: maskOn ? maskNumbers(document.body) : null, geo }
+  }
+  function noteNumberGeo(dataUrl: string | undefined, geo: NumberGeo | null, capture?: ShotCapture) {
+    if (dataUrl && geo && geo.rects.length) numberGeoByUrl.set(dataUrl, { geo, capture })
+  }
+  // Rects for `url` in its own pixel space (w×h), or null when we can't place them (no capture data / unmatched).
+  function numberRectsFor(url: string, w: number, h: number): MaskRect[] | null {
+    const known = numberRectsByUrl.get(url)
+    if (known) return known
+    const g = numberGeoByUrl.get(url)
+    if (!g) return null
+    const rects = numberRectsToImage(g.geo, w, h, g.capture)
+    if (rects) numberRectsByUrl.set(url, rects)
+    return rects
+  }
+  // Swap a shot's pixels in place (same dimensions — the markup overlay stays valid) and tell the host.
+  function setShotPixels(index: number, url: string) {
+    screenshots[index] = url
+    screenshotCompressed[index] = callbacks.compressImage ? callbacks.compressImage(url) : Promise.resolve(url)
+    updateStrip()
+    try { callbacks.onShotReplaced?.(index, url, screenshotQuality[index]) } catch { /* host persistence best-effort */ }
+  }
+  // Apply the current Mask-numbers state to every shot that has capture data for it.
+  async function applyNumberMask() {
+    const seq = ++maskSeq
+    for (let i = 0; i < screenshots.length; i++) {
+      const url = screenshots[i]
+      if (!url) continue
+      if (!maskOn) {
+        const orig = unmaskedOf.get(url)
+        if (orig) setShotPixels(i, orig)
+        continue
+      }
+      if (unmaskedOf.has(url)) continue          // already masked
+      let masked = maskedOf.get(url)              // masked before, then toggled off → reuse
+      if (!masked) {
+        const res = await bakeMaskRects(url, (w, h) => numberRectsFor(url, w, h))
+        if (!res) continue                        // nothing to mask / can't place (upload, paste, shared screen)
+        masked = res.url
+        maskedOf.set(url, masked); unmaskedOf.set(masked, url)
+        numberRectsByUrl.set(masked, res.rects)
+      }
+      if (seq !== maskSeq) return                 // toggled again meanwhile — the newer pass owns the state
+      const idx = screenshots.indexOf(url)        // the shot may have moved / been removed while baking
+      if (idx >= 0) setShotPixels(idx, masked)
+    }
+  }
+
   // JTBD 1.9: re-capture a degraded thumbnail via the host's real-pixel path and swap it in place. The
   // host hides its own UI (launcher / composer) during onRetakeSharp so the composer isn't in the pixels.
   // Annotations for that image are dropped (a fresh image would misalign them) with a one-line notice.
@@ -2533,7 +2604,7 @@ export function buildModal(
     btn.classList.add('kl-loading')
     host.style.display = 'none' // keep the composer out of the real-pixel shot
     try {
-      const restore = maskOn ? maskNumbers(document.body) : null
+      const { restore, geo } = beginCapture()
       let result: CaptureResult | undefined
       // KLA-621: hand the ORIGINAL shot's provenance to the host so Retake redoes the SAME region/element
       // (pixel-perfect from the shared Snap frame) rather than a full-screen grab that loses the selection.
@@ -2541,6 +2612,7 @@ export function buildModal(
       finally { restore?.() }
       if (result) {
         const { dataUrl, quality } = normalizeCapture(result)
+        noteNumberGeo(dataUrl, geo, screenshotCapture[index])
         if (dataUrl) {
           screenshots[index] = dataUrl
           screenshotCompressed[index] = callbacks.compressImage ? callbacks.compressImage(dataUrl) : Promise.resolve(dataUrl)
@@ -4427,9 +4499,10 @@ export function buildModal(
     if (!callbacks.onCaptureViewport) return false
     let previewUrl: string | null = null
     // Phase 1 — fast viewport preview (awaited).
-    const restore = maskOn ? maskNumbers(document.body) : null
+    const { restore, geo } = beginCapture()
     try {
       const { dataUrl } = normalizeCapture(await callbacks.onCaptureViewport())
+      noteNumberGeo(dataUrl, geo, { kind: 'viewport' })
       if (dataUrl) {
         previewUrl = dataUrl
         capturing = false // a real preview is now shown — clear the "Capturing…" skeleton
@@ -4440,9 +4513,10 @@ export function buildModal(
     finally { restore?.() }
     // Phase 2 — full-page render in the background. Fire-and-forget; swap the preview for it when ready.
     const fullRenderP = (async () => {
-      const restore2 = maskOn ? maskNumbers(document.body) : null
+      const { restore: restore2, geo: geo2 } = beginCapture()
       try {
         const full = await callbacks.onCaptureFull()
+        noteNumberGeo(normalizeCapture(full).dataUrl, geo2, { kind: 'full' })
         if (previewUrl) swapPreviewForFull(previewUrl, full)
         else {
           capturing = false
@@ -4465,9 +4539,10 @@ export function buildModal(
   // a viewport capture; false when no onCaptureViewport is wired (caller falls back to onCaptureFull).
   async function captureViewportOnly(activeBtn: HTMLButtonElement | null): Promise<boolean> {
     if (!callbacks.onCaptureViewport) return false
-    const restore = maskOn ? maskNumbers(document.body) : null
+    const { restore, geo } = beginCapture()
     try {
       const { dataUrl, blank } = normalizeCapture(await callbacks.onCaptureViewport())
+      if (!blank) noteNumberGeo(dataUrl, geo, { kind: 'viewport' })
       if (blank && screenshots.length === 0) {
         // Declined-share / unrenderable page → a white PNG. Don't seed it; show the steer-to-Snap empty state.
         showBlankCaptureEmptyState()
@@ -4506,9 +4581,10 @@ export function buildModal(
       // background so the user is never stuck watching "Capturing…". Checked SYNCHRONOUSLY (no await before
       // the fallback) so the double-click guard still calls onCaptureFull exactly once in the classic path.
       if (callbacks.onCaptureViewport) { await captureViewportThenFull(fullBtn); return }
-      const restore = maskOn ? maskNumbers(document.body) : null
+      const { restore, geo } = beginCapture()
       try {
         const { dataUrl, quality, suggestSharp } = normalizeCapture(await callbacks.onCaptureFull())
+        noteNumberGeo(dataUrl, geo, { kind: 'full' })
         addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp); setActiveCapture(fullBtn)
       }
       finally { restore?.() }
@@ -4540,12 +4616,13 @@ export function buildModal(
     let added = false
     let declined = false
     try {
-      const restore = maskOn ? maskNumbers(document.body) : null
+      const { restore, geo } = beginCapture()
       let shot: CaptureResult | undefined
       try { shot = await capFn() }
       finally { restore?.() }
       if (shot) {
         const { dataUrl, quality } = normalizeCapture(shot)
+        noteNumberGeo(dataUrl, geo, { kind: opts?.viewport ? 'viewport' : 'full' })
         // KLA-621: tag the sharp shot's mode (viewport vs full-page) so Retake redoes the SAME mode.
         if (dataUrl) { addScreenshot(dataUrl, quality ?? 'real-pixel', undefined, true, false, { kind: opts?.viewport ? 'viewport' : 'full' }); setActiveCapture(sharpBtn); added = true; shareCaptureSucceeded = true /* snap-share-hint: they've shared once → stop nudging */ }
       }
@@ -4667,12 +4744,13 @@ export function buildModal(
         // Re-register the modal Esc handler now that the overlay is gone (success path).
         document.addEventListener('keydown', escHandler, { capture: true })
         try {
-          const restore = maskOn ? maskNumbers(document.body) : null
+          const { restore, geo } = beginCapture()
           let shot: CaptureResult | undefined
           try { shot = await callbacks.onRegionCapture!(rect) }
           finally { restore?.() }
           if (shot) {
             const { dataUrl, quality, suggestSharp } = normalizeCapture(shot)
+            noteNumberGeo(dataUrl, geo, { kind: 'region', rect })
             // KLA-621: tag with the region rect so Retake re-crops THIS area from a fresh Snap frame.
             if (dataUrl) { addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp, { kind: 'region', rect }); setActiveCapture(regionBtn) }
           }
@@ -4779,7 +4857,7 @@ export function buildModal(
       `<span class="kl-hsep"></span>` +
       // Redaction group: the "Mask numbers" toggle (masks digits in fresh captures) now sits next to the
       // Pixelate brush + Crop — grouped with the other redact/edit tools so the logo owns the top-left.
-      `<label class="kl-hmask" title="Mask numbers in new screen captures"><input type="checkbox" class="kl-hmask-cb"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>` +
+      `<label class="kl-hmask" title="Black out numbers in your screenshots"><input type="checkbox" class="kl-hmask-cb"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>` +
       t('pixelate', 'Redact (pixelate)', heroGlyph('<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>'), 'b') +
       t('crop', 'Crop', heroGlyph('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), 'k') +
       `<span class="kl-hsep"></span>` +
@@ -5021,8 +5099,35 @@ export function buildModal(
       ;(cropStacks[index] ??= []).push({ snap: preSnap, mark })
       fireAnnChanged(index) // KLA-772: a crop rebases the overlay coords → re-persist it
       updateStrip()
+      carryNumberMaskThroughCrop(srcUrl, cropped, src.naturalWidth, src.naturalHeight, rx, ry, cc.width, cc.height)
     }
     src.src = srcUrl
+  }
+
+  // KD-3088: keep Mask numbers working after a crop — the cropped image inherits the number rects (shifted into
+  // its own pixel space), and a crop of a MASKED image also gets a matching crop of the original, so toggling
+  // masking off afterwards still restores readable numbers.
+  function carryNumberMaskThroughCrop(srcUrl: string, cropped: string, sw: number, sh: number, rx: number, ry: number, cw: number, ch: number) {
+    const shift = (rects: MaskRect[] | null): MaskRect[] => (rects || [])
+      .map(r => ({ x: Math.max(0, r.x - rx), y: Math.max(0, r.y - ry), w: Math.min(cw, r.x - rx + r.w) - Math.max(0, r.x - rx), h: Math.min(ch, r.y - ry + r.h) - Math.max(0, r.y - ry) }))
+      .filter(r => r.w > 0 && r.h > 0)
+    const rects = shift(numberRectsFor(srcUrl, sw, sh))
+    if (rects.length) numberRectsByUrl.set(cropped, rects)
+    const orig = unmaskedOf.get(srcUrl)
+    if (!orig) return
+    const o = new Image()
+    o.onload = () => {
+      const c = document.createElement('canvas')
+      c.width = cw; c.height = ch
+      const cx = c.getContext('2d')
+      if (!cx) return
+      cx.drawImage(o, rx, ry, cw, ch, 0, 0, cw, ch)
+      let origCropped: string
+      try { origCropped = c.toDataURL('image/png') } catch { return }
+      unmaskedOf.set(cropped, origCropped); maskedOf.set(origCropped, cropped)
+      if (rects.length) numberRectsByUrl.set(origCropped, rects)
+    }
+    o.src = orig
   }
 
   function mountHeroAnnotator(index: number) {
@@ -5098,9 +5203,10 @@ export function buildModal(
         colorInput.addEventListener('change', applyCustom)
       }
       // Mask-numbers toggle now lives at the top of the editing toolbar (moved from the capture panel). It
-      // drives the same `maskOn` flag consumed by every capture path, so masking behaviour is unchanged.
+      // drives the same `maskOn` flag consumed by every capture path, AND (KD-3088) applies to the shots
+      // already taken: it used to only affect the NEXT capture, so toggling it while marking up did nothing.
       const maskCb = tools.querySelector('.kl-hmask-cb') as HTMLInputElement | null
-      if (maskCb) maskCb.addEventListener('change', () => { maskOn = maskCb.checked })
+      if (maskCb) maskCb.addEventListener('change', () => { maskOn = maskCb.checked; void applyNumberMask() })
       tools.querySelectorAll('[data-outline]').forEach(b => b.addEventListener('click', () => {
         textOutline = (b as HTMLElement).dataset.outline as 'black' | 'white' | 'none'
         tools.querySelectorAll<HTMLElement>('[data-outline]').forEach(el => el.classList.toggle('kl-on', el === b))
