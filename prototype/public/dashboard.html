@@ -30633,9 +30633,22 @@
           function syncFilterDropdownsFromState() {
             if (typeof updateAllTktMultiSelects === "function") updateAllTktMultiSelects()
           }
+          // Single source of truth for "is any ticket filter applied?" — drives the "Clear filters" button.
+          // Every path that changes _tktFilters (dropdowns, quick chips, Clear, URL load) must call
+          // syncTktClearBtn(); the chips used to skip it, so "All" left a stale "Clear filters" visible.
+          function hasActiveTktFilters() {
+            const f = _tktFilters || {}
+            const any = v => Array.isArray(v) ? v.length > 0 : !!v
+            return any(f.status) || any(f.priority) || any(f.label) || any(f.assignee) || any(f.source) || !!(f.search && String(f.search).trim())
+          }
+          function syncTktClearBtn() {
+            const fbClear = document.getElementById("fbClearBtn")
+            if (fbClear) fbClear.classList.toggle("hide", !hasActiveTktFilters())
+          }
           function applyQuickChip(q) {
             _tktQuick = q
             tktQuickToFilters(q)
+            syncTktClearBtn()
             _tktListState.page = 1
             syncFilterDropdownsFromState()
             syncTicketFiltersToUrl()
@@ -30756,16 +30769,7 @@
           }
 
           function onTktFilterUpdated() {
-            const fbClear = document.getElementById("fbClearBtn")
-            const hasFilter = (
-              (_tktFilters.status && _tktFilters.status.length > 0) ||
-              (_tktFilters.priority && _tktFilters.priority.length > 0) ||
-              (_tktFilters.label && _tktFilters.label.length > 0) ||
-              (_tktFilters.assignee && _tktFilters.assignee.length > 0) ||
-              (_tktFilters.source && _tktFilters.source.length > 0) ||
-              !!_tktFilters.search
-            )
-            if (fbClear) fbClear.classList.toggle("hide", !hasFilter)
+            syncTktClearBtn()
             _tktListState.page = 1
             _tktQuick = deriveQuickFromFilters()
             renderQuickChips()
@@ -30866,15 +30870,7 @@
 
             const searchEl = document.getElementById("kanbanSearch")
             if (searchEl) searchEl.value = _tktFilters.search
-            const hasFilter = (
-              (_tktFilters.status && _tktFilters.status.length > 0) ||
-              (_tktFilters.priority && _tktFilters.priority.length > 0) ||
-              (_tktFilters.label && _tktFilters.label.length > 0) ||
-              (_tktFilters.assignee && _tktFilters.assignee.length > 0) ||
-              (_tktFilters.source && _tktFilters.source.length > 0) ||
-              !!_tktFilters.search
-            )
-            fbClear.classList.toggle("hide", !hasFilter)
+            syncTktClearBtn()
 
             // View toggle
             if (listBtn) listBtn.addEventListener("click", () => { _tktView = "list"; listBtn.classList.add("active"); boardBtn && boardBtn.classList.remove("active"); renderTicketsView() })
@@ -32018,6 +32014,7 @@
               if (si) {
                 si.addEventListener("input", () => {
                   _tktFilters.search = si.value.trim()
+                  syncTktClearBtn()
                   _tktListState.page = 1
                   syncTicketFiltersToUrl()
                   clearTimeout(_tktSearchTimer)
