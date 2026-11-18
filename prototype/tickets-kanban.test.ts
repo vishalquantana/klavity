@@ -167,8 +167,10 @@ test("JTBD 2.14: bulk mutations are guarded by an undo toast that restores prior
   // ...and undo replays the API's per-ticket `prior` values (grouped by value) rather than guessing.
   expect(html).toContain("async function bulkUndo(projId, prior, field)")
   expect(html).toContain("Array.isArray(data.prior)")
-  // Non-reversible label ops get an explicit confirm instead of a silent instant mutation.
-  expect(html).toContain("if (!confirm(")
+  // Non-reversible label ops get an explicit confirm instead of a silent instant mutation — the in-app
+  // klavConfirm modal, never the native browser confirm() dialog.
+  expect(html).toMatch(/const ok = await klavConfirm\(\{\s+title: adding \? `Add label to \$\{tickets\}\?`/)
+  expect(html).not.toContain("if (!confirm(`${bulkActionLabel(body)}")
 })
 
 test("JTBD 2.14: partial bulk failures are surfaced, not silently dropped", () => {
