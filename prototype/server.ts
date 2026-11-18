@@ -169,7 +169,7 @@ import { extractKeyframes } from "./lib/keyframes"
 import { updateFeedbackTitle, updateFeedbackAnnotations } from "./lib/db"
 import { transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeAudioBytes, transcribeConfigured, TRANSCRIBE_MODEL, TRANSCRIBE_MAX_BYTES, activeTranscribeModel } from "./lib/transcribe"
 // KD-995: split one Record-me walkthrough into separate tickets (POST /api/report/split).
-import { splitTranscriptIntoIssues } from "./lib/issue-split"
+import { splitTranscriptIntoIssues, parseSplitFrames, SPLIT_MAX_FRAMES, SPLIT_FRAME_MAX_CHARS } from "./lib/issue-split"
 import { DeepgramRelay, deepgramConfigured, deepgramCostUsd, evaluateVoiceStreamUpgrade, createVoiceStreamWsHandlers, VOICE_STREAM_MAX_SESSION_MS, type VoiceStreamData } from "./lib/deepgram-stream"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
@@ -4216,6 +4216,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   // pages (which read window.KLAV_ICONS via kit.js). Without this route the script 404s and every page
   // throws "kicon is not defined".
   if (req.method === "GET" && path === "/icons.generated.js") return new Response(Bun.file(PUB + "/icons.generated.js"), { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=3600" } })
+  // KD-3089: stops browser Back from crossing a project switch (loaded first in <head> of every project-scoped page).
+  if (req.method === "GET" && path === "/project-history.js") return new Response(Bun.file(PUB + "/project-history.js"), { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } })
   // ── self-hosted fonts (replaces Google Fonts CDN; same-origin under default-src 'self') ──
   if (req.method === "GET" && path === "/fonts/fonts.css") return new Response(Bun.file(SITE + "/fonts/fonts.css"), { headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public, max-age=31536000, immutable" } })
   // ── shared design tokens (canonical token set, sourced from the dashboard) ──
@@ -4944,7 +4946,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   // toggle, per-IP + per-project caps). Best-effort: any failure returns { issues: [] } (never 500).
   if (req.method === "POST" && path === "/api/report/split") {
     if (!rlAllow(`split:ip:${clientIp(req, server)}`, 10, 60_000)) return wjson({ error: "rate limited", issues: [] }, 429)
-    const SIZE_CEIL = TRANSCRIBE_MAX_BYTES + 64 * 1024 // clip cap + multipart framing overhead
+    // clip cap + the sampled frames (KD-3080) + multipart framing overhead
+    const SIZE_CEIL = TRANSCRIBE_MAX_BYTES + SPLIT_MAX_FRAMES * SPLIT_FRAME_MAX_CHARS + 64 * 1024
     const declaredLen = Number(req.headers.get("content-length") || 0)
     if (declaredLen > SIZE_CEIL) return wjson({ error: "payload too large", issues: [] }, 413)
     const bounded = await readBodyBounded(req, SIZE_CEIL)
@@ -5000,18 +5003,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
     const pageUrl = String(form.get("pageUrl") || "").slice(0, 300)
     const note = String(form.get("text") || "").slice(0, 2000)
+    // KD-3080: screenshots the composer sampled across the clip — the model sees the screens, not just the words.
+    const frames = parseSplitFrames(form.get("frames"), { maxFrames: SPLIT_MAX_FRAMES, maxChars: SPLIT_FRAME_MAX_CHARS })
     const issues = await splitTranscriptIntoIssues(transcript, {
       llm: async (input, systemPrompt) => {
+        // Transcript + reporter note + page URL are UNTRUSTED (spoken/typed user content) → fenced as data.
+        const textPart = "VIDEO WALKTHROUGH TRANSCRIPT (untrusted — the reporter narrating):\n" + wrapUntrusted(input) +
+          "\n\nREPORTER NOTE (untrusted):\n" + wrapUntrusted(note || "(none)") +
+          "\n\nPAGE URL (untrusted):\n" + wrapUntrusted(pageUrl || "(unknown)")
+        const userParts: any[] = [{ type: "text", text: textPart + (frames.length ? "\n\nVIDEO FRAMES (untrusted screen content) follow, each labelled with its time in the recording." : "") }]
+        for (const f of frames) {
+          userParts.push({ type: "text", text: `FRAME at ${f.atSec.toFixed(1)}s:` })
+          userParts.push({ type: "image_url", image_url: { url: f.dataUrl } })
+        }
         const { content } = await chat(
           [
             { role: "system", content: systemPrompt + UNTRUSTED_GUARD },
-            {
-              role: "user",
-              // Transcript + reporter note + page URL are UNTRUSTED (spoken/typed user content) → fenced as data.
-              content: "VIDEO WALKTHROUGH TRANSCRIPT (untrusted — the reporter narrating):\n" + wrapUntrusted(input) +
-                "\n\nREPORTER NOTE (untrusted):\n" + wrapUntrusted(note || "(none)") +
-                "\n\nPAGE URL (untrusted):\n" + wrapUntrusted(pageUrl || "(unknown)"),
-            },
+            { role: "user", content: frames.length ? userParts : textPart },
           ],
           3000, true,
           // feature tag 'report-split' → budget-gated + cost-logged like every other LLM call.
@@ -9684,7 +9692,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   // gated on !isReservedSlug, so a page/route is never shadowed; a non-existent key-shaped path 404s.
   const prettyTicketMatch =
     path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/t\/([A-Za-z0-9_-]{1,80})$/) ||
-    path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/([A-Za-z][A-Za-z0-9]{1,9}-\d+)$/)
+    // KD-1074: also <KEY>-SIM-<n> — a Sim Report's own number (separate sequence from tickets).
+    path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/([A-Za-z][A-Za-z0-9]{1,9}-(?:[Ss][Ii][Mm]-)?\d+)$/)
   if (req.method === "GET" && prettyTicketMatch && !isReservedSlug(prettyTicketMatch[1])) {
     if (!rlAllow("ticket:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
     const res = await resolveWorkspaceTicket(prettyTicketMatch[1], prettyTicketMatch[2]).catch(() => null)
@@ -12710,7 +12719,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return {
             id: f.id, simName: p?.name ?? null, simSource: p?.simSource ?? null,
             // #745: pretty-permalink parts — per-project sequence + workspace slug + project key.
-            seqNum: f.seqNum ?? null, slug: aliasInfo.slug, ticketKey: aliasInfo.ticketKey,
+            seqNum: f.seqNum ?? null, simSeqNum: f.simSeqNum ?? null, slug: aliasInfo.slug, ticketKey: aliasInfo.ticketKey,
             // PX4 #411: surface the reporter's explicit composer Title when present + non-empty;
             // otherwise fall back to the historical observation-derived title (back-compat).
             title: (f.title && f.title.trim()) ? f.title : f.observation, priority: f.priority,
@@ -12755,7 +12764,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json(
           { email: me, projects, active: activeOut, members, contacts, sims, saying, simFeedback, tickets, activity, counts, insights, widgetStatus, hasTranscriptSim, hasSimReaction },
           200,
-          { "Set-Cookie": projectCookie(projectId, SECURE) },
+          // KD-3089: no-store — a Back/Forward page load otherwise reused a cached copy (no request), so this Set-Cookie
+          // never re-ran and the server-side project could disagree with the page on screen.
+          { "Set-Cookie": projectCookie(projectId, SECURE), "Cache-Control": "no-store" },
         )
       } catch (e: any) {
         return json(oops(e, "dashboard"), 500)
@@ -14006,6 +14017,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           suggestedLabels: await getSuggestedLabels(fid, fbRow.projectId),
           // KLA-200: human-readable sequential number
           seqNum: fbRow.seqNum ?? null,
+          simSeqNum: fbRow.simSeqNum ?? null, // KD-1074: Sim Report number (<KEY>-SIM-<n>)
           // #745: workspace slug + project ticket_key so the client can build the pretty
           // /<slug>/<KEY>-<n> permalink (falls back to /t/<fb_id> when un-backfilled). Member-gated.
           ...(await projectAliasInfo(fbRow.projectId).catch(() => ({ slug: null, ticketKey: null, projectName: null }))),
@@ -14536,7 +14548,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
     }
     // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-    const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/people|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk(?:\/delete)?|\/bulk-delete|\/rev|\/deleted(?:\/[^/]+\/restore)?)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
+    const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/people|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk(?:\/delete)?|\/bulk-delete|\/rev|\/deleted(?:\/[^/]+\/restore)?)?|\/recurring|\/dashboard-counts|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
     if (projMatch) {
       const pid = projMatch[1]
       const sub = projMatch[2] || ""
@@ -15699,7 +15711,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // GET /api/projects/:id/triage — un-triaged feedback queue (any project member)
       if (req.method === "GET" && sub === "/triage") {
         const triage = await listTriageFeedback(proj.id)
-        return json({ triage })
+        // KD-1074: attach the project key + workspace slug so Sim Reports render as <KEY>-SIM-<n> and link to
+        // /<slug>/<KEY>-SIM-<n> (one lookup per request — every item belongs to this project).
+        const alias = await projectAliasInfo(proj.id).catch(() => ({ slug: null, ticketKey: null, projectName: null }))
+        return json({ triage: triage.map((t: any) => ({ ...t, slug: t.slug ?? alias.slug, ticketKey: t.ticketKey ?? alias.ticketKey })) })
       }
 
       // ── KLA-255: needsConfirm / pending sim-match queue ───────────────────────────────────────
@@ -15796,6 +15811,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const row: any = r.rows[0] || {}
         const rev = String(row.c ?? 0) + ":" + String(row.cr ?? 0) + ":" + String(row.u ?? 0)
         return json({ rev })
+      }
+
+      // KD-3090: GET /api/projects/:id/dashboard-counts — just the four Overview metric numbers (Feedback received,
+      // Sims, Teammates, Tickets filed), computed exactly as /api/dashboard computes them. The Overview polls this
+      // cheaply so the cards stay live even while the full dashboard poll is paused (input focused, modal open…)
+      // and right after an in-tab change, instead of waiting for (or needing) a full reload.
+      if (req.method === "GET" && sub === "/dashboard-counts") {
+        const [c, personas, members] = await Promise.all([dashboardCounts(proj.id), listPersonas(proj.id), membersOfProject(proj.id)])
+        return json({ feedback: c.feedback, tickets: c.tickets, sims: personas.length, team: members.length })
       }
 
       // GET /api/projects/:id/tickets — paginated, filterable ticket list (any project member, KLA-169)

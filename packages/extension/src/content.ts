@@ -401,6 +401,7 @@ function buildComposerAssist(assist: AssistScope, clarityOn: boolean): Partial<M
         if (audio.type) fd.append('mime', audio.type)
         fd.append('pageUrl', location.href)
         if (ctx?.text) fd.append('text', ctx.text)
+        if (ctx?.frames?.length) fd.append('frames', JSON.stringify(ctx.frames))
         const res = await assistFetch(backendUrl + '/api/report/split', { method: 'POST', body: fd }, 90_000)
         if (!res.ok) return null
         const data = await res.json().catch(() => null)

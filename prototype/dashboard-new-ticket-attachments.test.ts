@@ -184,6 +184,8 @@ test("held files and preview object URLs are cleared when the dialog opens and w
 
 // ── Jira-style flow: paste screenshot, "Create another", Ctrl/Cmd+Enter, "KD-101 created" toast ─────────────────────
 const FLOW = [
+  extractFn(HTML, "function showsSimSeq("),   // KD-3082: ticketKeyLabel shows a Sim Report as <KEY>-SIM-<n>
+  extractFn(HTML, "function simLabelNum("),
   extractFn(HTML, "function ticketKeyLabel("),
   extractFn(HTML, "function newTktImagesFromClipboard("),
   extractFn(HTML, "function newTicketCreatedLabel("),
