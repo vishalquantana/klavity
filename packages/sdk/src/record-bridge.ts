@@ -30,7 +30,9 @@ export interface RecordBridgeOptions {
   backendUrl: string
   projectId: string
   // A recording finished on a page whose composer is gone (the reporter navigated mid-recording).
-  onRecordingArrived: (rec: ReportRecording) => void
+  // `purpose` is whatever start() was given on the page that began the recording (KD-3080: 'multi' for a
+  // "Report Multiple Issues" walkthrough), so the host can finish that flow instead of just attaching the clip.
+  onRecordingArrived: (rec: ReportRecording, purpose?: string) => void
   // Surface a short notice to the reporter (e.g. the widget banner). Optional.
   notify?: (text: string) => void
   // Where streamed pieces are backed up (IndexedDB by default). Injectable for tests.
@@ -46,7 +48,8 @@ export interface RecordBridge {
   // Opens the recorder window. Returns null when the popup was blocked, so the caller can fall back to the
   // in-page recorder. Otherwise resolves with the recording (stopped on THIS page) or null (cancelled /
   // window closed / finished after a navigation — then onRecordingArrived receives it instead).
-  start(onPhase?: (phase: RecordPhase) => void): Promise<ReportRecording | null> | null
+  // `purpose` rides with the session across page loads and comes back on onRecordingArrived.
+  start(onPhase?: (phase: RecordPhase) => void, purpose?: string): Promise<ReportRecording | null> | null
   // True while a recording session is known to be running in this tab.
   active(): boolean
   dispose(): void
@@ -57,7 +60,7 @@ const WINDOW_NAME = 'klavity-recorder'
 // No heartbeat for this long → the recorder window is gone (closed by the user / crashed).
 const HEARTBEAT_LOST_MS = 6000
 
-interface StoredSession { session: string; projectId: string; startedAt: number }
+interface StoredSession { session: string; projectId: string; startedAt: number; purpose?: string }
 
 function readStored(): StoredSession | null {
   try {
@@ -167,6 +170,7 @@ export function createRecordBridge(opts: RecordBridgeOptions): RecordBridge {
     const ownsPending = pending?.session === s
     // The window's last reported elapsed time can be newer than the last stored piece's meta.
     const elapsedHint = isCurrent ? live.elapsedMs : 0
+    const purpose = isCurrent ? stored?.purpose : undefined
     if (isCurrent) endSession()
     let rec: ReportRecording | null = null
     try { rec = await rebuild(s, elapsedHint) } catch { rec = null }
@@ -174,7 +178,7 @@ export function createRecordBridge(opts: RecordBridgeOptions): RecordBridge {
       if (ownsPending) settlePending(null)
       if (isCurrent) opts.notify?.('The recording window was closed before anything was recorded.')
     } else {
-      if (!(ownsPending && settlePending(rec))) { try { opts.onRecordingArrived(rec) } catch { /* no-op */ } }
+      if (!(ownsPending && settlePending(rec))) { try { opts.onRecordingArrived(rec, purpose) } catch { /* no-op */ } }
       opts.notify?.(`The recording window was closed. Your recording up to ${fmtTime(rec.durationMs)} was saved and attached to the report.`)
     }
     try { await backup.clear(s) } catch { /* no-op */ }
@@ -349,6 +353,7 @@ export function createRecordBridge(opts: RecordBridgeOptions): RecordBridge {
       const id = String(d.recording?.id || '')
       if (id && handled.has(id)) return // the window repeats 'done' until acked
       if (id) handled.add(id)
+      const purpose = stored?.purpose
       endSession()
       // The full video arrived normally — the backup is no longer needed.
       void storeQueue.then(() => backup.clear(session)).catch(() => {})
@@ -356,7 +361,7 @@ export function createRecordBridge(opts: RecordBridgeOptions): RecordBridge {
       let rec: ReportRecording | null = null
       try { rec = await toRecording(d.recording) } catch { rec = null }
       if (!rec) { settlePending(null); opts.notify?.('The recording could not be attached.'); return }
-      if (!settlePending(rec)) { try { opts.onRecordingArrived(rec) } catch { /* no-op */ } }
+      if (!settlePending(rec)) { try { opts.onRecordingArrived(rec, purpose) } catch { /* no-op */ } }
     }
   }
 
@@ -383,7 +388,7 @@ export function createRecordBridge(opts: RecordBridgeOptions): RecordBridge {
   })()
 
   return {
-    start(onPhase) {
+    start(onPhase, purpose) {
       if (!backendOrigin) return null
       if (pending) return null
       const session = newSessionId()
@@ -392,7 +397,7 @@ export function createRecordBridge(opts: RecordBridgeOptions): RecordBridge {
       let win: Window | null = null
       try { win = window.open(url, WINDOW_NAME, recorderWindowFeatures()) } catch { win = null }
       if (!win) return null // popup blocked → caller falls back to the in-page recorder
-      stored = { session, projectId: opts.projectId, startedAt: Date.now() }
+      stored = { session, projectId: opts.projectId, startedAt: Date.now(), ...(purpose ? { purpose } : {}) }
       writeStored(stored)
       return new Promise<ReportRecording | null>((resolve) => {
         pending = { session, resolve, onPhase, win, recordingSignalled: false }

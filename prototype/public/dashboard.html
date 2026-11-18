@@ -18149,6 +18149,24 @@
     [data-view="triage"] .tg-chip.on { font-weight: 500; }
     .sr-sim-pill > span { color: var(--paper); font-weight: 500; }
     .sr-sim-pill select { font-weight: 600; font-size: 13px; }
+    /* Sim Reports "Sim:" filter — styled menu (hover, selected ✓ state, divider, counts) replacing the native list. */
+    .sr-sim-kdd { position: relative; cursor: default; }
+    .sr-sim-kdd:has(.sr-sim-btn[aria-expanded="true"]), .sr-sim-kdd:focus-within { border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(99, 102, 241, .14); }
+    .sr-sim-kdd .sr-sim-btn { min-width: 0; max-width: 200px; padding: 0 2px; gap: 6px; border: 0; border-radius: 6px; background: transparent; box-shadow: none; color: var(--paper); font: 600 13px var(--body); text-transform: none; }
+    .sr-sim-kdd .sr-sim-btn:hover, .sr-sim-kdd .sr-sim-btn[aria-expanded="true"] { background: transparent; border: 0; box-shadow: none; }
+    .sr-sim-kdd .sr-sim-btn:focus-visible { box-shadow: none; }
+    .sr-sim-kdd .kdd-caret { margin-left: 2px; color: var(--paper-dim); }
+    .sr-sim-menu { left: auto; right: 0; top: calc(100% + 8px); z-index: 60; min-width: 220px; max-width: 300px; max-height: 320px; overflow-y: auto; }
+    .sr-sim-menu .sr-sim-item { gap: 8px; padding: 8px 10px; color: var(--paper); font-weight: 500; text-transform: none; transition: background .12s ease, color .12s ease; }
+    .sr-sim-menu .sr-sim-item:hover, .sr-sim-menu .sr-sim-item:focus-visible { background: var(--ink-3); outline: none; }
+    .sr-sim-menu .sr-sim-item:focus-visible { box-shadow: inset 0 0 0 1.5px var(--indigo); }
+    .sr-sim-menu .sr-sim-item[aria-checked="true"] { background: rgba(99, 102, 241, .12); color: var(--indigo); font-weight: 600; }
+    .sr-sim-menu .sr-sim-item .kdd-txt { flex: 1 1 auto; min-width: 0; }
+    .sr-sim-check { flex: none; color: var(--indigo); visibility: hidden; }
+    .sr-sim-item[aria-checked="true"] .sr-sim-check { visibility: visible; }
+    .sr-sim-count { flex: none; margin-left: 8px; padding: 1px 7px; border-radius: 999px; background: var(--ink-3); color: var(--paper-dim); font: 500 11px/16px var(--body); }
+    .sr-sim-item[aria-checked="true"] .sr-sim-count { background: rgba(99, 102, 241, .16); color: var(--indigo); }
+    .sr-sim-sep { height: 1px; margin: 4px 6px; background: var(--line); flex: none; }
     [data-theme="dark"] .sr-toggle { background: rgba(255, 255, 255, .06); }
     .sr-toggle { margin: 0; }
     @media (max-width: 480px) {
@@ -20597,6 +20615,14 @@
     const col = (s) => COLORS[[...String(s || "")].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length]
     const initials = (e) => String(e || "").slice(0, 2).toUpperCase()
     const esc = (s) => String(s || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]))
+    // KD-3082: a Sim Report always shows "<KEY>-SIM-<n>". While it waits in Sim Reports, n is its own Sim Reports count
+    // (simSeqNum). Once a person ACCEPTS it, it takes the next Tickets number (seqNum) and shows "<KEY>-SIM-<ticket number>",
+    // so on the Tickets board it sorts in one sequence with manual / widget tickets ("<KEY>-<n>").
+    function showsSimSeq(t) { return !!t && t.simSeqNum != null }
+    function simLabelNum(t) {
+      const accepted = t.seqNum != null && t.status !== "new" && t.status !== "dismissed"
+      return accepted ? t.seqNum : t.simSeqNum
+    }
     // KD-1006: in-app confirmation dialog for destructive actions — replaces the browser-native confirm(), which showed
     // "<host> says …". Resolves true on confirm; false on Cancel, Esc or a backdrop click. Focus starts on Cancel (the safe
     // choice), Tab stays inside the dialog, and focus returns to the button that opened it.
@@ -21649,7 +21675,7 @@
           const title = (t.title || "").toLowerCase()
           const obs = (t.observation || "").toLowerCase()
           const quote = (t.sourceQuote || "").toLowerCase()
-          const seq = (t.seqNum ? String(t.seqNum) : "")
+          const seq = (showsSimSeq(t) ? "sim-" + String(simLabelNum(t)) : (t.seqNum ? String(t.seqNum) : ""))
           const simNm = (t.simName || "").toLowerCase(), pth = (t.urlPath || "").toLowerCase()
           if (!title.includes(q) && !obs.includes(q) && !quote.includes(q) && !seq.includes(q) && !simNm.includes(q) && !pth.includes(q)) return false
         }
@@ -21948,6 +21974,57 @@
       lb.addEventListener("click", () => { if (_tgView === "list") return; _tgView = "list"; sync(); renderTriageItems(tgVisibleItems()) })
       bb.addEventListener("click", () => { if (_tgView === "board") return; _tgView = "board"; sync(); renderTriageItems(tgVisibleItems()) })
     }
+    // Sim Reports header "Sim:" filter menu (kdd skin). Toggles the menu, picks an option (writes the hidden
+    // <select id="tgSimFilter"> and fires its change handler, which re-renders), arrow-key navigation, Escape and
+    // outside-click close. The document-level listeners are attached once; the button/menu are re-wired per render.
+    function closeSimFilterMenu(focusBtn) {
+      const menu = document.getElementById("tgSimMenu"), btn = document.getElementById("tgSimBtn")
+      if (!menu || menu.classList.contains("hide")) return
+      menu.classList.add("hide")
+      if (btn) { btn.setAttribute("aria-expanded", "false"); if (focusBtn) btn.focus() }
+    }
+    function wireSimFilterMenu(sel) {
+      const btn = document.getElementById("tgSimBtn"), menu = document.getElementById("tgSimMenu")
+      if (!btn || !menu || !sel) return
+      const items = () => Array.from(menu.querySelectorAll(".kdd-item"))
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation()
+        if (!menu.classList.contains("hide")) { closeSimFilterMenu(false); return }
+        menu.classList.remove("hide")
+        btn.setAttribute("aria-expanded", "true")
+        const cur = menu.querySelector('.kdd-item[aria-checked="true"]') || items()[0]
+        if (cur) cur.focus()
+      })
+      btn.addEventListener("keydown", (ev) => {
+        if ((ev.key === "ArrowDown" || ev.key === "ArrowUp") && menu.classList.contains("hide")) { ev.preventDefault(); btn.click() }
+      })
+      menu.addEventListener("click", (ev) => {
+        ev.stopPropagation()
+        const item = ev.target.closest(".kdd-item")
+        if (!item) return
+        const val = item.getAttribute("data-val")
+        closeSimFilterMenu(true)
+        if (sel.value !== val) { sel.value = val; sel.dispatchEvent(new Event("change", { bubbles: true })) }
+      })
+      menu.addEventListener("keydown", (ev) => {
+        const list = items(), i = list.indexOf(document.activeElement)
+        if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+          ev.preventDefault()
+          const n = list.length, next = i < 0 ? 0 : (i + (ev.key === "ArrowDown" ? 1 : n - 1)) % n
+          if (list[next]) list[next].focus()
+        } else if (ev.key === "Home" || ev.key === "End") {
+          ev.preventDefault(); const t = ev.key === "Home" ? list[0] : list[list.length - 1]; if (t) t.focus()
+        } else if (ev.key === "Escape" || ev.key === "Tab") {
+          if (ev.key === "Escape") ev.preventDefault()
+          closeSimFilterMenu(ev.key === "Escape")
+        }
+      })
+      if (!window.__srSimMenuDocWired) {
+        window.__srSimMenuDocWired = true
+        document.addEventListener("click", (e) => { if (!e.target.closest || !e.target.closest(".sr-sim-kdd")) closeSimFilterMenu(false) })
+        document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSimFilterMenu(false) })
+      }
+    }
     // JTBD 3.10: sentiment filter (Critical / positive / all …) + bulk-dismiss-by-Sim. Both live in the
     // #triageFilters bar above the list so a reviewer can hide non-actionable positives or clear a noisy
     // Sim's observations in one action, rather than dismissing 60 flooded observations one by one.
@@ -22033,6 +22110,15 @@
       const simOpts = [`<option value="all">All Sims</option>`]
         .concat(simKeys.map(k => `<option value="${esc(k)}"${_triageSim === k ? " selected" : ""}>${esc(simLabel(k))}</option>`))
         .join("")
+      // Sim filter menu: styled options (hover, selected ✓, divider after "All Sims", per-Sim count) instead of the
+      // browser's unstyled native list. The hidden <select id="tgSimFilter"> stays the state holder.
+      const simCheck = `<svg class="sr-sim-check" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>`
+      const simItem = (val, label, count) => `<button type="button" class="kdd-item sr-sim-item" role="menuitemradio" aria-checked="${_triageSim === val}" data-val="${esc(val)}">${simCheck}<span class="kdd-txt">${esc(label)}</span><span class="sr-sim-count">${count}</span></button>`
+      const simMenuHtml = simItem("all", "All Sims", all.length)
+        + (simKeys.length ? `<div class="sr-sim-sep" role="separator"></div>` : "")
+        + simKeys.map(k => simItem(k, simLabel(k), simCount(k))).join("")
+      const simCurLabel = _triageSim === "all" ? "All Sims" : simLabel(_triageSim)
+      const simCaret = `<svg class="kdd-caret" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>`
       const canDismissSim = _triageSim !== "all" && simCount(_triageSim) > 0
       const simDismissBtn = canDismissSim
         ? `<button type="button" class="btn btn-ghost btn-sm" id="tgSimDismiss" title="Dismiss every new report from this Sim">Dismiss all ${simCount(_triageSim)} from ${esc(simLabel(_triageSim))}</button>`
@@ -22045,7 +22131,10 @@
       // bulk 'dismiss all from Sim' button and the clear-filters button are gone (the board columns already split by priority).
       host.innerHTML = `<div class="tg-filter-row">${sentHtml}</div>`
       const simHost = $("triageSimHost")
-      if (simHost) simHost.innerHTML = `<label class="sr-sim-pill"><span>Sim:</span><select id="tgSimFilter" aria-label="Filter by originating Sim">${simOpts}</select></label>`
+      if (simHost) simHost.innerHTML = `<div class="sr-sim-pill sr-sim-kdd kdd" data-kdd="sim"><span>Sim:</span>`
+        + `<button type="button" class="kdd-btn sr-sim-btn" id="tgSimBtn" aria-haspopup="menu" aria-expanded="false" aria-label="Filter by originating Sim"><span class="kdd-txt">${esc(simCurLabel)}</span>${simCaret}</button>`
+        + `<div class="kdd-menu hide sr-sim-menu" id="tgSimMenu" role="menu" aria-label="Filter by originating Sim">${simMenuHtml}</div>`
+        + `<select id="tgSimFilter" class="kdd-native" tabindex="-1" aria-hidden="true">${simOpts}</select></div>`
       const hdrCount = $("triageHdrCount"); if (hdrCount) hdrCount.textContent = String(all.length)
       host.querySelectorAll("[data-tg-sent]").forEach(b => b.addEventListener("click", () => {
         _triageSentiment = b.getAttribute("data-tg-sent"); _tgSelected.clear(); renderTriageView()
@@ -22169,6 +22258,7 @@
 
       const simSel = $("tgSimFilter")
       if (simSel) simSel.addEventListener("change", () => { _triageSim = simSel.value; _tgSelected.clear(); renderTriageView() })
+      wireSimFilterMenu(simSel)
       const simDis = host.querySelector("#tgSimDismiss")
       if (simDis) simDis.addEventListener("click", (ev) => {
         const ids = (_triageItems || []).filter(t => tgSimKey(t) === _triageSim).map(t => String(t.id))
@@ -22669,7 +22759,7 @@
       <label class="tg-cb-wrap" title="Select for bulk action"><input type="checkbox" class="tg-cb"${sel ? " checked" : ""} aria-label="Select report"></label>
       ${t.screenshotId ? `<div class="tg-shot" data-shot="${esc(String(t.screenshotId))}" title="Open screenshot"><div class="tg-shot-ph">${kicon('image', { size: 16 })}</div></div>` : `<div class="tg-shot tg-shot-empty"><div class="tg-shot-ph">${kicon('image', { size: 16 })}</div></div>`}
       <div class="tg-b">
-        ${t.seqNum ? `<div class="fx-id">${esc(seqPillText(t))}</div>` : ""}
+        ${(t.seqNum || t.simSeqNum) ? `<div class="fx-id">${esc(seqPillText(t))}</div>` : ""}
         <div class="fx-t">${esc(t.title || "Untitled report")}</div>
         ${t.sourceQuote ? `<div class="fx-q">"${esc(t.sourceQuote)}"</div>` : (t.observation ? `<div class="fx-q">${esc(t.observation)}</div>` : "")}
         <div class="fx-m">${t.urlPath ? `<span class="fx-area">${esc(t.urlPath)}</span>` : ""}${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${t.simName ? `<span class="fx-sim">${kicon('bot', { size: 14 })} ${esc(t.simName)}</span>` : ""}${t.createdAt ? `<span class="muted" data-ago="${Number(t.createdAt)}">${esc(ago(t.createdAt))}</span>` : ""}</div>
@@ -22706,7 +22796,7 @@
             const meta = `${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${tgRoutingAffordance(t)}`
             card.innerHTML = `
     <label class="tg-cb-wrap" title="Select for bulk action"><input type="checkbox" class="tg-cb"${sel ? " checked" : ""} aria-label="Select report"></label>
-    <div class="sr-card-top"><span class="sr-bug">${window.figmaIcon ? figmaIcon('bug', 22, 1.8) : kicon('bug')}</span>${t.seqNum ? `<span class="sr-id">${esc(seqPillText(t))}</span>` : ""}</div>
+    <div class="sr-card-top"><span class="sr-bug">${window.figmaIcon ? figmaIcon('bug', 22, 1.8) : kicon('bug')}</span>${(t.seqNum || t.simSeqNum) ? `<span class="sr-id">${esc(seqPillText(t))}</span>` : ""}</div>
     <div class="kb-card-t">${esc(t.title || "Untitled report")}</div>
     ${sub ? `<div class="kb-card-d">${sub}</div>` : ""}
     ${quote}
@@ -23522,12 +23612,18 @@
             host.innerHTML = svg
           }
 
+          // KD: the drill-down title shows the day as DD-MM-YYYY ("Reports on 12-09-2026"); the bucket key / API param stays
+          // YYYY-MM-DD. Anything that isn't a plain YYYY-MM-DD is shown unchanged.
+          function trendDayDMY(day) {
+            const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""))
+            return m ? m[3] + "-" + m[2] + "-" + m[1] : String(day || "")
+          }
           async function drillTrend(day) {
             const drill = $("trendDrill"), list = $("trendDrillList"), title = $("trendDrillTitle")
             if (!drill || !list) return
             const meta = TREND_SERIES_META.find((m) => m.key === _trendSeries) || TREND_SERIES_META[0]
             drill.classList.remove("hide")
-            title.innerHTML = '<i style="display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:7px;background:' + meta.color + '"></i>' + esc(meta.label + " on " + day)
+            title.innerHTML = '<i style="display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:7px;background:' + meta.color + '"></i>' + esc(meta.label + " on " + trendDayDMY(day))
             list.innerHTML = '<div class="trend-empty" style="padding:14px">Loading…</div>'
             const pid = curProjId()
             try {
@@ -28790,7 +28886,7 @@
           // now always renders in detail, uses a searchable ticket picker (not window.prompt), and on success
           // re-opens the ticket so the merged occurrences show inline, plus a toast.
           function mergeCandLabel(x) {
-            return (x.seqNum ? "#" + x.seqNum + " " : "") + (x.title || "Untitled report")
+            return (showsSimSeq(x) ? "SIM-" + simLabelNum(x) + " " : (x.seqNum ? "#" + x.seqNum + " " : "")) + (x.title || "Untitled report")
           }
           function buildMergeControl(ticketId) {
             const wrap = document.createElement("div")
@@ -28838,7 +28934,7 @@
               resultsEl.innerHTML = rows.map(x => {
                 const st = x.status || "new"
                 return '<button type="button" class="tkt-merge-cand" role="option" data-id="' + esc(String(x.id)) + '">'
-                  + '<span class="mc-key">#' + esc(String(x.seqNum || "?")) + "</span>"
+                  + '<span class="mc-key">' + esc(showsSimSeq(x) ? "SIM-" + simLabelNum(x) : "#" + String(x.seqNum || "?")) + "</span>"
                   + '<span class="mc-title">' + esc(x.title || "Untitled report") + "</span>"
                   + '<span class="chip kb-st-' + esc(st) + ' mc-st">' + esc(stLabel(st)) + "</span></button>"
               }).join("")
@@ -29148,6 +29244,9 @@
           // number (#123), falls back to the short quotable ref, then the id prefix. Status stays color+text.
           function ticketKeyLabel(t) {
             if (!t) return ""
+            // KD-3082: an untriaged Sim Report shows its OWN sequence → "KD-SIM-12" (or "SIM-12" without a project key);
+            // once accepted it has a ticket number and falls through to "KD-95".
+            if (showsSimSeq(t)) { const k = _simKeyFor(t); return k ? k + "-SIM-" + simLabelNum(t) : "SIM-" + simLabelNum(t) }
             // #745: prefer the Jira-clean human key (KLAV-94) when the project has a ticket_key; else the bare
             // sequence (#94), then the short quotable ref, then the id prefix.
             if (t.ticketKey && (t.seqNum != null)) return String(t.ticketKey) + "-" + t.seqNum
@@ -29155,8 +29254,16 @@
             if (t.ref) return String(t.ref)
             return String(t.id || "").slice(0, 8)
           }
+          // KD-1074: project key for a Sim Report's "<KEY>-SIM-<n>" label. Sim Report list items don't carry ticketKey,
+          // so fall back to the active project's key (the Sim Reports page is always scoped to one project).
+          function _simKeyFor(t) {
+            const k = (t && t.ticketKey) || (state && state.active && (state.active.ticketKey || state.active.key))
+            return k ? String(k) : ""
+          }
           // #745: the short pill text on cards / title heads — "KLAV-94" when a ticket_key exists, else "#94".
           function seqPillText(t) {
+            // KD-3082: untriaged Sim Reports → "KD-SIM-12" / "SIM-12"; tickets (incl. accepted Sim Reports) → "KD-94" / "#94".
+            if (showsSimSeq(t)) { const k = _simKeyFor(t); return k ? k + "-SIM-" + simLabelNum(t) : "SIM-" + simLabelNum(t) }
             if (!t || t.seqNum == null) return ""
             return (t.ticketKey ? String(t.ticketKey) + "-" + t.seqNum : "#" + t.seqNum)
           }
@@ -29171,7 +29278,12 @@
           // Prev / Next step by TICKET NUMBER (KD-1, KD-2, KD-3 …) across every status — not by board column.
           // ‹ goes to the next-lower number, › to the next-higher one. Tickets without a number go last (oldest first).
           function _tktByNumber(list) {
-            const num = (t) => { const n = Number(t && t.seqNum); return (t && t.seqNum != null && isFinite(n)) ? n : null }
+            // KD-3082: tickets and ACCEPTED Sim Reports order by their Tickets number; a waiting Sim Report by its Sim Reports count.
+            // (Rule inlined — same as simLabelNum() — so this function stays self-contained.)
+            const num = (t) => {
+              const waitingSim = t && t.simSeqNum != null && (t.seqNum == null || t.status === "new" || t.status === "dismissed")
+              const v = t && (waitingSim ? t.simSeqNum : t.seqNum); const n = Number(v); return (v != null && isFinite(n)) ? n : null
+            }
             const at = (t) => Number(t && (t.createdAt || t.created_at)) || 0
             return list.slice().sort((a, b) => {
               const na = num(a), nb = num(b)
@@ -29225,6 +29337,10 @@
             if (!t) return null
             const slug = t.slug || (state && state.active && (state.active.slug || state.active.workspaceSlug))
             const ticketKey = t.ticketKey || (state && state.active && (state.active.ticketKey || state.active.key))
+            // KD-3082: untriaged Sim Reports link as /<slug>/<KEY>-SIM-<n>; accepted ones as /<slug>/<KEY>-<n>.
+            if (slug && ticketKey && showsSimSeq(t)) {
+              return "/" + encodeURIComponent(String(slug)) + "/" + encodeURIComponent(String(ticketKey)) + "-SIM-" + simLabelNum(t)
+            }
             if (slug && ticketKey && (t.seqNum != null)) {
               return "/" + encodeURIComponent(String(slug)) + "/" + encodeURIComponent(String(ticketKey)) + "-" + t.seqNum
             }
@@ -29453,7 +29569,7 @@
               head.innerHTML = `<span class="single-rail sv-${sv}"></span>
       <div class="single-h-b">
         <div class="single-title-row">
-          <div class="single-title">${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
+          <div class="single-title">${(t.seqNum || t.simSeqNum) ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
           <button class="single-title-edit" type="button" title="Edit title" aria-label="Edit title">${kicon('pencil', { size: 13 })}</button>
         </div>
         <div class="single-meta">${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}${recurBadgeHtml(t)}<span class="muted" style="font-family:var(--mono);font-size:11px">${t.simName ? (kicon('bot', { size: 11 }) + " " + esc(t.simName) + " · ") : ""}${t.urlPath ? (esc(t.urlPath) + " · ") : ""}${esc(ago(t.createdAt))}</span></div>
@@ -30865,7 +30981,10 @@
               let bug = ""
               try { bug = t.suggestedBug ? JSON.stringify(t.suggestedBug) : "" } catch { bug = "" }
               const hay = [t.title, t.observation, t.notes, bug].filter(Boolean).join(" \n ").toLowerCase()
-              if (!hay.includes(q)) return false
+              // KD-3095: mirror the server -- a ticket ID ("68", "#68", "KD-68") matches the ticket number exactly.
+              const idM = q.trim().match(/^(?:#|[a-z][a-z0-9]{1,9}-)?(\d{1,15})$/)
+              const idHit = !!idM && t.seqNum != null && Number(t.seqNum) === Number(idM[1])
+              if (!idHit && !hay.includes(q)) return false
             }
             return true
           }
@@ -31085,7 +31204,7 @@
             if (partial) {
               const links = failedIds.slice(0, 20).map(id => {
                 const t = (state.tickets || []).find(x => String(x.id) === String(id))
-                const seq = t && t.seqNum ? ("#" + t.seqNum) : String(id).slice(0, 8)
+                const seq = showsSimSeq(t) ? ("SIM-" + simLabelNum(t)) : (t && t.seqNum ? ("#" + t.seqNum) : String(id).slice(0, 8))
                 return `<a data-id="${esc(String(id))}">${esc(seq)}</a>`
               }).join("")
               html += `<div class="tg-toast-fails">Failed: ${links}${failedIds.length > 20 ? ` +${failedIds.length - 20} more` : ""}</div>`
@@ -31464,7 +31583,7 @@
               rowInner.style.cssText = "display:contents"
               rowInner.innerHTML =
                 '<span class="tl-pri ' + priDotClass(pri) + '" title="Priority: ' + esc(pri || "none") + '"></span>' +
-                '<div class="tl-title">' + (t.seqNum ? '<span class="tkt-seq">#' + t.seqNum + '</span> ' : '') + esc(t.title || "Untitled report") + (lblChipsHtml ? ' <span class="lbl-chips" style="margin-left:6px">' + lblChipsHtml + '</span>' : '') + '</div>' +
+                '<div class="tl-title">' + (showsSimSeq(t) ? '<span class="tkt-seq">SIM-' + simLabelNum(t) + '</span> ' : (t.seqNum ? '<span class="tkt-seq">#' + t.seqNum + '</span> ' : '')) + esc(t.title || "Untitled report") + (lblChipsHtml ? ' <span class="lbl-chips" style="margin-left:6px">' + lblChipsHtml + '</span>' : '') + '</div>' +
                 '<div class="tl-meta">' +
                 statusPillHtml(t.status) +
                 dupAckHtml(t, { badge: true }) +
@@ -32101,7 +32220,7 @@
                 cardEl.innerHTML = `
         <input type="checkbox" class="kb-card-cb" aria-label="Select ticket for bulk action"${_bulkSelected.has(ticketId) ? " checked" : ""}>
         <button class="copy-ai-icon kb-copy-ai" type="button" aria-label="Copy to AI" title="Copy to AI — paste into Claude / ChatGPT to fix this bug">${kicon('sparkles')}</button>
-        <div class="kb-card-t">${kicon('bug')} ${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
+        <div class="kb-card-t">${kicon('bug')} ${(t.seqNum || t.simSeqNum) ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
         <div class="kb-card-d" title="${esc(sub)}">${esc(sub)}</div>
         <div class="kb-card-meta"></div>`
                 renderCard()

@@ -3,14 +3,27 @@
 // onSplitRecording, and opens the "AI Analysis Complete" review over the composer. The reporter selects /
 // edits / removes tickets and Submit files one ticket per selected issue — the first carries the video, the
 // rest point back to it. "Record me" itself stays a plain single-ticket recording.
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
-  buildModal, formatSplitSpan, buildSplitDescription, splitIssueBody, renderDraftToWhatsApp,
+  buildModal, splitFrameTimes, formatSplitSpan, buildSplitDescription, splitIssueBody, renderDraftToWhatsApp,
   multiPriorityLabel, parseSplitSpan, multiPreviewText, type SplitIssueLike,
 } from '../src/modal'
 import type { ReportRecording } from '../src/types'
 
 beforeEach(() => { document.body.innerHTML = '' })
+
+// jsdom can't decode video: fail every frame grab at once (the composer samples frames from the walkthrough
+// before the analysis — KD-3080) instead of waiting out the grab timeout.
+let mediaSrcDesc: PropertyDescriptor | undefined
+beforeEach(() => {
+  mediaSrcDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src')
+  Object.defineProperty(HTMLMediaElement.prototype, 'src', {
+    configurable: true,
+    get() { return '' },
+    set() { setTimeout(() => (this as HTMLVideoElement).onerror?.(new Event('error') as any), 0) },
+  })
+})
+afterEach(() => { if (mediaSrcDesc) Object.defineProperty(HTMLMediaElement.prototype, 'src', mediaSrcDesc) })
 
 function q(ctrl: any, sel: string) { return ctrl.shadowRoot.querySelector(sel) as HTMLElement | null }
 function qa(ctrl: any, sel: string) { return Array.from(ctrl.shadowRoot.querySelectorAll(sel)) as HTMLElement[] }
@@ -56,6 +69,15 @@ describe('multi-issue helpers', () => {
     expect(parseSplitSpan('1:05')).toEqual({ startSec: 65, endSec: null })
     expect(parseSplitSpan('nonsense')).toEqual({ startSec: null, endSec: null })
     expect(parseSplitSpan('1:00-0:30')).toEqual({ startSec: 60, endSec: null })
+  })
+  it('splitFrameTimes spreads 2..8 frames evenly across the clip', () => {
+    expect(splitFrameTimes(0)).toEqual([])
+    expect(splitFrameTimes(8)).toEqual([2, 6])
+    expect(splitFrameTimes(30)).toEqual([5, 15, 25])
+    const long = splitFrameTimes(180)
+    expect(long).toHaveLength(8)
+    expect(long[0]).toBeGreaterThan(0)
+    expect(long[7]).toBeLessThan(180)
   })
   it('multiPriorityLabel maps P1/P2/P3 to High/Medium/Low', () => {
     expect(multiPriorityLabel('P1')).toBe('High')
@@ -112,6 +134,37 @@ describe('Report Multiple Issues — entry card', () => {
     await flush()
     const [first] = onSubmit.mock.calls[0] as any[]
     expect(first.screenshots).toEqual(['data:image/png;base64,TUFSS0VE'])
+    ctrl.close()
+  })
+
+  // KD-3080: on a multi-page host (PX4) the walkthrough finishes after the composer that started it was
+  // unloaded; it comes back as a seeded recording and must still be analysed.
+  it('tells the host the recording is a multi-issue walkthrough', async () => {
+    const { ctrl, onRecord } = await openMulti(ISSUES)
+    expect((onRecord.mock.calls[0] as any[])[1]).toEqual({ purpose: 'multi' })
+    ctrl.close()
+  })
+
+  it('analyses a seeded walkthrough on open (initialMultiRecordingId) without recording again', async () => {
+    const onSplitRecording = vi.fn(async () => ISSUES)
+    const onRecord = vi.fn(async () => rec)
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', allowRecording: true, onRecord, onSplitRecording,
+      initialRecordings: [rec], initialMultiRecordingId: rec.id, onSubmit: async () => ({ issueKey: '', issueUrl: '' }) } as any)
+    await flush()
+    expect(onRecord).not.toHaveBeenCalled()
+    expect(onSplitRecording).toHaveBeenCalledTimes(1)
+    expect(qa(ctrl, '.kl-mr-card').length).toBe(ISSUES.length)
+    expect(qa(ctrl, '.kl-video-thumb').length).toBe(1) // the seeded clip is reused, not duplicated
+    ctrl.close()
+  })
+
+  it('a seeded recording without initialMultiRecordingId stays a plain attachment', async () => {
+    const onSplitRecording = vi.fn(async () => ISSUES)
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', allowRecording: true, onRecord: async () => rec, onSplitRecording,
+      initialRecordings: [rec], onSubmit: async () => ({ issueKey: '', issueUrl: '' }) } as any)
+    await flush()
+    expect(onSplitRecording).not.toHaveBeenCalled()
+    expect(q(ctrl, '#klavity-mr')).toBeNull()
     ctrl.close()
   })
 
@@ -340,6 +393,35 @@ describe('Report Multiple Issues — per-issue Enhance', () => {
     restore()
     expect(qa(ctrl, '.kl-mr-t').map((e) => e.textContent)).toEqual(['My own title', 'AI Would'])
     expect(qa(ctrl, '.kl-mr-enh')).toHaveLength(0)
+    ctrl.close()
+  })
+
+  // KD-3080: two issues raised in the same sentence share their narration — each must still get its own ticket.
+  it('issues sharing one narration are enhanced from their own wording and keep distinct titles', async () => {
+    const said = 'The audit list loads slowly and the count is wrong.'
+    const SAME: SplitIssueLike[] = [
+      { title: 'Authority Audit List loads slowly', description: 'a', kind: 'bug', startSec: 1, endSec: 9, actualResult: 'The list takes long to load.', narration: said },
+      { title: 'Authority Audit List shows the wrong count', description: 'b', kind: 'bug', startSec: 1, endSec: 9, actualResult: 'The count is incorrect.', narration: said },
+    ]
+    // An Enhance that would title every ticket after whatever it is handed first.
+    const onEnhance = vi.fn(async (text: string) => DRAFT(text.split('\n')[0]))
+    const { ctrl } = await openMulti(SAME, undefined, { onEnhance })
+    await flush()
+    restore()
+    const sent = onEnhance.mock.calls.map((c) => c[0])
+    expect(sent[0]).toContain('Authority Audit List loads slowly')
+    expect(sent[1]).toContain('Authority Audit List shows the wrong count')
+    expect(sent).not.toContain(said)
+    expect(qa(ctrl, '.kl-mr-t').map((e) => e.textContent)).toEqual(['Authority Audit List loads slowly', 'Authority Audit List shows the wrong count'])
+    ctrl.close()
+  })
+
+  it('drops an Enhance draft that repeats another ticket\'s title', async () => {
+    const onEnhance = vi.fn(async () => DRAFT('Dashboard count wrong'))
+    const { ctrl } = await openMulti(NARRATED, undefined, { onEnhance })
+    await flush()
+    restore()
+    expect(qa(ctrl, '.kl-mr-t').map((e) => e.textContent)).toEqual(['Dashboard count wrong', 'Add dark mode'])
     ctrl.close()
   })
 
