@@ -45,6 +45,8 @@ a{color:inherit;text-decoration:none}
 .breadcrumb{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--paper-faint);margin-bottom:20px;flex-wrap:wrap}
 .breadcrumb a{color:var(--paper-faint)}.breadcrumb a:hover{color:var(--paper-dim)}
 .breadcrumb .sep{color:var(--line)}
+.back-link{display:inline-flex;align-items:center;gap:4px;margin-bottom:12px;color:var(--paper-dim);font:600 12.5px var(--body);text-decoration:none;transition:color .15s}
+.back-link:hover,.back-link:focus-visible{color:var(--indigo);outline:none}
 
 /* walk header */
 .whead{display:flex;align-items:flex-start;gap:16px;margin-bottom:24px;flex-wrap:wrap}
@@ -185,6 +187,7 @@ a{color:inherit;text-decoration:none}
 </div></div>
 
 <div class="wrap">
+  <a class="back-link" id="backLink" href="/autosims"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg><span id="backLabel">Back to AutoSims</span></a>
   <div class="breadcrumb" id="breadcrumb">
     <a href="/autosims">AutoSims</a>
     <span class="sep">/</span>
@@ -923,6 +926,22 @@ function showStepDetail(s){
 }
 
 load()
+</script>
+<script>
+// Back button. From a test case's run list (Projects & Test Cases) the link carries ?from=<dashboard URL>
+// → "Back to test case". Otherwise, arriving from another Klavity page → browser back. Direct/opened-in-
+// new-tab → the AutoSims list. `from` is only honoured as a same-site /dashboard path (no open redirect).
+(function(){
+  var a=document.getElementById("backLink"), l=document.getElementById("backLabel"); if(!a||!l) return
+  var q=new URLSearchParams(location.search), from=q.get("from")||"", pid=q.get("project")
+  a.href="/autosims"+(pid?"?project="+encodeURIComponent(pid):"")
+  if(/^\/dashboard(?:[?#]|$)/.test(from)){ a.href=from; l.textContent="Back to test case"; return }
+  var sameSite=false; try{ sameSite=!!document.referrer&&new URL(document.referrer).origin===location.origin }catch(e){}
+  if(sameSite&&history.length>1){
+    l.textContent="Back"
+    a.addEventListener("click",function(e){ if(e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0) return; e.preventDefault(); history.back() })
+  }
+})()
 </script>
 <script>(function(){document.querySelectorAll('[data-ki]').forEach(function(e){try{e.innerHTML=kicon(e.getAttribute('data-ki'));}catch(x){}})})();</script>
 </body>
