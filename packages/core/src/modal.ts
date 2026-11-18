@@ -3,7 +3,7 @@ import { Annotator, renderAnnotatedImage, extractAnnotationTexts } from './annot
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
 import { VoiceInput, LiveDictation, StreamingDictation, pickDictationMode, joinSpeechSegments, formatSpeechFinal } from './voice-input'
-import { maskNumbers } from './mask-numbers'
+import { collectNumberRects, numberRectsToImage, bakeMaskRects, type NumberGeo, type MaskRect } from './mask-numbers'
 import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit, suppressesAutoCapturedAsk } from './report-clarity'
 import { safeRemove } from './safe-remove'
 import { klavityAttributionUrl } from './attribution'
@@ -992,6 +992,16 @@ export function buildModal(
   // Structured markup per screenshot index { w, h, shapes } so the ticket can re-render a
   // toggleable/zoomable overlay instead of baking the drawing into the uploaded image.
   const annotationsByIndex: Record<number, any> = {}
+  // KD-3088: "Mask numbers" must also work on a shot that is ALREADY taken (the toggle sits in the markup
+  // toolbar, i.e. after capture). Each capture taken with masking OFF records where the page's numbers were
+  // (numberGeoByUrl); toggling ON bakes solid boxes over them INTO the pixels (never an overlay: the raw image
+  // is what gets uploaded), toggling OFF swaps the original back. All keyed by image data URL, so crop / undo /
+  // retake / removal keep working without re-indexing.
+  const numberGeoByUrl = new Map<string, { geo: NumberGeo; capture?: ShotCapture }>()
+  const numberRectsByUrl = new Map<string, MaskRect[]>()   // resolved, in that image's own pixel space
+  const unmaskedOf = new Map<string, string>()             // masked url → original url
+  const maskedOf = new Map<string, string>()               // original url → masked url
+  let maskSeq = 0                                          // bumps on every toggle; stale async bakes bail
   // KLAVITYKLA-228/371: picked element from the on-page picker. Carries selector + human text snippet.
   // Rides on the annotations payload as `selector` + `selectorText` (top level) so the ticket links
   // the finding to the DOM node and the drawer can show the human-readable label alongside the selector.
@@ -1112,8 +1122,16 @@ export function buildModal(
   // Capture the current image+markup as the pre-op state, so undo restores exactly what was there before.
   const pushUndo = (index: number) => { (undoStacks[index] ??= []).push(snapshotShot(index)) }
   const restoreShot = (index: number, snap: UndoSnap) => {
-    screenshots[index] = snap.url
-    screenshotCompressed[index] = snap.compressed
+    // KD-3088: an undo snapshot may predate a Mask-numbers toggle — restore the variant matching the toggle
+    // NOW, so an Undo of a pen stroke can never bring masked numbers back (or re-mask after toggling off).
+    const swapped = maskOn ? maskedOf.get(snap.url) : unmaskedOf.get(snap.url)
+    if (swapped) {
+      screenshots[index] = swapped
+      screenshotCompressed[index] = callbacks.compressImage ? callbacks.compressImage(swapped) : Promise.resolve(swapped)
+    } else {
+      screenshots[index] = snap.url
+      screenshotCompressed[index] = snap.compressed
+    }
     if (snap.ann) annotationsByIndex[index] = cloneAnn(snap.ann)
     else delete annotationsByIndex[index]
   }
@@ -1152,11 +1170,13 @@ export function buildModal(
     @keyframes kl-genie-out{from{opacity:1;transform:translateY(0) scaleX(1) scaleY(1)}to{opacity:0;transform:translateY(180px) scaleX(.04) scaleY(.06)}}
     @keyframes kl-ov{from{opacity:0}to{opacity:1}}
     .klavity-overlay{position:fixed;inset:0;background:var(--kl-overlay);display:flex;align-items:center;justify-content:center;pointer-events:all;animation:kl-ov .3s ease both;}
-    /* height:94vh (definite, not just max-height) + grid-template-rows:minmax(0,1fr) so the row has a
+    /* KD-3086: the composer fills the window (36px side / 16px top-bottom inset) with a wider form column
+       (--kl-side-w, 384-580px, scales with the screen) so the screenshot gets the most room and the form isn't cramped.
+       A DEFINITE height (not just max-height) + grid-template-rows:minmax(0,1fr) so the row has a
        resolved height. This is what makes the hero canvas's object-fit:contain actually shrink a tall
        screenshot to fit (KLAVITYKLA-402) instead of the tall image blowing out the row and pushing the
        right-pane Submit button below the clipped fold. min-height:0 tracks let both panes scroll internally. */
-    .klavity-modal{position:relative;overflow:hidden;isolation:isolate;background:var(--kl-glow,transparent),var(--kl-bg);color:var(--kl-fg);border-radius:var(--kl-radius);padding:0;width:92vw;max-width:min(1160px,92vw);height:94vh;max-height:94vh;box-shadow:0 0 0 1px var(--kl-border),var(--kl-shadow);font-family:var(--kl-font,system-ui,sans-serif);-webkit-font-smoothing:antialiased;-webkit-backdrop-filter:var(--kl-backdrop);backdrop-filter:var(--kl-backdrop);transform-origin:bottom right;animation:kl-genie-in .6s cubic-bezier(.16,1,.3,1) both;display:grid;grid-template-columns:minmax(0,1fr) 384px;grid-template-rows:minmax(0,1fr);}
+    .klavity-modal{position:relative;overflow:hidden;isolation:isolate;background:var(--kl-glow,transparent),var(--kl-bg);color:var(--kl-fg);border-radius:var(--kl-radius);padding:0;--kl-side-w:clamp(384px,30vw,580px);width:calc(100vw - 72px);max-width:none;height:calc(100vh - 32px);max-height:calc(100vh - 32px);box-shadow:0 0 0 1px var(--kl-border),var(--kl-shadow);font-family:var(--kl-font,system-ui,sans-serif);-webkit-font-smoothing:antialiased;-webkit-backdrop-filter:var(--kl-backdrop);backdrop-filter:var(--kl-backdrop);transform-origin:bottom right;animation:kl-genie-in .6s cubic-bezier(.16,1,.3,1) both;display:grid;grid-template-columns:minmax(0,1fr) var(--kl-side-w);grid-template-rows:minmax(0,1fr);}
     /* Image-hero two-pane layout: big annotatable screenshot on the left, controls on the right. */
     .kl-hero{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--kl-hero-bg,#0e1424);}
     .kl-hero-tools{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:8px 14px;min-height:48px;border-bottom:1px solid rgba(255,255,255,.06);}
@@ -1372,6 +1392,9 @@ export function buildModal(
     .klavity-retake-note{margin-top:4px;font-size:9.5px;line-height:1.3;color:var(--kl-muted);text-wrap:pretty;}
     @media (prefers-reduced-motion: reduce){.klavity-retake{transition:none!important;}.klavity-retake.kl-loading{animation:none;}}
     .klavity-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
+    /* KD-3086: in the wide form column the capture buttons sit on a tidy 3-column grid (Snap/Full Page/Attach,
+       Record me/Region/Pick element) instead of flex-wrapping 5 + 1 with a stretched last button. */
+    @media (min-width:761px){.klavity-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));}.klavity-actions button{min-width:0;}}
     .klavity-actions button{position:relative;flex:1 1 auto;min-width:76px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px;background:var(--kl-chip);color:var(--kl-fg);border:none;border-radius:8px;cursor:pointer;font-size:12px;line-height:1;}
     .klavity-actions .kl-cap-ic,.klavity-toggle .kl-cap-ic{display:inline-flex;align-items:center;justify-content:center;flex:none;transition:transform .2s cubic-bezier(.34,1.56,.64,1);line-height:1;}
     .klavity-actions .kl-cap-ic svg,.klavity-toggle .kl-cap-ic svg{display:block;width:15px;height:15px;vertical-align:middle;margin:0;}
@@ -1722,6 +1745,9 @@ export function buildModal(
        wasn't enough: once scrolled, any row (e.g. "Start Recording") slid UNDER the buttons. So on the two-column layout the side
        column's scroll area starts BELOW the button row — nothing can ever pass beneath them. (The divider moves to the hero so it
        still runs full height.) */
+    /* KD-3086: the side column's top row carries a "New report" heading, left of minimize / close (wide layout only). */
+    .kl-side-head{display:none;}
+    @media (min-width:761px){.kl-side-head{display:flex;align-items:center;position:absolute;top:0;right:0;width:var(--kl-side-w);height:58px;padding:0 96px 0 20px;box-sizing:border-box;font-size:15px;font-weight:700;letter-spacing:-.01em;color:var(--kl-fg);pointer-events:none;z-index:2;}}
     @media (min-width:761px){.kl-side{margin-top:52px;padding-top:6px;border-left:none;}.kl-hero{border-right:1px solid var(--kl-border);}.kl-side>.klavity-toggle,.kl-side>.klavity-types,.kl-side>.klavity-title-label{padding-right:0;}}
     /* Narrow layout: the screenshot toolbar is the top row instead, so it reserves the corner (× alone, or ─ + ×). */
     @media (max-width:760px){.kl-hero-tools{padding-right:50px;}.klavity-modal:has(.klavity-min) .kl-hero-tools{padding-right:86px;}}
@@ -1851,6 +1877,7 @@ export function buildModal(
   modal.innerHTML = `
     ${sessionMode ? `<button class="klavity-min" id="klavity-min" type="button" aria-label="Minimize" title="Minimize (keeps your evidence)"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.125em" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>` : ''}
     <button class="klavity-x" id="klavity-x" type="button" aria-label="Close" title="Close (Esc)">${icon('x', { size: 16 })}</button>
+    <div class="kl-side-head" id="klavity-side-head" aria-hidden="true">New report</div>
     <div class="kl-hero" id="klavity-hero">
       <div class="kl-hero-tools" id="klavity-hero-tools"></div>
       <div class="kl-hero-stage" id="klavity-hero-stage">
@@ -2523,6 +2550,77 @@ export function buildModal(
     if (fireAdded) { try { callbacks.onShotAdded?.(dataUrl, quality) } catch { /* host persistence best-effort */ } }
   }
 
+  // KD-3088: start a capture. The page the user is looking at is NEVER modified for masking — masking happens
+  // only in the screenshot image (the old in-page masking flashed black boxes on the live page, very visibly on
+  // a Screen capture, which films the real screen). Nothing to set up any more; kept as the capture hook.
+  function beginCapture(): { restore: (() => void) | null; geo: NumberGeo | null } {
+    return { restore: null, geo: null }
+  }
+  // Record where the page's numbers are for a shot that was JUST captured. Measured AFTER the capture so it sees
+  // the same layout the capture did — a Screen share adds Chrome's "sharing this tab" bar, which shifts the page,
+  // and measuring before that put the boxes above/below the numbers. If Mask numbers is on, mask it right away.
+  function noteNumberGeo(dataUrl: string | undefined, _unused: NumberGeo | null, capture?: ShotCapture) {
+    if (!dataUrl) return
+    try {
+      const geo = collectNumberRects(document.body)
+      if (geo.rects.length) numberGeoByUrl.set(dataUrl, { geo, capture })
+    } catch { /* unmeasurable page — the shot just can't be masked */ }
+    if (maskOn) scheduleNumberMask()
+  }
+  // Run a mask pass once the caller has put the new shot in place (it does so synchronously right after this).
+  // Submit awaits `maskPass`, so a just-captured shot can never be uploaded before its numbers are masked.
+  let maskPass: Promise<void> = Promise.resolve()
+  let maskPassRunning = 0   // submit only waits when a pass is actually in flight (no extra tick otherwise)
+  function trackMaskPass(p: Promise<void>) {
+    maskPassRunning++
+    maskPass = p.then(() => { maskPassRunning-- }, () => { maskPassRunning-- })
+  }
+  function scheduleNumberMask() {
+    trackMaskPass(new Promise<void>(resolve => setTimeout(() => { applyNumberMask().then(resolve, resolve) }, 0)))
+  }
+  // Rects for `url` in its own pixel space (w×h), or null when we can't place them (no capture data / unmatched).
+  function numberRectsFor(url: string, w: number, h: number): MaskRect[] | null {
+    const known = numberRectsByUrl.get(url)
+    if (known) return known
+    const g = numberGeoByUrl.get(url)
+    if (!g) return null
+    const rects = numberRectsToImage(g.geo, w, h, g.capture)
+    if (rects) numberRectsByUrl.set(url, rects)
+    return rects
+  }
+  // Swap a shot's pixels in place (same dimensions — the markup overlay stays valid) and tell the host.
+  function setShotPixels(index: number, url: string) {
+    screenshots[index] = url
+    screenshotCompressed[index] = callbacks.compressImage ? callbacks.compressImage(url) : Promise.resolve(url)
+    updateStrip()
+    try { callbacks.onShotReplaced?.(index, url, screenshotQuality[index]) } catch { /* host persistence best-effort */ }
+  }
+  // Apply the current Mask-numbers state to every shot that has capture data for it.
+  async function applyNumberMask() {
+    const seq = ++maskSeq
+    for (let i = 0; i < screenshots.length; i++) {
+      const url = screenshots[i]
+      if (!url) continue
+      if (!maskOn) {
+        const orig = unmaskedOf.get(url)
+        if (orig) setShotPixels(i, orig)
+        continue
+      }
+      if (unmaskedOf.has(url)) continue          // already masked
+      let masked = maskedOf.get(url)              // masked before, then toggled off → reuse
+      if (!masked) {
+        const res = await bakeMaskRects(url, (w, h) => numberRectsFor(url, w, h))
+        if (!res) continue                        // nothing to mask / can't place (upload, paste, shared screen)
+        masked = res.url
+        maskedOf.set(url, masked); unmaskedOf.set(masked, url)
+        numberRectsByUrl.set(masked, res.rects)
+      }
+      if (seq !== maskSeq) return                 // toggled again meanwhile — the newer pass owns the state
+      const idx = screenshots.indexOf(url)        // the shot may have moved / been removed while baking
+      if (idx >= 0) setShotPixels(idx, masked)
+    }
+  }
+
   // JTBD 1.9: re-capture a degraded thumbnail via the host's real-pixel path and swap it in place. The
   // host hides its own UI (launcher / composer) during onRetakeSharp so the composer isn't in the pixels.
   // Annotations for that image are dropped (a fresh image would misalign them) with a one-line notice.
@@ -2533,7 +2631,7 @@ export function buildModal(
     btn.classList.add('kl-loading')
     host.style.display = 'none' // keep the composer out of the real-pixel shot
     try {
-      const restore = maskOn ? maskNumbers(document.body) : null
+      const { restore, geo } = beginCapture()
       let result: CaptureResult | undefined
       // KLA-621: hand the ORIGINAL shot's provenance to the host so Retake redoes the SAME region/element
       // (pixel-perfect from the shared Snap frame) rather than a full-screen grab that loses the selection.
@@ -2541,6 +2639,7 @@ export function buildModal(
       finally { restore?.() }
       if (result) {
         const { dataUrl, quality } = normalizeCapture(result)
+        noteNumberGeo(dataUrl, geo, screenshotCapture[index])
         if (dataUrl) {
           screenshots[index] = dataUrl
           screenshotCompressed[index] = callbacks.compressImage ? callbacks.compressImage(dataUrl) : Promise.resolve(dataUrl)
@@ -3189,6 +3288,7 @@ export function buildModal(
     mrSubmitting = true; mrError = ''
     renderMultiReview()
     try {
+      if (maskPassRunning) await maskPass   // KD-3088: masked pixels must land before upload
       const shots = await Promise.all(screenshotCompressed.slice())
       // Every ticket carries the full walkthrough (its description names the issue's span). Ticket #1 also
       // carries everything already in the composer.
@@ -4298,6 +4398,7 @@ export function buildModal(
     if (inFlightFullRender) {
       await Promise.race([inFlightFullRender, Promise.resolve()])
     }
+    if (maskPassRunning) await maskPass   // KD-3088: a Mask-numbers pass still painting must land before the snapshot
     const compressedSnapshot = screenshotCompressed.slice()
     const annotationsSnapshot = buildAnnotationsPayload()
     const filesSnapshot = attachedFiles.slice()
@@ -4427,9 +4528,10 @@ export function buildModal(
     if (!callbacks.onCaptureViewport) return false
     let previewUrl: string | null = null
     // Phase 1 — fast viewport preview (awaited).
-    const restore = maskOn ? maskNumbers(document.body) : null
+    const { restore, geo } = beginCapture()
     try {
       const { dataUrl } = normalizeCapture(await callbacks.onCaptureViewport())
+      noteNumberGeo(dataUrl, geo, { kind: 'viewport' })
       if (dataUrl) {
         previewUrl = dataUrl
         capturing = false // a real preview is now shown — clear the "Capturing…" skeleton
@@ -4440,9 +4542,10 @@ export function buildModal(
     finally { restore?.() }
     // Phase 2 — full-page render in the background. Fire-and-forget; swap the preview for it when ready.
     const fullRenderP = (async () => {
-      const restore2 = maskOn ? maskNumbers(document.body) : null
+      const { restore: restore2, geo: geo2 } = beginCapture()
       try {
         const full = await callbacks.onCaptureFull()
+        noteNumberGeo(normalizeCapture(full).dataUrl, geo2, { kind: 'full' })
         if (previewUrl) swapPreviewForFull(previewUrl, full)
         else {
           capturing = false
@@ -4465,9 +4568,10 @@ export function buildModal(
   // a viewport capture; false when no onCaptureViewport is wired (caller falls back to onCaptureFull).
   async function captureViewportOnly(activeBtn: HTMLButtonElement | null): Promise<boolean> {
     if (!callbacks.onCaptureViewport) return false
-    const restore = maskOn ? maskNumbers(document.body) : null
+    const { restore, geo } = beginCapture()
     try {
       const { dataUrl, blank } = normalizeCapture(await callbacks.onCaptureViewport())
+      if (!blank) noteNumberGeo(dataUrl, geo, { kind: 'viewport' })
       if (blank && screenshots.length === 0) {
         // Declined-share / unrenderable page → a white PNG. Don't seed it; show the steer-to-Snap empty state.
         showBlankCaptureEmptyState()
@@ -4506,9 +4610,10 @@ export function buildModal(
       // background so the user is never stuck watching "Capturing…". Checked SYNCHRONOUSLY (no await before
       // the fallback) so the double-click guard still calls onCaptureFull exactly once in the classic path.
       if (callbacks.onCaptureViewport) { await captureViewportThenFull(fullBtn); return }
-      const restore = maskOn ? maskNumbers(document.body) : null
+      const { restore, geo } = beginCapture()
       try {
         const { dataUrl, quality, suggestSharp } = normalizeCapture(await callbacks.onCaptureFull())
+        noteNumberGeo(dataUrl, geo, { kind: 'full' })
         addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp); setActiveCapture(fullBtn)
       }
       finally { restore?.() }
@@ -4540,12 +4645,13 @@ export function buildModal(
     let added = false
     let declined = false
     try {
-      const restore = maskOn ? maskNumbers(document.body) : null
+      const { restore, geo } = beginCapture()
       let shot: CaptureResult | undefined
       try { shot = await capFn() }
       finally { restore?.() }
       if (shot) {
         const { dataUrl, quality } = normalizeCapture(shot)
+        noteNumberGeo(dataUrl, geo, { kind: opts?.viewport ? 'viewport' : 'full' })
         // KLA-621: tag the sharp shot's mode (viewport vs full-page) so Retake redoes the SAME mode.
         if (dataUrl) { addScreenshot(dataUrl, quality ?? 'real-pixel', undefined, true, false, { kind: opts?.viewport ? 'viewport' : 'full' }); setActiveCapture(sharpBtn); added = true; shareCaptureSucceeded = true /* snap-share-hint: they've shared once → stop nudging */ }
       }
@@ -4667,12 +4773,13 @@ export function buildModal(
         // Re-register the modal Esc handler now that the overlay is gone (success path).
         document.addEventListener('keydown', escHandler, { capture: true })
         try {
-          const restore = maskOn ? maskNumbers(document.body) : null
+          const { restore, geo } = beginCapture()
           let shot: CaptureResult | undefined
           try { shot = await callbacks.onRegionCapture!(rect) }
           finally { restore?.() }
           if (shot) {
             const { dataUrl, quality, suggestSharp } = normalizeCapture(shot)
+            noteNumberGeo(dataUrl, geo, { kind: 'region', rect })
             // KLA-621: tag with the region rect so Retake re-crops THIS area from a fresh Snap frame.
             if (dataUrl) { addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp, { kind: 'region', rect }); setActiveCapture(regionBtn) }
           }
@@ -4769,17 +4876,18 @@ export function buildModal(
       // XSS guards. See heroLogoHref + the #kl-hero-logo wiring in mountHeroAnnotator.
       `<a class="kl-hlogo" id="kl-hero-logo" target="_blank" rel="noopener" title="Powered by Klavity — visit klavity.in" aria-label="Klavity homepage (opens in a new tab)">${klavityMark}<span class="kl-hlogo-word">Klavity</span></a>` +
       `<span class="kl-hsep"></span>` +
-      t('pen', 'Pen', icon('pencil', { size: 15 }), 'p') +
-      t('line', 'Line', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/>'), 'l') +
+      // Tool hierarchy: Rectangle (the default) → Circle → Arrow → Text, then Pen / Line / Numbers.
       t('rect', 'Rectangle', icon('square', { size: 15 }), 'r') +
       t('circle', 'Circle', heroGlyph('<circle cx="12" cy="12" r="9"/>'), 'o') +
       t('arrow', 'Arrow', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>'), 'a') +
       t('text', 'Text', heroGlyph('<path d="M5 6h14M12 6v13M9 19h6"/>'), 't') +
+      t('pen', 'Pen', icon('pencil', { size: 15 }), 'p') +
+      t('line', 'Line', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/>'), 'l') +
       t('count', 'Numbers', heroGlyph('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>'), 'c') +
       `<span class="kl-hsep"></span>` +
       // Redaction group: the "Mask numbers" toggle (masks digits in fresh captures) now sits next to the
       // Pixelate brush + Crop — grouped with the other redact/edit tools so the logo owns the top-left.
-      `<label class="kl-hmask" title="Mask numbers in new screen captures"><input type="checkbox" class="kl-hmask-cb"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>` +
+      `<label class="kl-hmask" title="Black out numbers in your screenshots"><input type="checkbox" class="kl-hmask-cb"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>` +
       t('pixelate', 'Redact (pixelate)', heroGlyph('<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>'), 'b') +
       t('crop', 'Crop', heroGlyph('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), 'k') +
       `<span class="kl-hsep"></span>` +
@@ -5021,8 +5129,35 @@ export function buildModal(
       ;(cropStacks[index] ??= []).push({ snap: preSnap, mark })
       fireAnnChanged(index) // KLA-772: a crop rebases the overlay coords → re-persist it
       updateStrip()
+      carryNumberMaskThroughCrop(srcUrl, cropped, src.naturalWidth, src.naturalHeight, rx, ry, cc.width, cc.height)
     }
     src.src = srcUrl
+  }
+
+  // KD-3088: keep Mask numbers working after a crop — the cropped image inherits the number rects (shifted into
+  // its own pixel space), and a crop of a MASKED image also gets a matching crop of the original, so toggling
+  // masking off afterwards still restores readable numbers.
+  function carryNumberMaskThroughCrop(srcUrl: string, cropped: string, sw: number, sh: number, rx: number, ry: number, cw: number, ch: number) {
+    const shift = (rects: MaskRect[] | null): MaskRect[] => (rects || [])
+      .map(r => ({ x: Math.max(0, r.x - rx), y: Math.max(0, r.y - ry), w: Math.min(cw, r.x - rx + r.w) - Math.max(0, r.x - rx), h: Math.min(ch, r.y - ry + r.h) - Math.max(0, r.y - ry) }))
+      .filter(r => r.w > 0 && r.h > 0)
+    const rects = shift(numberRectsFor(srcUrl, sw, sh))
+    if (rects.length) numberRectsByUrl.set(cropped, rects)
+    const orig = unmaskedOf.get(srcUrl)
+    if (!orig) return
+    const o = new Image()
+    o.onload = () => {
+      const c = document.createElement('canvas')
+      c.width = cw; c.height = ch
+      const cx = c.getContext('2d')
+      if (!cx) return
+      cx.drawImage(o, rx, ry, cw, ch, 0, 0, cw, ch)
+      let origCropped: string
+      try { origCropped = c.toDataURL('image/png') } catch { return }
+      unmaskedOf.set(cropped, origCropped); maskedOf.set(origCropped, cropped)
+      if (rects.length) numberRectsByUrl.set(origCropped, rects)
+    }
+    o.src = orig
   }
 
   function mountHeroAnnotator(index: number) {
@@ -5061,7 +5196,7 @@ export function buildModal(
       // host in utm_source/utm_content can never break out of the attribute (this file's XSS discipline).
       const logoLink = tools.querySelector('#kl-hero-logo') as HTMLAnchorElement | null
       if (logoLink) logoLink.href = heroLogoHref(cfg.projectId)
-      let activeTool = 'pen'
+      let activeTool = 'rect' // default tool = Rectangle (hierarchy: rect → circle → arrow → text)
       let activeColor = '#ef4444'
       let textSize = 26
       let textOutline: 'black' | 'white' | 'none' = 'black'
@@ -5098,9 +5233,10 @@ export function buildModal(
         colorInput.addEventListener('change', applyCustom)
       }
       // Mask-numbers toggle now lives at the top of the editing toolbar (moved from the capture panel). It
-      // drives the same `maskOn` flag consumed by every capture path, so masking behaviour is unchanged.
+      // drives the same `maskOn` flag consumed by every capture path, AND (KD-3088) applies to the shots
+      // already taken: it used to only affect the NEXT capture, so toggling it while marking up did nothing.
       const maskCb = tools.querySelector('.kl-hmask-cb') as HTMLInputElement | null
-      if (maskCb) maskCb.addEventListener('change', () => { maskOn = maskCb.checked })
+      if (maskCb) maskCb.addEventListener('change', () => { maskOn = maskCb.checked; trackMaskPass(applyNumberMask()) })
       tools.querySelectorAll('[data-outline]').forEach(b => b.addEventListener('click', () => {
         textOutline = (b as HTMLElement).dataset.outline as 'black' | 'white' | 'none'
         tools.querySelectorAll<HTMLElement>('[data-outline]').forEach(el => el.classList.toggle('kl-on', el === b))
@@ -5429,13 +5565,17 @@ export function buildModal(
         }
         // #449: snapshot before adding so this shape becomes one undo step in the unified history.
         const isPixel = activeTool === 'pixelate' && Math.abs(pt.x - startX) > 4 && Math.abs(pt.y - startY) > 4
-        const willAdd = (activeTool === 'pen' && penPoints.length > 1) || activeTool === 'line' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'arrow' || isPixel
+        // Rectangle is now the default tool, so a plain click (no drag) must not drop an invisible 0×0 shape + an
+        // undo step. Line / rect / circle / arrow are added only after a real drag of a few pixels.
+        const dragged = Math.abs(pt.x - startX) > 3 || Math.abs(pt.y - startY) > 3
+        const isShape = (activeTool === 'line' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'arrow') && dragged
+        const willAdd = (activeTool === 'pen' && penPoints.length > 1) || isShape || isPixel
         if (willAdd) pushUndo(index)
         if (activeTool === 'pen' && penPoints.length > 1) annotator.addShape({ type: 'pen', color: activeColor, points: penPoints })
-        else if (activeTool === 'line') annotator.addShape({ type: 'line', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
-        else if (activeTool === 'rect') annotator.addShape({ type: 'rect', color: activeColor, x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
-        else if (activeTool === 'circle') annotator.addShape({ type: 'circle', color: activeColor, x: (startX + pt.x) / 2, y: (startY + pt.y) / 2, rx: Math.abs(pt.x - startX) / 2, ry: Math.abs(pt.y - startY) / 2 })
-        else if (activeTool === 'arrow') annotator.addShape({ type: 'arrow', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
+        else if (isShape && activeTool === 'line') annotator.addShape({ type: 'line', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
+        else if (isShape && activeTool === 'rect') annotator.addShape({ type: 'rect', color: activeColor, x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
+        else if (isShape && activeTool === 'circle') annotator.addShape({ type: 'circle', color: activeColor, x: (startX + pt.x) / 2, y: (startY + pt.y) / 2, rx: Math.abs(pt.x - startX) / 2, ry: Math.abs(pt.y - startY) / 2 })
+        else if (isShape && activeTool === 'arrow') annotator.addShape({ type: 'arrow', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
         else if (isPixel) annotator.addShape({ type: 'pixelate', x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
         persist()
       })
@@ -5500,10 +5640,10 @@ export function buildModal(
       toolbar.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px;background:#1e1e2e;flex-wrap:wrap;'
       const keyHint = (k: string) => `<span style="opacity:.45;margin-left:5px;font-size:11px;">${k}</span>`
       toolbar.innerHTML = `
-        <button data-tool="pen" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${icon('pencil', { size: 14 })} Pen</button>
         <button data-tool="rect" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${icon('square', { size: 14 })} Rect</button>
         <button data-tool="arrow" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">↗ Arrow</button>
         <button data-tool="text" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">T Text</button>
+        <button data-tool="pen" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${icon('pencil', { size: 14 })} Pen</button>
         <button data-color="#ef4444" style="background:#ef4444;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
         <button data-color="#f97316" style="background:#f97316;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
         <button data-color="#16a34a" style="background:#16a34a;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
