@@ -31529,8 +31529,25 @@
             const doAction = async (body) => {
               const isLabelOp = body.addLabelId !== undefined || body.removeLabelId !== undefined
               if (isLabelOp) {
+                // In-app confirm (klavConfirm), not the browser's native confirm() ("dev.klavity.in says …").
                 const n = _bulkSelected.size
-                if (!confirm(`${bulkActionLabel(body)} on ${n} ticket${n === 1 ? "" : "s"}?`)) return
+                const adding = body.addLabelId !== undefined
+                const lblId = adding ? body.addLabelId : body.removeLabelId
+                const lbl = labels.find(l => String(l.id) === String(lblId))
+                const lblName = lbl ? `"${lbl.name}"` : "this label"
+                const tickets = `${n} ticket${n === 1 ? "" : "s"}`
+                const ok = await klavConfirm({
+                  title: adding ? `Add label to ${tickets}?` : `Remove label from ${tickets}?`,
+                  message: adding
+                    ? `${lblName} will be added to the ${n === 1 ? "selected ticket" : `${n} selected tickets`}.`
+                    : `${lblName} will be removed from the ${n === 1 ? "selected ticket" : `${n} selected tickets`}.`,
+                  confirmText: adding ? "Add label" : "Remove label",
+                  danger: false,
+                  icon: adding ? "check-circle" : "x",
+                })
+                // These dropdowns are actions, not state: put them back on "+ add…" / "− remove…".
+                ;["#bulkAddLabel", "#bulkRemoveLabel"].forEach(s => { const el = bar.querySelector(s); if (el) el.value = "" })
+                if (!ok) return
               }
               // #704: label ops always take the blocking path (boardBulkOptimistic returns null for them).
               await applyBulkAction(projId, body, onDone, opts && opts.optimistic)
