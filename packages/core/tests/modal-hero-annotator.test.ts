@@ -24,8 +24,19 @@ describe('hero inline annotator', () => {
     expect(tools.querySelector('[data-tool="pen"]')).toBeTruthy()
     expect(tools.querySelector('[data-tool="rect"]')).toBeTruthy()
     expect(tools.querySelector('[data-tool="text"]')).toBeTruthy()
-    // pen is the default active tool
-    expect(tools.querySelector('[data-tool="pen"]')!.classList.contains('kl-on')).toBe(true)
+    // Rectangle is the default active tool (tool hierarchy: rect → circle → arrow → text)
+    expect(tools.querySelector('[data-tool="rect"]')!.classList.contains('kl-on')).toBe(true)
+    expect(tools.querySelector('[data-tool="pen"]')!.classList.contains('kl-on')).toBe(false)
+    c.close()
+  })
+
+  it('orders the drawing tools by priority: Rectangle, Circle, Arrow, Text first', async () => {
+    const c = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
+    c.addScreenshot(PNG)
+    await new Promise(r => setTimeout(r, 0))
+    const order = Array.from(c.shadowRoot.querySelectorAll<HTMLElement>('#klavity-hero-tools [data-tool]')).map(b => b.dataset.tool)
+    expect(order.slice(0, 4)).toEqual(['rect', 'circle', 'arrow', 'text'])
+    expect(order).toContain('pen')   // still available, just lower in the hierarchy
     c.close()
   })
 
