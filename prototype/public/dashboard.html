@@ -2,6 +2,7 @@
 <html lang="en">
 
 <head>
+  <script src="/project-history.js"></script>
   <script type="text/javascript">
     (function (c, l, a, r, i, t, y) {
       c[a] = c[a] || function () { (c[a].q = c[a].q || []).push(arguments) };
@@ -21215,6 +21216,9 @@
       if (data.active && data.active.id) {
         if (!superseded) swrWrite(dashCacheKey(data.active.id), data)
         try { localStorage.setItem(DASH_LAST_KEY, data.active.id) } catch (e) { }
+        // KD-3089: a bare /dashboard resolves its project here, not from the URL — record it as this tab's selected
+        // project so /project-history.js knows which project Back must not leave.
+        try { if (!activeProjectParam() && window.klavNoteProject) window.klavNoteProject(data.active.id) } catch (e) { }
         // KLAVITYKLA-299: silently update the URL so it reflects the active project even when
         // the user landed on /dashboard without a ?project= param (bookmarkable; back/forward safe).
         // KLAVITYKLA-187 fix: keep the CURRENT path (e.g. /sim/new) and its other query params —
@@ -35841,6 +35845,9 @@
                 // Skipped on the very FIRST (initial-load) call, which runs BEFORE the boot deep-link open, so a
                 // legitimate ?ticket= deep link still opens on load.
                 if (window.__klavSetViewReady && v !== 'tickets') window.__klavDeepLinkNavAway = true;
+                // KD-3089: a user navigation between views gets its own history entry so browser Back/Forward move
+                // between views inside a project. The boot call and a Back/Forward-driven call only rewrite the URL.
+                var _pushView = !!window.__klavSetViewReady && !window.__klavViewFromPop;
                 window.__klavSetViewReady = true;
                 // KLA-563: if the dedicated ticket page is open and we're leaving Tickets (via the sidebar — the page
                 // has no scrim, unlike the panel), tear it down so returning to Tickets shows the board, not a stale
@@ -35869,7 +35876,10 @@
                   if (v !== 'tickets') _u.searchParams.delete('ticket');
                   // KD-2255: the Projects & Test Cases sub-tab's state belongs to the AutoSims view only.
                   if (v !== 'autosims') ['asp', 'asp_tc', 'asp_tab'].forEach(function (k) { _u.searchParams.delete(k) });
-                  history.replaceState(null, '', v === 'overview' ? (_u.pathname + _u.search) : (_u.pathname + _u.search + '#' + v));
+                  var _viewUrl = v === 'overview' ? (_u.pathname + _u.search) : (_u.pathname + _u.search + '#' + v);
+                  // KD-3089: push only when the address actually changes (re-selecting the same view adds nothing).
+                  if (_pushView && _viewUrl !== location.pathname + location.search + location.hash) history.pushState(null, '', _viewUrl);
+                  else history.replaceState(null, '', _viewUrl);
                 } catch (e) { }
                 window.scrollTo(0, 0);
                 if (v === 'triage') { if (typeof renderTriage === 'function') renderTriage(); }
@@ -35913,6 +35923,17 @@
               }
               window.setView = setView;
               window.klavSetView = setView; // exposed so card-go buttons (onclick="setView(...)") and inline handlers can call it
+              // KD-3089: browser Back/Forward between view entries shows that view again. Ticket entries (state.tkt, /t/…)
+              // are left to the ticket handler; an entry whose view is already showing (e.g. ?ticket= panels) is a no-op.
+              window.addEventListener('popstate', function (ev) {
+                if (ev && ev.state && ev.state.tkt) return;
+                if (/^\/t\//.test(location.pathname)) return;
+                var hv = String(location.hash || '').replace(/^#/, '').split('/')[0].split('?')[0] || 'overview';
+                if (VIEWS.indexOf(hv) < 0) hv = 'overview';
+                if (hv === document.body.getAttribute('data-view')) return;
+                window.__klavViewFromPop = true;
+                try { setView(hv); } finally { window.__klavViewFromPop = false; }
+              });
               // #677: collapsible sidebar (icon rail) — toggle body.side-collapsed and persist the preference.
               (function () {
                 var KEY = 'klav-side-collapsed';
