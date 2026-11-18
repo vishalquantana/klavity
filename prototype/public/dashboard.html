@@ -25062,9 +25062,15 @@
             const sim = (state.sims || []).find(function (x) { return x.id === simId })
             if (!pid || !sim) return
             if (!makeActive) {
+              // KD-2880: name exactly what is affected — the Sim, in quotes (a bare "Deactivate Test 2?" reads like a
+              // project), and the project it belongs to.
+              const simName = String(sim.name || "").trim() || "this Sim"
+              const projName = String((state && state.active && state.active.name) || "").trim()
               const ok = await klavConfirm({
-                title: "Deactivate " + sim.name + "?",
-                message: sim.name + " will stop running for everyone on this project and won't appear in the widget or extension. Their history stays, and you can activate them again any time.",
+                title: "Deactivate Sim “" + simName + "”?",
+                message: "The Sim “" + simName + "” will stop running for everyone on " +
+                  (projName ? "the project “" + projName + "”" : "this project") +
+                  " and won't appear in the widget or extension. Its history stays, and you can activate it again any time.",
                 confirmText: "Deactivate",
                 danger: false,
               })
