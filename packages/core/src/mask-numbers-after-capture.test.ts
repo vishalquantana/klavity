@@ -3,6 +3,7 @@
 // These cover the pure pieces: where the numbers were at capture time, and mapping them onto the image.
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { collectNumberRects, numberRectsToImage, type NumberGeo } from './mask-numbers'
+import { buildModal } from './modal'
 
 const geo = (over: Partial<NumberGeo> = {}): NumberGeo => ({
   rects: [{ x: 100, y: 50, w: 40, h: 20 }],
@@ -44,6 +45,78 @@ describe('numberRectsToImage', () => {
     expect(r).toHaveLength(1)
     expect(r[0].x + r[0].w).toBe(1000)
     expect(r[0].y + r[0].h).toBe(800)
+  })
+})
+
+describe('collectNumberRects — numbers hidden behind another page element are skipped', () => {
+  afterEach(() => { delete (document as any).elementsFromPoint; document.body.innerHTML = '' })
+  function setupPage() {
+    document.body.innerHTML = '<header id="bar">Menu</header><p id="n">Total 42</p><div data-klavity-ui="composer"></div>'
+    ;(Range.prototype as any).getClientRects = function () { return [{ left: 100, top: 10, width: 20, height: 10 }] }
+    return { bar: document.getElementById('bar')!, owner: document.getElementById('n')!, ui: document.querySelector('[data-klavity-ui]')! }
+  }
+  it('fully covered by a page element (e.g. scrolled under a sticky header) → no box', () => {
+    const { bar } = setupPage()
+    ;(document as any).elementsFromPoint = () => [bar]
+    expect(collectNumberRects(document.body).rects).toHaveLength(0)
+  })
+  it('partly visible (one corner shows) → still masked', () => {
+    const { bar, owner } = setupPage()
+    let n = 0
+    ;(document as any).elementsFromPoint = () => (n++ === 4 ? [owner] : [bar])
+    expect(collectNumberRects(document.body).rects).toHaveLength(1)
+  })
+  it('covered only by Klavity UI → still masked (privacy-first)', () => {
+    const { ui, owner } = setupPage()
+    ;(document as any).elementsFromPoint = () => [ui, owner]
+    expect(collectNumberRects(document.body).rects).toHaveLength(1)
+  })
+})
+
+describe('numberRectsToImage — full-page + viewport edge cases', () => {
+  it('a full-page shot maps by width even when a very tall page was height-clamped', () => {
+    const r = numberRectsToImage(geo({ dh: 20000, rects: [{ x: 100, y: 50, w: 40, h: 20 }] }), 1000, 8000, { kind: 'full' })!
+    expect(r).toHaveLength(1)
+    expect(r[0].y).toBe(48)
+  })
+
+  it('a fixed (pinned) element lands at its on-screen spot at the TOP of a full-page shot', () => {
+    const g = geo({ sy: 900, rects: [{ x: 10, y: 20, w: 30, h: 10, fixed: true }, { x: 10, y: 20, w: 30, h: 10 }] })
+    const r = numberRectsToImage(g, 1000, 3000, { kind: 'full' })!
+    expect(r[0].y).toBe(18)            // fixed: no scroll offset
+    expect(r[1].y).toBe(900 + 20 - 2)  // normal: scrolled document position
+  })
+
+  it('a viewport shot whose shape does not match the viewport (whole screen shared) is not guessed', () => {
+    expect(numberRectsToImage(geo(), 1920, 1080, { kind: 'viewport' })).toBeNull()
+  })
+})
+
+describe('the live page is never modified for masking', () => {
+  it('capturing with Mask numbers ON leaves the page untouched, and ticking never re-captures', async () => {
+    document.body.innerHTML = '<main><p id="price">Total: 4521 items</p></main>'
+    const pageDuringCapture: string[] = []
+    const onCaptureFull = vi.fn(async () => {
+      pageDuringCapture.push(document.getElementById('price')!.innerHTML)
+      return { dataUrl: 'data:image/png;base64,T1JJRw==', quality: 'rendered' as const }
+    })
+    const c = buildModal('bug', {
+      onCaptureFull,
+      onClose: vi.fn(),
+      onSubmit: vi.fn().mockResolvedValue({ issueKey: 'KLA-1', issueUrl: '' }),
+    } as any, { theme: 'light', maskNumbers: true } as any)
+    const root = c.shadowRoot
+    ;(root.getElementById('klavity-full') as HTMLButtonElement).click()
+    await vi.waitFor(() => expect(root.querySelector('.klavity-thumb img')).toBeTruthy())
+    expect(pageDuringCapture).toEqual(['Total: 4521 items'])   // no black boxes on the real page
+    expect(document.querySelector('#price span')).toBeNull()
+
+    const cb = root.querySelector('.kl-hmask-cb') as HTMLInputElement
+    cb.checked = false; cb.dispatchEvent(new Event('change'))
+    cb.checked = true; cb.dispatchEvent(new Event('change'))
+    await new Promise(r => setTimeout(r, 20))
+    expect(onCaptureFull).toHaveBeenCalledTimes(1)              // masking is painted on the image, never re-captured
+    expect(document.getElementById('price')!.innerHTML).toBe('Total: 4521 items')
   })
 })
 

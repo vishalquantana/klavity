@@ -3,7 +3,7 @@ import { Annotator, renderAnnotatedImage, extractAnnotationTexts } from './annot
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
 import { VoiceInput, LiveDictation, StreamingDictation, pickDictationMode, joinSpeechSegments, formatSpeechFinal } from './voice-input'
-import { maskNumbers, collectNumberRects, numberRectsToImage, bakeMaskRects, type NumberGeo, type MaskRect } from './mask-numbers'
+import { collectNumberRects, numberRectsToImage, bakeMaskRects, type NumberGeo, type MaskRect } from './mask-numbers'
 import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit, suppressesAutoCapturedAsk } from './report-clarity'
 import { safeRemove } from './safe-remove'
 import { klavityAttributionUrl } from './attribution'
@@ -2541,15 +2541,33 @@ export function buildModal(
     if (fireAdded) { try { callbacks.onShotAdded?.(dataUrl, quality) } catch { /* host persistence best-effort */ } }
   }
 
-  // KD-3088: start a capture. With masking ON the page's digits are masked in the DOM for the capture (as
-  // before); with it OFF we record where the digits are instead, so masking can still be applied afterwards.
+  // KD-3088: start a capture. The page the user is looking at is NEVER modified for masking — masking happens
+  // only in the screenshot image (the old in-page masking flashed black boxes on the live page, very visibly on
+  // a Screen capture, which films the real screen). Nothing to set up any more; kept as the capture hook.
   function beginCapture(): { restore: (() => void) | null; geo: NumberGeo | null } {
-    let geo: NumberGeo | null = null
-    if (!maskOn) { try { geo = collectNumberRects(document.body) } catch { geo = null } }
-    return { restore: maskOn ? maskNumbers(document.body) : null, geo }
+    return { restore: null, geo: null }
   }
-  function noteNumberGeo(dataUrl: string | undefined, geo: NumberGeo | null, capture?: ShotCapture) {
-    if (dataUrl && geo && geo.rects.length) numberGeoByUrl.set(dataUrl, { geo, capture })
+  // Record where the page's numbers are for a shot that was JUST captured. Measured AFTER the capture so it sees
+  // the same layout the capture did — a Screen share adds Chrome's "sharing this tab" bar, which shifts the page,
+  // and measuring before that put the boxes above/below the numbers. If Mask numbers is on, mask it right away.
+  function noteNumberGeo(dataUrl: string | undefined, _unused: NumberGeo | null, capture?: ShotCapture) {
+    if (!dataUrl) return
+    try {
+      const geo = collectNumberRects(document.body)
+      if (geo.rects.length) numberGeoByUrl.set(dataUrl, { geo, capture })
+    } catch { /* unmeasurable page — the shot just can't be masked */ }
+    if (maskOn) scheduleNumberMask()
+  }
+  // Run a mask pass once the caller has put the new shot in place (it does so synchronously right after this).
+  // Submit awaits `maskPass`, so a just-captured shot can never be uploaded before its numbers are masked.
+  let maskPass: Promise<void> = Promise.resolve()
+  let maskPassRunning = 0   // submit only waits when a pass is actually in flight (no extra tick otherwise)
+  function trackMaskPass(p: Promise<void>) {
+    maskPassRunning++
+    maskPass = p.then(() => { maskPassRunning-- }, () => { maskPassRunning-- })
+  }
+  function scheduleNumberMask() {
+    trackMaskPass(new Promise<void>(resolve => setTimeout(() => { applyNumberMask().then(resolve, resolve) }, 0)))
   }
   // Rects for `url` in its own pixel space (w×h), or null when we can't place them (no capture data / unmatched).
   function numberRectsFor(url: string, w: number, h: number): MaskRect[] | null {
@@ -3261,6 +3279,7 @@ export function buildModal(
     mrSubmitting = true; mrError = ''
     renderMultiReview()
     try {
+      if (maskPassRunning) await maskPass   // KD-3088: masked pixels must land before upload
       const shots = await Promise.all(screenshotCompressed.slice())
       // Every ticket carries the full walkthrough (its description names the issue's span). Ticket #1 also
       // carries everything already in the composer.
@@ -4370,6 +4389,7 @@ export function buildModal(
     if (inFlightFullRender) {
       await Promise.race([inFlightFullRender, Promise.resolve()])
     }
+    if (maskPassRunning) await maskPass   // KD-3088: a Mask-numbers pass still painting must land before the snapshot
     const compressedSnapshot = screenshotCompressed.slice()
     const annotationsSnapshot = buildAnnotationsPayload()
     const filesSnapshot = attachedFiles.slice()
@@ -5206,7 +5226,7 @@ export function buildModal(
       // drives the same `maskOn` flag consumed by every capture path, AND (KD-3088) applies to the shots
       // already taken: it used to only affect the NEXT capture, so toggling it while marking up did nothing.
       const maskCb = tools.querySelector('.kl-hmask-cb') as HTMLInputElement | null
-      if (maskCb) maskCb.addEventListener('change', () => { maskOn = maskCb.checked; void applyNumberMask() })
+      if (maskCb) maskCb.addEventListener('change', () => { maskOn = maskCb.checked; trackMaskPass(applyNumberMask()) })
       tools.querySelectorAll('[data-outline]').forEach(b => b.addEventListener('click', () => {
         textOutline = (b as HTMLElement).dataset.outline as 'black' | 'white' | 'none'
         tools.querySelectorAll<HTMLElement>('[data-outline]').forEach(el => el.classList.toggle('kl-on', el === b))
