@@ -4198,6 +4198,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   // pages (which read window.KLAV_ICONS via kit.js). Without this route the script 404s and every page
   // throws "kicon is not defined".
   if (req.method === "GET" && path === "/icons.generated.js") return new Response(Bun.file(PUB + "/icons.generated.js"), { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=3600" } })
+  // KD-3089: stops browser Back from crossing a project switch (loaded first in <head> of every project-scoped page).
+  if (req.method === "GET" && path === "/project-history.js") return new Response(Bun.file(PUB + "/project-history.js"), { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } })
   // ── self-hosted fonts (replaces Google Fonts CDN; same-origin under default-src 'self') ──
   if (req.method === "GET" && path === "/fonts/fonts.css") return new Response(Bun.file(SITE + "/fonts/fonts.css"), { headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public, max-age=31536000, immutable" } })
   // ── shared design tokens (canonical token set, sourced from the dashboard) ──
@@ -12637,7 +12639,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json(
           { email: me, projects, active: activeOut, members, contacts, sims, saying, simFeedback, tickets, activity, counts, insights, widgetStatus, hasTranscriptSim, hasSimReaction },
           200,
-          { "Set-Cookie": projectCookie(projectId, SECURE) },
+          // KD-3089: no-store — a Back/Forward page load otherwise reused a cached copy (no request), so this Set-Cookie
+          // never re-ran and the server-side project could disagree with the page on screen.
+          { "Set-Cookie": projectCookie(projectId, SECURE), "Cache-Control": "no-store" },
         )
       } catch (e: any) {
         return json(oops(e, "dashboard"), 500)
