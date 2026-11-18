@@ -30731,9 +30731,22 @@
           function syncFilterDropdownsFromState() {
             if (typeof updateAllTktMultiSelects === "function") updateAllTktMultiSelects()
           }
+          // Single source of truth for "is any ticket filter applied?" — drives the "Clear filters" button.
+          // Every path that changes _tktFilters (dropdowns, quick chips, Clear, URL load) must call
+          // syncTktClearBtn(); the chips used to skip it, so "All" left a stale "Clear filters" visible.
+          function hasActiveTktFilters() {
+            const f = _tktFilters || {}
+            const any = v => Array.isArray(v) ? v.length > 0 : !!v
+            return any(f.status) || any(f.priority) || any(f.label) || any(f.assignee) || any(f.source) || !!(f.search && String(f.search).trim())
+          }
+          function syncTktClearBtn() {
+            const fbClear = document.getElementById("fbClearBtn")
+            if (fbClear) fbClear.classList.toggle("hide", !hasActiveTktFilters())
+          }
           function applyQuickChip(q) {
             _tktQuick = q
             tktQuickToFilters(q)
+            syncTktClearBtn()
             _tktListState.page = 1
             syncFilterDropdownsFromState()
             syncTicketFiltersToUrl()
@@ -30854,16 +30867,7 @@
           }
 
           function onTktFilterUpdated() {
-            const fbClear = document.getElementById("fbClearBtn")
-            const hasFilter = (
-              (_tktFilters.status && _tktFilters.status.length > 0) ||
-              (_tktFilters.priority && _tktFilters.priority.length > 0) ||
-              (_tktFilters.label && _tktFilters.label.length > 0) ||
-              (_tktFilters.assignee && _tktFilters.assignee.length > 0) ||
-              (_tktFilters.source && _tktFilters.source.length > 0) ||
-              !!_tktFilters.search
-            )
-            if (fbClear) fbClear.classList.toggle("hide", !hasFilter)
+            syncTktClearBtn()
             _tktListState.page = 1
             _tktQuick = deriveQuickFromFilters()
             renderQuickChips()
@@ -30964,15 +30968,7 @@
 
             const searchEl = document.getElementById("kanbanSearch")
             if (searchEl) searchEl.value = _tktFilters.search
-            const hasFilter = (
-              (_tktFilters.status && _tktFilters.status.length > 0) ||
-              (_tktFilters.priority && _tktFilters.priority.length > 0) ||
-              (_tktFilters.label && _tktFilters.label.length > 0) ||
-              (_tktFilters.assignee && _tktFilters.assignee.length > 0) ||
-              (_tktFilters.source && _tktFilters.source.length > 0) ||
-              !!_tktFilters.search
-            )
-            fbClear.classList.toggle("hide", !hasFilter)
+            syncTktClearBtn()
 
             // View toggle
             if (listBtn) listBtn.addEventListener("click", () => { _tktView = "list"; listBtn.classList.add("active"); boardBtn && boardBtn.classList.remove("active"); renderTicketsView() })
@@ -32197,6 +32193,7 @@
               if (si) {
                 si.addEventListener("input", () => {
                   _tktFilters.search = si.value.trim()
+                  syncTktClearBtn()
                   _tktListState.page = 1
                   syncTicketFiltersToUrl()
                   clearTimeout(_tktSearchTimer)
@@ -39238,24 +39235,36 @@
               return reason
             }
             function fmtSec(sec) { var m = Math.floor(sec / 60), s = sec % 60; return m ? m + "m" + (s ? " " + s + "s" : "") : s + "s" }
-            // KD-2255: while an AutoSim is being created, the form's Create AutoSim + Cancel are locked; the run's
-            // own Cancel (in the progress box) is the way out. Unlocked again when the run ends.
+            // KD-2255: while an AutoSim is being created, Create AutoSim is hidden (a disabled button still looked
+            // clickable). Cancel stays: it is the ONLY way to close the dialog (the backdrop no longer closes it),
+            // and while a run is in progress it asks first, then stops the run (requestCloseNtDialog).
             function ntBusy(on) {
-              // Hidden (not just disabled - a disabled button still looked clickable) while the run is in progress.
-              ;[document.getElementById("ntGo"), document.getElementById("ntCancel")].forEach(function (b) {
-                if (b) { b.disabled = !!on; b.style.display = on ? "none" : "" }
-              })
+              var go = document.getElementById("ntGo")
+              if (go) { go.disabled = !!on; go.style.display = on ? "none" : "" }
+              var cancel = document.getElementById("ntCancel")
+              if (cancel) { cancel.disabled = false; cancel.style.display = "" }
             }
+            // The AutoSim this dialog is watching while it runs (null once it finished / nothing started).
+            var ntRunningSessionId = null
+            // Each pollAuthor loop owns a generation; closing the dialog or starting a new poll bumps it so an
+            // older loop stops instead of writing into the (hidden or reused) progress box.
+            var ntPollGen = 0
             async function pollAuthor(sessionId, box) {
+              var myGen = ++ntPollGen
+              ntRunningSessionId = sessionId
               var ntFailCount = 0
               var ntCancelling = false   // survives the 2s re-render, so the button can't snap back to "Cancel"
               ntBusy(true)
               for (var i = 0; i < 200; i++) {
                 await new Promise(function (res) { setTimeout(res, 2000) })
+                if (myGen !== ntPollGen) return
                 var r; try { r = await fetch("/api/trails/author/" + sessionId + projQ()) } catch (e) { ntFailCount++; if (ntFailCount < 6) { await new Promise(function (res) { setTimeout(res, ntFailCount * 1000) }); continue } break }
+                if (myGen !== ntPollGen) return
                 if (!r.ok) { if (r.status === 401) { location.href = "/login"; break } ntFailCount++; if (ntFailCount < 6) continue; break }
                 ntFailCount = 0
-                var s = await r.json(); var html = (s.steps || []).map(function (st) { return stepLine(st, sessionId) }).join("")
+                var s = await r.json(); if (myGen !== ntPollGen) return
+                if (s.status !== "running") ntRunningSessionId = null
+                var html = (s.steps || []).map(function (st) { return stepLine(st, sessionId) }).join("")
                 if (s.status === "running") {
                   var ntElapsed = s.createdAt ? fmtSec(Math.floor((Date.now() - s.createdAt) / 1000)) : "";
                   var ntLimit = s.limitMs ? fmtSec(Math.round(s.limitMs / 1000)) : "";
@@ -39311,6 +39320,8 @@
                 if (ntD) { ntD.addEventListener("click", function () { openDraftReview(s.trailId) }) }
                 document.getElementById("ntGo").disabled = false; return
               }
+              if (myGen !== ntPollGen) return
+              ntRunningSessionId = null
               ntBusy(false)
               var stallDiv = document.createElement("div"); stallDiv.className = "nt-stall"
               stallDiv.textContent = "Timed out — the AutoSim may still be running. Reopen this page shortly."
@@ -39353,7 +39364,29 @@
               document.getElementById("ntProgress").innerHTML = ""
               document.getElementById("ntBg").classList.add("show")
             }
+            // Cancel button: the only way to close the New AutoSim dialog. If an AutoSim is running, warn first —
+            // closing stops it (otherwise it kept running unseen and blocked the next "Create AutoSim" with
+            // "An AutoSim is already running").
+            async function requestCloseNtDialog() {
+              var sid = ntRunningSessionId
+              if (!sid) { closeNtDialog(); return }
+              var ok = await klavConfirm({
+                title: "Stop this AutoSim?",
+                message: "An AutoSim is still running. Closing this window will stop it.",
+                confirmText: "Stop and close",
+                cancelText: "Keep running",
+                icon: "x",
+              })
+              if (!ok) return
+              if (ntRunningSessionId === sid) {
+                try { await fetch("/api/trails/author/" + encodeURIComponent(sid) + "/cancel" + projQ(), { method: "POST" }) } catch (e) { }
+              }
+              closeNtDialog()
+            }
             function closeNtDialog() {
+              ntPollGen++; ntRunningSessionId = null   // stop this dialog's poll loop
+              if (typeof stopAuthorLive === "function") stopAuthorLive()
+              ntBusy(false)
               document.getElementById("ntBg").classList.remove("show")
               // Back on the test case page → refresh so the new AutoSim shows up there.
               if (ntTestCaseId && window.klavAsp) window.klavAsp.refresh()
@@ -39787,7 +39820,7 @@
               })
               // new trail button & modal
               document.getElementById("newTrailBtn").addEventListener("click", openWizard)
-              document.getElementById("ntCancel").addEventListener("click", closeNtDialog)
+              document.getElementById("ntCancel").addEventListener("click", requestCloseNtDialog)
               document.getElementById("ntGo").addEventListener("click", async function () {
                 var btn = this; ntBusy(true)
                 var box = document.getElementById("ntProgress"); box.innerHTML = '<div class="nt-live">Starting AutoSim…</div>'
@@ -39803,7 +39836,8 @@
                   ntBusy(false)
                 }
               })
-              document.getElementById("ntBg").addEventListener("click", function (e) { if (e.target === this) closeNtDialog() })
+              // Clicking outside the card does NOT close it (it used to, silently leaving the AutoSim running in
+              // the background). Close only via Cancel → requestCloseNtDialog (warns while a run is in progress).
 
               // kick off data load
               loadAccounts(); load(); loadExpectations(); reattachActiveAuthorSession(); loadResumableDrafts()
