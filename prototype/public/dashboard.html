@@ -4914,7 +4914,23 @@
       min-width: 170px;
       max-height: 260px;
       overflow-y: auto;
-      z-index: 60
+      z-index: 60;
+      /* Slim scrollbar (no arrow buttons) instead of the chunky OS default. */
+      scrollbar-width: thin;
+      scrollbar-color: var(--line) transparent
+    }
+
+    .bulk-kdd .kdd-menu::-webkit-scrollbar {
+      width: 4px
+    }
+
+    .bulk-kdd .kdd-menu::-webkit-scrollbar-button {
+      display: none
+    }
+
+    .bulk-kdd .kdd-menu::-webkit-scrollbar-thumb {
+      background: var(--line);
+      border-radius: 4px
     }
 
     .bulk-kdd .kdd-item {
