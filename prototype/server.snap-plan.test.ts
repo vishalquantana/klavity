@@ -321,6 +321,15 @@ test("POST /api/projects/:id/sim-matches/:mid/confirm is 402 snap_locked once Sn
   expect(body.code).toBe("snap_locked")
 })
 
+// KD-3121: the Sims Studio (/app) is a Sims feature — a Snap-only project is redirected to the upgrade prompt.
+test("GET /app redirects to the upgrade prompt once Snap-locked", async () => {
+  const r = await fetch(`${BASE}/app?project=${PROJ}`, { headers: withSess(ADMIN_SESS), redirect: "manual" })
+  expect(r.status).toBe(302)
+  const loc = r.headers.get("location") || ""
+  expect(loc).toContain("/dashboard?upgrade=pro")
+  expect(loc).toContain(PROJ)
+})
+
 test("a ticket/Snap read endpoint is NOT gated by the Snap lock", async () => {
   const r = await getTickets(ADMIN_SESS)
   expect(r.status).toBe(200)
@@ -334,4 +343,9 @@ test("clearing the override restores access", async () => {
 
   const r = await createSim(ADMIN_SESS)
   expect(r.status).toBe(201)
+})
+
+test("GET /app serves the studio again after the override is cleared", async () => {
+  const r = await fetch(`${BASE}/app?project=${PROJ}`, { headers: withSess(ADMIN_SESS), redirect: "manual" })
+  expect(r.status).toBe(200)
 })

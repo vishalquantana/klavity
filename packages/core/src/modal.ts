@@ -1,13 +1,14 @@
 import type { ReportType, IssueKind, ReportFileAttachment, ReportRecording, Shape } from './types'
-import { Annotator, renderAnnotatedImage, extractAnnotationTexts } from './annotator'
+import { Annotator, renderAnnotatedImage, extractAnnotationTexts, cloneShape, translateShape, resizeShape, type Handle, type Box } from './annotator'
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
 import { VoiceInput, LiveDictation, StreamingDictation, pickDictationMode, joinSpeechSegments, formatSpeechFinal } from './voice-input'
-import { maskNumbers } from './mask-numbers'
+import { collectNumberRects, numberRectsToImage, bakeMaskRects, type NumberGeo, type MaskRect } from './mask-numbers'
 import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit, suppressesAutoCapturedAsk } from './report-clarity'
 import { safeRemove } from './safe-remove'
 import { klavityAttributionUrl } from './attribution'
 import { createSharePickerHint, shareCaptureLikelyGranted } from './share-hint'
+import { LARGE_FILE_MAX_BYTES, needsLargeUpload } from './large-upload'
 // Re-export so the widget/launcher (which already imports from '@klavity/core/modal') can build the same hint.
 export { createSharePickerHint, shareCaptureLikelyGranted } from './share-hint'
 import {
@@ -117,6 +118,14 @@ export interface SplitIssueLike {
   narration?: string
 }
 
+// The "Report Multiple Issues" review state, JSON-safe, so a host can keep it across minimize / navigation.
+// `items` are the reporter's current tickets (edits + selections), `original` the AI's untouched list (Back
+// restores it). Thumbnails are not stored (re-grabbed from the clip on restore); `pendingEnhance` marks an
+// item whose AI write-up was still in flight when the snapshot was taken (re-run on restore).
+export interface MultiIssueSnapshotItem extends SplitIssueLike { id: string; selected: boolean; edited?: boolean; pendingEnhance?: boolean }
+// `reviewOpen`: the "AI Analysis Complete" review was on screen — Resume reopens it there, not on the composer.
+export interface MultiIssuesSnapshot { recordingId: string; items: MultiIssueSnapshotItem[]; original: MultiIssueSnapshotItem[] | null; reviewOpen?: boolean }
+
 // KD-995 "Report Multiple Issues": the review screen speaks High/Medium/Low; tickets carry P1/P2/P3 + C1/C2/C3.
 const MULTI_PRIORITIES = [
   { label: 'High', priority: 'P1', severity: 'C1' },
@@ -186,6 +195,27 @@ export function grabVideoFrame(src: string, atSec: number, maxW = 960, timeoutMs
     }
     try { v.src = src } catch { finish(null) }
   })
+}
+
+// KD-3080: frames sampled evenly across a walkthrough so the split analysis SEES the screens the reporter is
+// talking about (page names, labels, visible values, error text) instead of working from the narration alone.
+// One frame per ~10s, 2..SPLIT_FRAME_MAX. Best-effort: stops at the first frame that can't be decoded.
+export const SPLIT_FRAME_MAX = 8
+export type SplitFrame = { atSec: number; dataUrl: string }
+export function splitFrameTimes(durationSec: number, max = SPLIT_FRAME_MAX): number[] {
+  const d = Number(durationSec)
+  if (!isFinite(d) || d <= 0) return []
+  const n = Math.max(2, Math.min(max, Math.ceil(d / 10)))
+  return Array.from({ length: n }, (_, i) => Math.round(((i + 0.5) * d / n) * 10) / 10)
+}
+export async function sampleSplitFrames(src: string, durationSec: number): Promise<SplitFrame[]> {
+  const out: SplitFrame[] = []
+  for (const atSec of splitFrameTimes(durationSec)) {
+    const dataUrl = await grabVideoFrame(src, atSec, 768, 4000)
+    if (!dataUrl) break
+    out.push({ atSec, dataUrl })
+  }
+  return out
 }
 
 // KD-995: a split issue's card description — the Enhance layout when the issue carries a draft, else its
@@ -521,7 +551,9 @@ export interface ModalCallbacks {
   // transcribes it and returns each distinct issue the reporter narrated. With 2+ issues the composer shows an
   // editable review panel; on Submit the main ticket becomes issue #1 (it keeps the video + screenshots) and each
   // other ticked issue is filed through onSubmit as its own ticket. null / 0-1 issues → nothing changes.
-  onSplitRecording?: (audio: Blob, ctx?: { text?: string }) => Promise<SplitIssueLike[] | null>
+  // KD-3080: ctx.frames are screenshots sampled across the clip (with their timestamps) for the host to forward,
+  // so the analysis is grounded in what was on screen, not only in the narration.
+  onSplitRecording?: (audio: Blob, ctx?: { text?: string; frames?: SplitFrame[] }) => Promise<SplitIssueLike[] | null>
   onSubmit: (payload: {
     // Coarse report type kept for back-compat consumers (extension/message protocol) — always a valid
     // ReportType. For Task/Query this is 'bug' (they are bug-like, non-feature); the precise value is `kind`.
@@ -583,6 +615,10 @@ export interface ModalCallbacks {
   // (100MB). Raise per plan later. When a file exceeds it the composer shows a friendly, role-aware CTA —
   // it never silently drops the file (enforced per-workspace QUOTA + billing is KLA-594 fast-follow).
   maxFileBytes?: number
+  // Large-file uploads (core/large-upload.ts): the host's submit uploads files over the single-request caps in
+  // chunks first. When true the per-file cap becomes LARGE_FILE_MAX_BYTES (5 GB) and big files are kept as the
+  // original File (never base64). Off by default → today's 100 MB behaviour. Ignored if maxFileBytes is set.
+  largeFileUploads?: boolean
   // KLA-591: who is filing — drives the over-cap CTA. A member/owner/admin is offered a direct upgrade link;
   // an anon/guest end-user is never asked to pay. Absent/undefined is treated as 'anon' (the safe default).
   reporterRole?: ReporterRole
@@ -606,7 +642,25 @@ export interface ModalCallbacks {
   // KD-1074: fired with the current list whenever a recording is added, replaced or removed, so the host can
   // persist it (the widget keeps it in the evidence session so minimize → resume doesn't lose the video).
   onRecordingsChange?: (recordings: ReportRecording[]) => void
-  onRecord?: (onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => Promise<ReportRecording | null>
+  // Seed attached files (videos/docs) when the composer re-opens — e.g. Resume after Minimize.
+  initialFiles?: ReportFileAttachment[]
+  // Fired with the current list whenever an attached file is added or removed, so the host can keep it
+  // across minimize → resume (a video/doc attached via Attach must never be lost by minimizing).
+  onFilesChange?: (files: ReportFileAttachment[]) => void
+  // KD-3080: `opts.purpose === 'multi'` marks a "Report Multiple Issues" walkthrough, so a host whose recorder
+  // outlives the page (the PX4 recorder window) can hand the clip back for analysis after a navigation.
+  onRecord?: (onPhase?: (phase: 'consent' | 'recording' | 'preview') => void, opts?: { purpose?: 'multi' }) => Promise<ReportRecording | null>
+  // KD-3080: id of a seeded recording (in initialRecordings) that was captured as a "Report Multiple Issues"
+  // walkthrough but finished after the composer that started it was unloaded. The composer analyses it on open,
+  // exactly as if the reporter had just stopped the recording here.
+  initialMultiRecordingId?: string
+  // "Report Multiple Issues" results (the "N issues identified" review: tickets, selections, edits) seeded when
+  // the composer re-opens — e.g. Resume after Minimize — so the analysis is NOT lost or re-run. `recordingId`
+  // must match a recording in initialRecordings (the walkthrough clip).
+  initialMultiIssues?: MultiIssuesSnapshot
+  // Fired whenever those results change (analysed, edited, selection toggled, cleared → null) so the host can
+  // keep them across minimize / navigation.
+  onMultiIssuesChange?: (snapshot: MultiIssuesSnapshot | null) => void
   // KLA-505: server-side LIVE DICTATION for the Voice button. When provided AND MediaRecorder is available,
   // the composer PREFERS this over the flaky Web Speech backend: it records short mic segments and hands each
   // as an audio Blob to this callback, which POSTs it to the STT endpoint (POST /api/voice/transcribe) and
@@ -926,12 +980,17 @@ export function buildModal(
   // file over this isn't silently dropped — the composer shows a friendly, role-aware over-cap CTA. The
   // backend attach path (prototype/server.ts) mirrors the 100MB video ceiling + 120MB total; the enforced
   // per-workspace storage QUOTA + billing is KLA-594 (fast-follow).
-  const PER_FILE_MAX_BYTES = callbacks.maxFileBytes && callbacks.maxFileBytes > 0 ? callbacks.maxFileBytes : DEFAULT_MAX_FILE_BYTES
+  const largeUploads = !!callbacks.largeFileUploads && !(callbacks.maxFileBytes && callbacks.maxFileBytes > 0)
+  const PER_FILE_MAX_BYTES = callbacks.maxFileBytes && callbacks.maxFileBytes > 0 ? callbacks.maxFileBytes
+    : largeUploads ? LARGE_FILE_MAX_BYTES : DEFAULT_MAX_FILE_BYTES
   // KLA-591: who is filing — drives the over-cap CTA (member/owner → upgrade link; anon/guest → ask-team).
   const reporterRole: ReporterRole = callbacks.reporterRole ?? 'anon'
   const upgradeUrl = callbacks.upgradeUrl
-  const MAX_FILES_TOTAL_BYTES = Math.max(120 * 1024 * 1024, PER_FILE_MAX_BYTES + 20 * 1024 * 1024) // holds one max-size file
-  let attachedFiles: ReportFileAttachment[] = []
+  const MAX_FILES_TOTAL_BYTES = largeUploads ? LARGE_FILE_MAX_BYTES * MAX_FILES
+    : Math.max(120 * 1024 * 1024, PER_FILE_MAX_BYTES + 20 * 1024 * 1024) // holds one max-size file
+  let attachedFiles: ReportFileAttachment[] = Array.isArray(callbacks.initialFiles) ? callbacks.initialFiles.filter(Boolean) : []
+  // Last list reported via onFilesChange (seeded from initialFiles so a restore doesn't echo back as a write).
+  let filesSnapshot: ReportFileAttachment[] = attachedFiles.slice()
   // Object-URL previews for blob-backed (video) attachments — revoked on remove/close so a big video isn't pinned.
   const attachmentPreviewUrls = new WeakMap<ReportFileAttachment, string>()
   const canBlobPreview = () => typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
@@ -939,6 +998,10 @@ export function buildModal(
   const revokeAttachmentPreview = (f: ReportFileAttachment) => {
     const u = attachmentPreviewUrls.get(f)
     if (u) { try { URL.revokeObjectURL(u) } catch { /* noop */ } attachmentPreviewUrls.delete(f) }
+  }
+  // Seeded blob-backed files need a fresh preview URL (the previous composer revoked its own on close).
+  for (const f of attachedFiles) {
+    if (f.blob && canBlobPreview()) { try { attachmentPreviewUrls.set(f, URL.createObjectURL(f.blob)) } catch { /* no preview; upload still works */ } }
   }
   // KLA-591: current aggregate upload percent while a submit is in flight (null = not uploading). Painted
   // onto every video tile + file chip so the reporter sees a large video actually uploading.
@@ -963,6 +1026,16 @@ export function buildModal(
   // Structured markup per screenshot index { w, h, shapes } so the ticket can re-render a
   // toggleable/zoomable overlay instead of baking the drawing into the uploaded image.
   const annotationsByIndex: Record<number, any> = {}
+  // KD-3088: "Mask numbers" must also work on a shot that is ALREADY taken (the toggle sits in the markup
+  // toolbar, i.e. after capture). Each capture taken with masking OFF records where the page's numbers were
+  // (numberGeoByUrl); toggling ON bakes solid boxes over them INTO the pixels (never an overlay: the raw image
+  // is what gets uploaded), toggling OFF swaps the original back. All keyed by image data URL, so crop / undo /
+  // retake / removal keep working without re-indexing.
+  const numberGeoByUrl = new Map<string, { geo: NumberGeo; capture?: ShotCapture }>()
+  const numberRectsByUrl = new Map<string, MaskRect[]>()   // resolved, in that image's own pixel space
+  const unmaskedOf = new Map<string, string>()             // masked url → original url
+  const maskedOf = new Map<string, string>()               // original url → masked url
+  let maskSeq = 0                                          // bumps on every toggle; stale async bakes bail
   // KLAVITYKLA-228/371: picked element from the on-page picker. Carries selector + human text snippet.
   // Rides on the annotations payload as `selector` + `selectorText` (top level) so the ticket links
   // the finding to the DOM node and the drawer can show the human-readable label alongside the selector.
@@ -1080,11 +1153,23 @@ export function buildModal(
     compressed: screenshotCompressed[index],
     ann: cloneAnn(annotationsByIndex[index]),
   })
+  // Redo history (per image): every Undo moves the state it leaves into here, Redo moves it back. Any NEW
+  // op (pushUndo) starts a fresh branch, so the redo history is dropped — standard editor semantics.
+  const redoStacks: Record<number, Array<{ snap: UndoSnap; cropped: boolean }>> = {}
   // Capture the current image+markup as the pre-op state, so undo restores exactly what was there before.
-  const pushUndo = (index: number) => { (undoStacks[index] ??= []).push(snapshotShot(index)) }
+  const pushUndo = (index: number) => { pushUndoSnap(index, snapshotShot(index)) }
+  const pushUndoSnap = (index: number, snap: UndoSnap) => { (undoStacks[index] ??= []).push(snap); delete redoStacks[index] }
   const restoreShot = (index: number, snap: UndoSnap) => {
-    screenshots[index] = snap.url
-    screenshotCompressed[index] = snap.compressed
+    // KD-3088: an undo snapshot may predate a Mask-numbers toggle — restore the variant matching the toggle
+    // NOW, so an Undo of a pen stroke can never bring masked numbers back (or re-mask after toggling off).
+    const swapped = maskOn ? maskedOf.get(snap.url) : unmaskedOf.get(snap.url)
+    if (swapped) {
+      screenshots[index] = swapped
+      screenshotCompressed[index] = callbacks.compressImage ? callbacks.compressImage(swapped) : Promise.resolve(swapped)
+    } else {
+      screenshots[index] = snap.url
+      screenshotCompressed[index] = snap.compressed
+    }
     if (snap.ann) annotationsByIndex[index] = cloneAnn(snap.ann)
     else delete annotationsByIndex[index]
   }
@@ -1097,12 +1182,30 @@ export function buildModal(
     // If the op we just undid was (or sat above) a crop, drop the now-orphaned crop marker so the
     // "Revert crop" affordance reflects reality.
     const cs = cropStacks[index]
-    while (cs && cs.length && cs[cs.length - 1].mark >= st.length) cs.pop()
+    let cropped = false
+    while (cs && cs.length && cs[cs.length - 1].mark >= st.length) { cs.pop(); cropped = true }
+    // Keep what we're leaving so Redo can bring it back.
+    ;(redoStacks[index] ??= []).push({ snap: snapshotShot(index), cropped })
     restoreShot(index, snap)
     fireAnnChanged(index) // KLA-772: an undo changed the overlay → re-persist it
     updateStrip()
     return true
   }
+  // Redo: re-apply the most recently undone op (annotation or crop). Returns false when nothing to redo.
+  const redoShot = (index: number): boolean => {
+    const rs = redoStacks[index]
+    if (!rs || !rs.length) return false
+    const { snap, cropped } = rs.pop()!
+    const pre = snapshotShot(index)
+    ;(undoStacks[index] ??= []).push(pre)      // NOT pushUndoSnap — that would drop the rest of the redo branch
+    if (cropped) (cropStacks[index] ??= []).push({ snap: pre, mark: undoStacks[index].length - 1 })
+    restoreShot(index, snap)
+    fireAnnChanged(index)
+    updateStrip()
+    return true
+  }
+  const canUndo = (index: number) => !!undoStacks[index]?.length
+  const canRedo = (index: number) => !!redoStacks[index]?.length
   // Explicit "Revert crop": jump back to the most recent pre-crop image + its original markup (drops the
   // crop and anything drawn after it — the affordance reads "revert crop to original").
   const revertCrop = (index: number): boolean => {
@@ -1110,6 +1213,7 @@ export function buildModal(
     if (!cs || !cs.length) return false
     const { snap, mark } = cs.pop()!
     if (undoStacks[index]) undoStacks[index].length = Math.min(undoStacks[index].length, mark)
+    delete redoStacks[index]
     restoreShot(index, snap)
     fireAnnChanged(index) // KLA-772: revert changed the overlay → re-persist it
     updateStrip()
@@ -1123,11 +1227,13 @@ export function buildModal(
     @keyframes kl-genie-out{from{opacity:1;transform:translateY(0) scaleX(1) scaleY(1)}to{opacity:0;transform:translateY(180px) scaleX(.04) scaleY(.06)}}
     @keyframes kl-ov{from{opacity:0}to{opacity:1}}
     .klavity-overlay{position:fixed;inset:0;background:var(--kl-overlay);display:flex;align-items:center;justify-content:center;pointer-events:all;animation:kl-ov .3s ease both;}
-    /* height:94vh (definite, not just max-height) + grid-template-rows:minmax(0,1fr) so the row has a
+    /* KD-3086: the composer fills the window (36px side / 16px top-bottom inset) with a wider form column
+       (--kl-side-w, 384-580px, scales with the screen) so the screenshot gets the most room and the form isn't cramped.
+       A DEFINITE height (not just max-height) + grid-template-rows:minmax(0,1fr) so the row has a
        resolved height. This is what makes the hero canvas's object-fit:contain actually shrink a tall
        screenshot to fit (KLAVITYKLA-402) instead of the tall image blowing out the row and pushing the
        right-pane Submit button below the clipped fold. min-height:0 tracks let both panes scroll internally. */
-    .klavity-modal{position:relative;overflow:hidden;isolation:isolate;background:var(--kl-glow,transparent),var(--kl-bg);color:var(--kl-fg);border-radius:var(--kl-radius);padding:0;width:92vw;max-width:min(1160px,92vw);height:94vh;max-height:94vh;box-shadow:0 0 0 1px var(--kl-border),var(--kl-shadow);font-family:var(--kl-font,system-ui,sans-serif);-webkit-font-smoothing:antialiased;-webkit-backdrop-filter:var(--kl-backdrop);backdrop-filter:var(--kl-backdrop);transform-origin:bottom right;animation:kl-genie-in .6s cubic-bezier(.16,1,.3,1) both;display:grid;grid-template-columns:minmax(0,1fr) 384px;grid-template-rows:minmax(0,1fr);}
+    .klavity-modal{position:relative;overflow:hidden;isolation:isolate;background:var(--kl-glow,transparent),var(--kl-bg);color:var(--kl-fg);border-radius:var(--kl-radius);padding:0;--kl-side-w:clamp(384px,30vw,580px);width:calc(100vw - 72px);max-width:none;height:calc(100vh - 32px);max-height:calc(100vh - 32px);box-shadow:0 0 0 1px var(--kl-border),var(--kl-shadow);font-family:var(--kl-font,system-ui,sans-serif);-webkit-font-smoothing:antialiased;-webkit-backdrop-filter:var(--kl-backdrop);backdrop-filter:var(--kl-backdrop);transform-origin:bottom right;animation:kl-genie-in .6s cubic-bezier(.16,1,.3,1) both;display:grid;grid-template-columns:minmax(0,1fr) var(--kl-side-w);grid-template-rows:minmax(0,1fr);}
     /* Image-hero two-pane layout: big annotatable screenshot on the left, controls on the right. */
     .kl-hero{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--kl-hero-bg,#0e1424);}
     .kl-hero-tools{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:8px 14px;min-height:48px;border-bottom:1px solid rgba(255,255,255,.06);}
@@ -1146,6 +1252,14 @@ export function buildModal(
     /* Hero annotation toolbar — always-on tools over the image. Tap targets ≥36px for touch. */
     .kl-htool,.kl-htbtn{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:38px;height:38px;padding:0 8px;border:1px solid transparent;border-radius:9px;background:transparent;color:#cfd5ea;cursor:pointer;line-height:1;transition:transform .12s ease,background .12s ease;}
     .kl-htool .kl-hk{font-size:9px;font-weight:700;opacity:.5;}
+    /* Annotation tools are larger (20px glyph, 46px target) so they're easy to tell apart and select. */
+    .kl-htool{min-width:46px;height:46px;gap:2px;border-radius:10px;}
+    .kl-htool .kl-hk{font-size:9.5px;}
+    /* Undo / Redo (top-right): glyph + label; dimmed when there is nothing to undo / redo. */
+    .kl-hhist{gap:4px;}
+    .kl-htbtn.kl-hhistbtn{min-width:46px;height:42px;gap:2px;}
+    .kl-htbtn.kl-hhistbtn .kl-hk{font-size:9px;font-weight:700;opacity:.7;}
+    .kl-htbtn:disabled{opacity:.35;cursor:default;transform:none;background:transparent;}
     /* #449 "Revert crop" affordance — accent-tinted, with a small visible label under the glyph. */
     .kl-htbtn.kl-hrevert{color:var(--kl-accent);min-width:44px;}
     .kl-htbtn.kl-hrevert .kl-hrevert-lbl{font-size:8.5px;font-weight:700;opacity:.85;}
@@ -1163,6 +1277,8 @@ export function buildModal(
     .kl-hcolor-input{position:absolute;left:0;bottom:-2px;width:1px;height:1px;opacity:0;border:0;padding:0;margin:0;pointer-events:none;}
     .kl-hsep{width:1px;height:24px;background:rgba(255,255,255,.14);margin:0 3px;}
     .kl-hgrow{flex:1;}
+    /* Forces a new toolbar row: tools + Undo/Redo/Clear on top, colours / stroke / zoom below. */
+    .kl-hbreak{flex-basis:100%;height:0;}
     /* #626: keep the six preset swatches + custom picker on ONE line as a single unit (never split across
        two rows at the narrow widget width). Gap matches the toolbar's swatch spacing. */
     .kl-hcolors{display:inline-flex;align-items:center;flex-wrap:nowrap;gap:6px;flex:none;}
@@ -1343,6 +1459,9 @@ export function buildModal(
     .klavity-retake-note{margin-top:4px;font-size:9.5px;line-height:1.3;color:var(--kl-muted);text-wrap:pretty;}
     @media (prefers-reduced-motion: reduce){.klavity-retake{transition:none!important;}.klavity-retake.kl-loading{animation:none;}}
     .klavity-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
+    /* KD-3086: in the wide form column the capture buttons sit on a tidy 3-column grid (Snap/Full Page/Attach,
+       Record me/Region/Pick element) instead of flex-wrapping 5 + 1 with a stretched last button. */
+    @media (min-width:761px){.klavity-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));}.klavity-actions button{min-width:0;}}
     .klavity-actions button{position:relative;flex:1 1 auto;min-width:76px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px;background:var(--kl-chip);color:var(--kl-fg);border:none;border-radius:8px;cursor:pointer;font-size:12px;line-height:1;}
     .klavity-actions .kl-cap-ic,.klavity-toggle .kl-cap-ic{display:inline-flex;align-items:center;justify-content:center;flex:none;transition:transform .2s cubic-bezier(.34,1.56,.64,1);line-height:1;}
     .klavity-actions .kl-cap-ic svg,.klavity-toggle .kl-cap-ic svg{display:block;width:15px;height:15px;vertical-align:middle;margin:0;}
@@ -1693,6 +1812,9 @@ export function buildModal(
        wasn't enough: once scrolled, any row (e.g. "Start Recording") slid UNDER the buttons. So on the two-column layout the side
        column's scroll area starts BELOW the button row — nothing can ever pass beneath them. (The divider moves to the hero so it
        still runs full height.) */
+    /* KD-3086: the side column's top row carries a "New report" heading, left of minimize / close (wide layout only). */
+    .kl-side-head{display:none;}
+    @media (min-width:761px){.kl-side-head{display:flex;align-items:center;position:absolute;top:0;right:0;width:var(--kl-side-w);height:58px;padding:0 96px 0 20px;box-sizing:border-box;font-size:15px;font-weight:700;letter-spacing:-.01em;color:var(--kl-fg);pointer-events:none;z-index:2;}}
     @media (min-width:761px){.kl-side{margin-top:52px;padding-top:6px;border-left:none;}.kl-hero{border-right:1px solid var(--kl-border);}.kl-side>.klavity-toggle,.kl-side>.klavity-types,.kl-side>.klavity-title-label{padding-right:0;}}
     /* Narrow layout: the screenshot toolbar is the top row instead, so it reserves the corner (× alone, or ─ + ×). */
     @media (max-width:760px){.kl-hero-tools{padding-right:50px;}.klavity-modal:has(.klavity-min) .kl-hero-tools{padding-right:86px;}}
@@ -1822,6 +1944,7 @@ export function buildModal(
   modal.innerHTML = `
     ${sessionMode ? `<button class="klavity-min" id="klavity-min" type="button" aria-label="Minimize" title="Minimize (keeps your evidence)"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.125em" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>` : ''}
     <button class="klavity-x" id="klavity-x" type="button" aria-label="Close" title="Close (Esc)">${icon('x', { size: 16 })}</button>
+    <div class="kl-side-head" id="klavity-side-head" aria-hidden="true">New report</div>
     <div class="kl-hero" id="klavity-hero">
       <div class="kl-hero-tools" id="klavity-hero-tools"></div>
       <div class="kl-hero-stage" id="klavity-hero-stage">
@@ -1868,7 +1991,7 @@ export function buildModal(
       ${/* KLA-591: ONE hidden input drives the unified attach control (broad accept) when file attachments
            are enabled; the image-only accept is kept for the plain Upload button otherwise. */''}
       <input type="file" id="klavity-file" accept="${fileAttachEnabled ? UNIFIED_ATTACH_ACCEPT : 'image/*,.heic,.heif'}" multiple style="display:none">
-      ${fileAttachEnabled ? `<div class="klavity-attach-hint" id="klavity-attach-hint"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span>Images, video, PDF or logs — up to ${Math.round(PER_FILE_MAX_BYTES / 1024 / 1024)}MB each</span></div>` : ''}
+      ${fileAttachEnabled ? `<div class="klavity-attach-hint" id="klavity-attach-hint"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span>Images, video, PDF or logs — up to ${PER_FILE_MAX_BYTES >= 1024 * 1024 * 1024 ? Math.round(PER_FILE_MAX_BYTES / 1024 / 1024 / 1024) + 'GB' : Math.round(PER_FILE_MAX_BYTES / 1024 / 1024) + 'MB'} each</span></div>` : ''}
       ${/* KLA composer-polish: the images-count row now also hosts the Mevak-style circular Voice mic at its
            right end (replaces the old full-width Voice button in the capture grid). The row always renders when
            Voice is supported so the mic has a home even before any image is attached (the counter itself stays
@@ -2450,9 +2573,12 @@ export function buildModal(
     // after the deleted one inherits the deleted shot's overlay (and the last shot's overlay is dropped).
     try { callbacks.onShotRemoved?.(i) } catch { /* host sync best-effort */ }
     // #449: keep the per-image undo + crop history index-aligned with the shifted screenshots.
-    delete undoStacks[i]; delete cropStacks[i]
+    delete undoStacks[i]; delete cropStacks[i]; delete redoStacks[i]
     for (const key of Object.keys(undoStacks).map(Number).filter(n => n > i).sort((a, b) => a - b)) {
       undoStacks[key - 1] = undoStacks[key]; delete undoStacks[key]
+    }
+    for (const key of Object.keys(redoStacks).map(Number).filter(n => n > i).sort((a, b) => a - b)) {
+      redoStacks[key - 1] = redoStacks[key]; delete redoStacks[key]
     }
     for (const key of Object.keys(cropStacks).map(Number).filter(n => n > i).sort((a, b) => a - b)) {
       cropStacks[key - 1] = cropStacks[key]; delete cropStacks[key]
@@ -2494,6 +2620,77 @@ export function buildModal(
     if (fireAdded) { try { callbacks.onShotAdded?.(dataUrl, quality) } catch { /* host persistence best-effort */ } }
   }
 
+  // KD-3088: start a capture. The page the user is looking at is NEVER modified for masking — masking happens
+  // only in the screenshot image (the old in-page masking flashed black boxes on the live page, very visibly on
+  // a Screen capture, which films the real screen). Nothing to set up any more; kept as the capture hook.
+  function beginCapture(): { restore: (() => void) | null; geo: NumberGeo | null } {
+    return { restore: null, geo: null }
+  }
+  // Record where the page's numbers are for a shot that was JUST captured. Measured AFTER the capture so it sees
+  // the same layout the capture did — a Screen share adds Chrome's "sharing this tab" bar, which shifts the page,
+  // and measuring before that put the boxes above/below the numbers. If Mask numbers is on, mask it right away.
+  function noteNumberGeo(dataUrl: string | undefined, _unused: NumberGeo | null, capture?: ShotCapture) {
+    if (!dataUrl) return
+    try {
+      const geo = collectNumberRects(document.body)
+      if (geo.rects.length) numberGeoByUrl.set(dataUrl, { geo, capture })
+    } catch { /* unmeasurable page — the shot just can't be masked */ }
+    if (maskOn) scheduleNumberMask()
+  }
+  // Run a mask pass once the caller has put the new shot in place (it does so synchronously right after this).
+  // Submit awaits `maskPass`, so a just-captured shot can never be uploaded before its numbers are masked.
+  let maskPass: Promise<void> = Promise.resolve()
+  let maskPassRunning = 0   // submit only waits when a pass is actually in flight (no extra tick otherwise)
+  function trackMaskPass(p: Promise<void>) {
+    maskPassRunning++
+    maskPass = p.then(() => { maskPassRunning-- }, () => { maskPassRunning-- })
+  }
+  function scheduleNumberMask() {
+    trackMaskPass(new Promise<void>(resolve => setTimeout(() => { applyNumberMask().then(resolve, resolve) }, 0)))
+  }
+  // Rects for `url` in its own pixel space (w×h), or null when we can't place them (no capture data / unmatched).
+  function numberRectsFor(url: string, w: number, h: number): MaskRect[] | null {
+    const known = numberRectsByUrl.get(url)
+    if (known) return known
+    const g = numberGeoByUrl.get(url)
+    if (!g) return null
+    const rects = numberRectsToImage(g.geo, w, h, g.capture)
+    if (rects) numberRectsByUrl.set(url, rects)
+    return rects
+  }
+  // Swap a shot's pixels in place (same dimensions — the markup overlay stays valid) and tell the host.
+  function setShotPixels(index: number, url: string) {
+    screenshots[index] = url
+    screenshotCompressed[index] = callbacks.compressImage ? callbacks.compressImage(url) : Promise.resolve(url)
+    updateStrip()
+    try { callbacks.onShotReplaced?.(index, url, screenshotQuality[index]) } catch { /* host persistence best-effort */ }
+  }
+  // Apply the current Mask-numbers state to every shot that has capture data for it.
+  async function applyNumberMask() {
+    const seq = ++maskSeq
+    for (let i = 0; i < screenshots.length; i++) {
+      const url = screenshots[i]
+      if (!url) continue
+      if (!maskOn) {
+        const orig = unmaskedOf.get(url)
+        if (orig) setShotPixels(i, orig)
+        continue
+      }
+      if (unmaskedOf.has(url)) continue          // already masked
+      let masked = maskedOf.get(url)              // masked before, then toggled off → reuse
+      if (!masked) {
+        const res = await bakeMaskRects(url, (w, h) => numberRectsFor(url, w, h))
+        if (!res) continue                        // nothing to mask / can't place (upload, paste, shared screen)
+        masked = res.url
+        maskedOf.set(url, masked); unmaskedOf.set(masked, url)
+        numberRectsByUrl.set(masked, res.rects)
+      }
+      if (seq !== maskSeq) return                 // toggled again meanwhile — the newer pass owns the state
+      const idx = screenshots.indexOf(url)        // the shot may have moved / been removed while baking
+      if (idx >= 0) setShotPixels(idx, masked)
+    }
+  }
+
   // JTBD 1.9: re-capture a degraded thumbnail via the host's real-pixel path and swap it in place. The
   // host hides its own UI (launcher / composer) during onRetakeSharp so the composer isn't in the pixels.
   // Annotations for that image are dropped (a fresh image would misalign them) with a one-line notice.
@@ -2504,7 +2701,7 @@ export function buildModal(
     btn.classList.add('kl-loading')
     host.style.display = 'none' // keep the composer out of the real-pixel shot
     try {
-      const restore = maskOn ? maskNumbers(document.body) : null
+      const { restore, geo } = beginCapture()
       let result: CaptureResult | undefined
       // KLA-621: hand the ORIGINAL shot's provenance to the host so Retake redoes the SAME region/element
       // (pixel-perfect from the shared Snap frame) rather than a full-screen grab that loses the selection.
@@ -2512,6 +2709,7 @@ export function buildModal(
       finally { restore?.() }
       if (result) {
         const { dataUrl, quality } = normalizeCapture(result)
+        noteNumberGeo(dataUrl, geo, screenshotCapture[index])
         if (dataUrl) {
           screenshots[index] = dataUrl
           screenshotCompressed[index] = callbacks.compressImage ? callbacks.compressImage(dataUrl) : Promise.resolve(dataUrl)
@@ -2522,7 +2720,7 @@ export function buildModal(
           // followed by close+navigate (without a minimize) would restore the OLD overlay onto the new pixels.
           if (annotationsByIndex[index]) { delete annotationsByIndex[index]; retakeClearedNote.add(index); fireAnnChanged(index) }
           // #449: the shot was fully replaced — its old undo/crop history no longer matches these pixels.
-          delete undoStacks[index]; delete cropStacks[index]
+          delete undoStacks[index]; delete cropStacks[index]; delete redoStacks[index]
         }
       }
     } catch { /* user cancelled the share prompt, or capture failed — leave the original shot untouched */ }
@@ -2597,6 +2795,13 @@ export function buildModal(
     })
     // An attached file is evidence in its own right — re-evaluate Submit (a file-only report is valid).
     refreshSubmit()
+    notifyFilesChange()
+  }
+  function notifyFilesChange() {
+    if (_closed) return
+    if (filesSnapshot.length === attachedFiles.length && filesSnapshot.every((f, i) => f === attachedFiles[i])) return
+    filesSnapshot = attachedFiles.slice()
+    try { callbacks.onFilesChange?.(attachedFiles.slice()) } catch { /* host persistence is best-effort */ }
   }
 
   // KLA-591: remove an attachment (video or doc) by its attachedFiles index, keeping the strip + chips +
@@ -2708,7 +2913,9 @@ export function buildModal(
         const effectiveType = file.type || (isVideoFile(file) ? videoContentType(file.name) : '')
         // Videos (up to ~100MB) stay as the original File + an object-URL preview — base64-ing one and
         // round-tripping it through atob at submit peaked at ~500MB+ and crashed the tab. Docs stay data URLs.
-        const keepAsBlob = isVideoFile(file) && canBlobPreview()
+        // With large uploads on, any file too big for the single request is also kept as the File: reading a
+        // multi-GB file into a data URL would crash the tab, and the chunked upload reads it slice by slice.
+        const keepAsBlob = (isVideoFile(file) && canBlobPreview()) || (largeUploads && needsLargeUpload(file))
         const entry: ReportFileAttachment = keepAsBlob
           ? { name: file.name, type: effectiveType, size: file.size, dataUrl: '', blob: file }
           : { name: file.name, type: effectiveType, size: file.size, dataUrl: await fileToDataUrl(file) }
@@ -2753,7 +2960,53 @@ export function buildModal(
   // The first selected ticket carries the video + the composer's evidence; every other ticket gets a frame
   // from its moment in the clip and points back to the video. No issues found → the clip is attached to the
   // composer as a normal recording so nothing is lost.
+  // ── Keep the analysis across Minimize → Resume ── Minimize closes this composer; the host stores this snapshot
+  // (onMultiIssuesChange) and hands it back as initialMultiIssues, so "N issues identified" + every edit and
+  // selection survive instead of vanishing (which forced a fresh, permission-prompting recording).
+  let multiSnapKey = ''
+  function multiSnapshot(): MultiIssuesSnapshot | null {
+    if (multiState !== 'done' || !multiItems || !multiItems.length || !multiRec || !multiRec.id || mrDone) return null
+    const strip = (i: MultiItem): MultiIssueSnapshotItem => {
+      const { thumb: _t, enhancing, ...rest } = i
+      return { ...rest, ...(enhancing ? { pendingEnhance: true } : {}) }
+    }
+    return JSON.parse(JSON.stringify({
+      recordingId: multiRec.id, items: multiItems.map(strip), original: multiOriginal ? multiOriginal.map(strip) : null,
+      ...(mrEl ? { reviewOpen: true } : {}),
+    }))
+  }
+  let multiRestoring = false
+  function notifyMulti() {
+    if (_closed || multiRestoring || !callbacks.onMultiIssuesChange) return
+    const snap = multiSnapshot()
+    const key = snap ? JSON.stringify(snap) : ''
+    if (key === multiSnapKey) return
+    multiSnapKey = key
+    try { callbacks.onMultiIssuesChange(snap) } catch { /* host persistence is best-effort */ }
+  }
+  // Restore a saved analysis onto the seeded walkthrough clip (no re-recording, no re-analysis).
+  function restoreMulti(snap: MultiIssuesSnapshot) {
+    const rec = recordings.find((r) => r.id === snap.recordingId)
+    if (!rec || !Array.isArray(snap.items) || !snap.items.length || multiState !== 'idle') return
+    const seq = ++multiSeq
+    const revive = (i: MultiIssueSnapshotItem): MultiItem => { const { pendingEnhance: _p, ...rest } = i; return { ...rest, thumb: null } }
+    multiRec = rec
+    multiItems = snap.items.map(revive)
+    multiOriginal = (snap.original && snap.original.length ? snap.original : snap.items).map(revive)
+    multiDirty = false
+    mrDone = null; mrError = ''
+    multiState = 'done'
+    // Restoring is not a change worth echoing back; reopen the review if that's where the reporter minimized.
+    multiRestoring = true
+    try { paintMultiCard(); if (snap.reviewOpen) openMultiReview() } finally { multiRestoring = false }
+    multiSnapKey = JSON.stringify(multiSnapshot())
+    // Thumbnails only — the AI write-ups are already in the saved tickets; just finish any that were mid-flight.
+    const pending = new Set(snap.items.filter((i) => i.pendingEnhance).map((i) => i.id))
+    void loadMultiThumbs(seq, (id) => pending.has(id))
+  }
+
   function paintMultiCard() {
+    notifyMulti()
     const btn = shadowRoot.getElementById('klavity-multi-start') as HTMLButtonElement | null
     const st = shadowRoot.getElementById('klavity-multi-status') as HTMLElement | null
     if (!btn || !st) return
@@ -2787,10 +3040,27 @@ export function buildModal(
       if (phase === 'recording' && seq === multiSeq) { multiState = 'recording'; paintMultiCard() }
     }
     let rec: ReportRecording | null = null
-    try { rec = await callbacks.onRecord!(onPhase) } catch { rec = null }
+    try { rec = await callbacks.onRecord!(onPhase, { purpose: 'multi' }) } catch { rec = null }
     finally { host.style.display = ''; lockComposer(false) }
     if (seq !== multiSeq || _closed) return
     if (!rec) { multiState = multiItems ? 'done' : 'idle'; paintMultiCard(); return }
+    await analyseMulti(rec, seq)
+  }
+
+  // KD-3080: a walkthrough that finished after a page navigation arrives as a seeded recording — analyse it on
+  // open instead of leaving it as a plain attachment.
+  function resumeMulti(id: string) {
+    const rec = recordings.find((r) => r.id === id)
+    if (!rec || !callbacks.onSplitRecording || multiState !== 'idle') return
+    const seq = ++multiSeq
+    multiState = 'processing'
+    // Deferred a tick: this is called while the composer is still being built.
+    void Promise.resolve().then(() => { if (seq === multiSeq && !_closed) return analyseMulti(rec, seq) })
+  }
+
+  // Attach the walkthrough clip, run the split analysis and open the review.
+  async function analyseMulti(rec: ReportRecording, seq: number) {
+    multiNotice = ''
     // Show the walkthrough like a Record me clip: a gallery tile + the playable hero preview. A new walkthrough
     // replaces the previous one in place.
     // A walkthrough report is video-first: drop the default snap (and any other un-annotated screenshot) so
@@ -2798,7 +3068,8 @@ export function buildModal(
     for (let i = screenshots.length - 1; i >= 0; i--) {
       if (!(annotationsByIndex[i]?.shapes?.length)) removeScreenshotAt(i)
     }
-    const prevIdx = multiRec ? recordings.indexOf(multiRec) : -1
+    const seededIdx = recordings.indexOf(rec)
+    const prevIdx = seededIdx >= 0 ? seededIdx : (multiRec ? recordings.indexOf(multiRec) : -1)
     if (prevIdx >= 0) recordings[prevIdx] = rec
     else recordings.push(rec)
     activeRecordingIndex = prevIdx >= 0 ? prevIdx : recordings.length - 1
@@ -2812,7 +3083,15 @@ export function buildModal(
     let issues: SplitIssueLike[] | null = null
     try {
       const blob = rec.blob || await (await fetch(rec.dataUrl)).blob()
-      issues = await callbacks.onSplitRecording!(blob, { text: desc.value.trim() })
+      let frames: SplitFrame[] = []
+      let frameUrl: string | null = null
+      try {
+        if (rec.blob) { try { frameUrl = URL.createObjectURL(rec.blob) } catch { frameUrl = null } }
+        frames = await sampleSplitFrames(frameUrl || rec.dataUrl, (rec.durationMs || 0) / 1000)
+      } catch { frames = [] }
+      finally { if (frameUrl) { try { URL.revokeObjectURL(frameUrl) } catch { /* ignore */ } } }
+      if (seq !== multiSeq || _closed) return
+      issues = await callbacks.onSplitRecording!(blob, { text: desc.value.trim(), ...(frames.length ? { frames } : {}) })
     } catch { issues = null }
     if (seq !== multiSeq || _closed) return
     const usable = (issues || []).filter((i) => i && (String(i.title || '').trim() || String(i.description || '').trim()))
@@ -2838,7 +3117,7 @@ export function buildModal(
 
   // Thumbnails: one frame per issue, ~1s into its span. Sequential (one decoder at a time), best-effort. Each
   // frame then feeds that issue's Enhance call (in parallel with the next frame grab).
-  async function loadMultiThumbs(seq: number) {
+  async function loadMultiThumbs(seq: number, shouldEnhance: (id: string) => boolean = () => true) {
     const rec = multiRec
     if (!rec || !multiItems) return
     let src = rec.dataUrl
@@ -2855,7 +3134,7 @@ export function buildModal(
           for (const list of [multiItems, multiOriginal]) { const m = list?.find((x) => x.id === it.id); if (m) m.thumb = thumb }
           renderMultiReview()
         }
-        void enhanceMultiItem(it.id, thumb, seq)
+        if (shouldEnhance(it.id)) void enhanceMultiItem(it.id, thumb, seq)
       }
     } finally { if (url) { try { URL.revokeObjectURL(url) } catch { /* ignore */ } } }
   }
@@ -2867,7 +3146,17 @@ export function buildModal(
     const onEnhance = callbacks.onEnhance
     const it = multiItems?.find((x) => x.id === id)
     if (!onEnhance || !it) return
-    const text = String(it.narration || '').trim() || it.title
+    // KD-3080: issues raised in the same breath share one stretch of narration. Handing that same text to
+    // Enhance for each of them wrote every ticket about the same thing (identical titles). When the narration
+    // isn't this issue's alone, describe the issue with the split's own per-issue wording instead.
+    const norm = (s: unknown) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ')
+    const own = norm(it.narration)
+    const shared = !!own && (multiItems || []).some((o) => {
+      const other = o.id === id ? '' : norm(o.narration)
+      return !!other && (other === own || other.includes(own) || own.includes(other))
+    })
+    const splitWording = [it.title, it.actualResult, it.expectedResult ? `Expected: ${it.expectedResult}` : ''].map((s) => String(s || '').trim()).filter(Boolean).join('\n')
+    const text = (!shared && String(it.narration || '').trim()) || splitWording || it.title
     const mark = (on: boolean) => { for (const list of [multiItems, multiOriginal]) { const m = list?.find((x) => x.id === id); if (m) m.enhancing = on } }
     mark(true)
     renderMultiReview()
@@ -2875,6 +3164,9 @@ export function buildModal(
     try { draft = await onEnhance(text, { images: shot ? 1 : 0, ...(shot ? { shot } : {}) }) } catch { draft = null }
     if (seq !== multiSeq || _closed) return
     mark(false)
+    // A draft whose title repeats another ticket's is about that other issue — keep this one's split draft.
+    const sum = norm(draft?.summary)
+    if (sum && (multiItems || []).some((o) => o.id !== id && norm(o.title) === sum)) draft = null
     if (draft) {
       for (const list of [multiItems, multiOriginal]) {
         const m = list?.find((x) => x.id === id)
@@ -2911,6 +3203,7 @@ export function buildModal(
     mrEl?.remove()
     mrEl = null
     shadowRoot.getElementById('klavity-side')?.classList.remove('kl-mr-open')
+    notifyMulti()   // the review closed → Resume should land on the composer, not reopen it
   }
 
   // The walkthrough clip lives in the gallery like a Record me clip; removing its tile drops the analysis.
@@ -2951,6 +3244,7 @@ export function buildModal(
   }
 
   function renderMultiReview() {
+    notifyMulti()   // every edit / selection / Enhance result re-renders the review → keep the saved copy current
     if (!mrEl || !multiItems) return
     if (mrDone) { renderMultiDone(); return }
     const items = multiItems
@@ -3121,6 +3415,7 @@ export function buildModal(
     mrSubmitting = true; mrError = ''
     renderMultiReview()
     try {
+      if (maskPassRunning) await maskPass   // KD-3088: masked pixels must land before upload
       const shots = await Promise.all(screenshotCompressed.slice())
       // Every ticket carries the full walkthrough (its description names the issue's span). Ticket #1 also
       // carries everything already in the composer.
@@ -3712,10 +4007,16 @@ export function buildModal(
       const stage = shadowRoot.getElementById('klavity-hero-stage')
       const heroCanvas = stage?.querySelector('canvas') as HTMLCanvasElement | null
       if (heroCanvas && activeIndex === targetIdx && heroCanvas.width > 1 && heroCanvas.height > 1) {
+        // The Select tool draws a selection outline + handles on this canvas — hide it for the copy so it
+        // never ends up in the image sent with the report.
+        const ann = (heroCanvas as any)._klvAnnotator as Annotator | undefined
+        const sel = ann?.selected ?? null
+        if (ann && sel) { ann.selected = null; ann.redraw() }
         try {
           const url = heroCanvas.toDataURL('image/png')
           if (url && url.length > 64) return url
         } catch { /* fallback to offscreen renderer */ }
+        finally { if (ann && sel) { ann.selected = sel; ann.redraw() } }
       }
 
       return null
@@ -4230,6 +4531,7 @@ export function buildModal(
     if (inFlightFullRender) {
       await Promise.race([inFlightFullRender, Promise.resolve()])
     }
+    if (maskPassRunning) await maskPass   // KD-3088: a Mask-numbers pass still painting must land before the snapshot
     const compressedSnapshot = screenshotCompressed.slice()
     const annotationsSnapshot = buildAnnotationsPayload()
     const filesSnapshot = attachedFiles.slice()
@@ -4345,7 +4647,7 @@ export function buildModal(
     screenshotQuality[index] = quality
     screenshotSuggestSharp[index] = !!suggestSharp && quality !== 'real-pixel'
     if (annotationsByIndex[index]) delete annotationsByIndex[index]
-    delete undoStacks[index]; delete cropStacks[index]
+    delete undoStacks[index]; delete cropStacks[index]; delete redoStacks[index]
     updateStrip()
     try { callbacks.onShotReplaced?.(index, dataUrl, quality) } catch { /* best-effort */ }
   }
@@ -4359,9 +4661,10 @@ export function buildModal(
     if (!callbacks.onCaptureViewport) return false
     let previewUrl: string | null = null
     // Phase 1 — fast viewport preview (awaited).
-    const restore = maskOn ? maskNumbers(document.body) : null
+    const { restore, geo } = beginCapture()
     try {
       const { dataUrl } = normalizeCapture(await callbacks.onCaptureViewport())
+      noteNumberGeo(dataUrl, geo, { kind: 'viewport' })
       if (dataUrl) {
         previewUrl = dataUrl
         capturing = false // a real preview is now shown — clear the "Capturing…" skeleton
@@ -4372,9 +4675,10 @@ export function buildModal(
     finally { restore?.() }
     // Phase 2 — full-page render in the background. Fire-and-forget; swap the preview for it when ready.
     const fullRenderP = (async () => {
-      const restore2 = maskOn ? maskNumbers(document.body) : null
+      const { restore: restore2, geo: geo2 } = beginCapture()
       try {
         const full = await callbacks.onCaptureFull()
+        noteNumberGeo(normalizeCapture(full).dataUrl, geo2, { kind: 'full' })
         if (previewUrl) swapPreviewForFull(previewUrl, full)
         else {
           capturing = false
@@ -4397,9 +4701,10 @@ export function buildModal(
   // a viewport capture; false when no onCaptureViewport is wired (caller falls back to onCaptureFull).
   async function captureViewportOnly(activeBtn: HTMLButtonElement | null): Promise<boolean> {
     if (!callbacks.onCaptureViewport) return false
-    const restore = maskOn ? maskNumbers(document.body) : null
+    const { restore, geo } = beginCapture()
     try {
       const { dataUrl, blank } = normalizeCapture(await callbacks.onCaptureViewport())
+      if (!blank) noteNumberGeo(dataUrl, geo, { kind: 'viewport' })
       if (blank && screenshots.length === 0) {
         // Declined-share / unrenderable page → a white PNG. Don't seed it; show the steer-to-Snap empty state.
         showBlankCaptureEmptyState()
@@ -4438,9 +4743,10 @@ export function buildModal(
       // background so the user is never stuck watching "Capturing…". Checked SYNCHRONOUSLY (no await before
       // the fallback) so the double-click guard still calls onCaptureFull exactly once in the classic path.
       if (callbacks.onCaptureViewport) { await captureViewportThenFull(fullBtn); return }
-      const restore = maskOn ? maskNumbers(document.body) : null
+      const { restore, geo } = beginCapture()
       try {
         const { dataUrl, quality, suggestSharp } = normalizeCapture(await callbacks.onCaptureFull())
+        noteNumberGeo(dataUrl, geo, { kind: 'full' })
         addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp); setActiveCapture(fullBtn)
       }
       finally { restore?.() }
@@ -4472,12 +4778,13 @@ export function buildModal(
     let added = false
     let declined = false
     try {
-      const restore = maskOn ? maskNumbers(document.body) : null
+      const { restore, geo } = beginCapture()
       let shot: CaptureResult | undefined
       try { shot = await capFn() }
       finally { restore?.() }
       if (shot) {
         const { dataUrl, quality } = normalizeCapture(shot)
+        noteNumberGeo(dataUrl, geo, { kind: opts?.viewport ? 'viewport' : 'full' })
         // KLA-621: tag the sharp shot's mode (viewport vs full-page) so Retake redoes the SAME mode.
         if (dataUrl) { addScreenshot(dataUrl, quality ?? 'real-pixel', undefined, true, false, { kind: opts?.viewport ? 'viewport' : 'full' }); setActiveCapture(sharpBtn); added = true; shareCaptureSucceeded = true /* snap-share-hint: they've shared once → stop nudging */ }
       }
@@ -4577,6 +4884,8 @@ export function buildModal(
   if (multiEnabled) {
     paintMultiCard()
     shadowRoot.getElementById('klavity-multi-start')?.addEventListener('click', () => { void startMulti() })
+    if (callbacks.initialMultiRecordingId) resumeMulti(callbacks.initialMultiRecordingId)
+    else if (multiEnabled && callbacks.initialMultiIssues) restoreMulti(callbacks.initialMultiIssues)
   }
 
   // Region capture button — only rendered when the host provides onRegionCapture
@@ -4598,12 +4907,13 @@ export function buildModal(
         // Re-register the modal Esc handler now that the overlay is gone (success path).
         document.addEventListener('keydown', escHandler, { capture: true })
         try {
-          const restore = maskOn ? maskNumbers(document.body) : null
+          const { restore, geo } = beginCapture()
           let shot: CaptureResult | undefined
           try { shot = await callbacks.onRegionCapture!(rect) }
           finally { restore?.() }
           if (shot) {
             const { dataUrl, quality, suggestSharp } = normalizeCapture(shot)
+            noteNumberGeo(dataUrl, geo, { kind: 'region', rect })
             // KLA-621: tag with the region rect so Retake re-crops THIS area from a fresh Snap frame.
             if (dataUrl) { addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp, { kind: 'region', rect }); setActiveCapture(regionBtn) }
           }
@@ -4678,6 +4988,8 @@ export function buildModal(
   function heroGlyph(inner: string, size = 15): string {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.125em">${inner}</svg>`
   }
+  // Annotation tool icon size (was 15px) — larger so the tools are easy to tell apart and hit.
+  const TOOL_ICON = 20
   function heroToolbarHtml(showRevert: boolean): string {
     const t = (name: string, label: string, glyph: string, key: string) =>
       `<button type="button" class="kl-htool" data-tool="${name}" title="${label} (${key.toUpperCase()})" aria-label="${label}">${glyph}<span class="kl-hk">${key.toUpperCase()}</span></button>`
@@ -4700,20 +5012,34 @@ export function buildModal(
       // XSS guards. See heroLogoHref + the #kl-hero-logo wiring in mountHeroAnnotator.
       `<a class="kl-hlogo" id="kl-hero-logo" target="_blank" rel="noopener" title="Powered by Klavity — visit klavity.in" aria-label="Klavity homepage (opens in a new tab)">${klavityMark}<span class="kl-hlogo-word">Klavity</span></a>` +
       `<span class="kl-hsep"></span>` +
-      t('pen', 'Pen', icon('pencil', { size: 15 }), 'p') +
-      t('line', 'Line', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/>'), 'l') +
-      t('rect', 'Rectangle', icon('square', { size: 15 }), 'r') +
-      t('circle', 'Circle', heroGlyph('<circle cx="12" cy="12" r="9"/>'), 'o') +
-      t('arrow', 'Arrow', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>'), 'a') +
-      t('text', 'Text', heroGlyph('<path d="M5 6h14M12 6v13M9 19h6"/>'), 't') +
-      t('count', 'Numbers', heroGlyph('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>'), 'c') +
+      // Select: pick an added annotation to move / resize it, recolour it, change its stroke/size, edit a
+      // text's words (double-click) or delete it (Delete key).
+      t('select', 'Select & edit', heroGlyph('<path d="M5 3l14 8-6 1.5L9.5 19z"/>', TOOL_ICON), 'v') +
+      `<span class="kl-hsep"></span>` +
+      // Annotation tools, in the product-specified order: Rectangle (the default), Arrow, Text, Counter,
+      // Pencil, Line, Circle — larger glyphs (TOOL_ICON) so they're easy to tell apart and select.
+      t('rect', 'Rectangle', heroGlyph('<rect x="4" y="5" width="16" height="14" rx="1.5"/>', TOOL_ICON), 'r') +
+      t('arrow', 'Arrow', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>', TOOL_ICON), 'a') +
+      t('text', 'Text', heroGlyph('<path d="M5 6h14M12 6v13M9 19h6"/>', TOOL_ICON), 't') +
+      t('count', 'Counter', heroGlyph('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>', TOOL_ICON), 'c') +
+      t('pen', 'Pencil', icon('pencil', { size: TOOL_ICON }), 'p') +
+      t('line', 'Line', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/>', TOOL_ICON), 'l') +
+      t('circle', 'Circle', heroGlyph('<circle cx="12" cy="12" r="9"/>', TOOL_ICON), 'o') +
       `<span class="kl-hsep"></span>` +
       // Redaction group: the "Mask numbers" toggle (masks digits in fresh captures) now sits next to the
       // Pixelate brush + Crop — grouped with the other redact/edit tools so the logo owns the top-left.
-      `<label class="kl-hmask" title="Mask numbers in new screen captures"><input type="checkbox" class="kl-hmask-cb"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>` +
-      t('pixelate', 'Redact (pixelate)', heroGlyph('<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>'), 'b') +
-      t('crop', 'Crop', heroGlyph('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), 'k') +
-      `<span class="kl-hsep"></span>` +
+      `<label class="kl-hmask" title="Black out numbers in your screenshots"><input type="checkbox" class="kl-hmask-cb"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>` +
+      t('pixelate', 'Redact (pixelate)', heroGlyph('<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>', TOOL_ICON), 'b') +
+      t('crop', 'Crop', heroGlyph('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>', TOOL_ICON), 'k') +
+      // Undo / Redo / Clear — pushed to the TOP-RIGHT of the Screenshot tab (end of the tools row). They cover
+      // every annotation tool, edits, crop and clear. The break after them starts the colour/stroke/zoom row.
+      `<span class="kl-hgrow"></span>` +
+      `<span class="kl-hgroup kl-hhist">` +
+        `<button type="button" class="kl-htbtn kl-hhistbtn" id="kl-hero-undo" title="Undo (Cmd+Z / Ctrl+Z)" aria-label="Undo"${canUndo(activeIndex) ? '' : ' disabled'}>${heroGlyph('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>', 17)}<span class="kl-hk">Undo</span></button>` +
+        `<button type="button" class="kl-htbtn kl-hhistbtn" id="kl-hero-redo" title="Redo (Cmd+Shift+Z / Ctrl+Y)" aria-label="Redo"${canRedo(activeIndex) ? '' : ' disabled'}>${heroGlyph('<path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 15-6.7L21 13"/>', 17)}<span class="kl-hk">Redo</span></button>` +
+        `<button type="button" class="kl-htbtn kl-hhistbtn" id="kl-hero-clear" title="Clear all annotations" aria-label="Clear">${icon('trash-2', { size: 17 })}<span class="kl-hk">Clear</span></button>` +
+      `</span>` +
+      `<span class="kl-hbreak" aria-hidden="true"></span>` +
       // #626: the six preset swatches + the custom picker live in ONE non-wrapping group so the whole palette
       // stays on a single line and moves as a unit — never red/orange/green on one row and blue/white/black on
       // the next (matches the .kl-hgroup pattern used for the Stroke control).
@@ -4751,11 +5077,9 @@ export function buildModal(
         `<button type="button" class="kl-hopt" data-size="40" title="Large">L</button>` +
       `</span>` +
       `<span class="kl-hsep"></span>` +
-      `<button type="button" class="kl-htbtn" id="kl-hero-undo" title="Undo (Cmd+Z / Ctrl+Z)" aria-label="Undo">${heroGlyph('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>', 14)}</button>` +
       // #449: explicit "Revert crop" — shown only after a crop on this image (visibility driven by the
       // per-image crop stack). Reverts the most recent crop to its pre-crop image + original markup.
       (showRevert ? `<button type="button" class="kl-htbtn kl-hrevert" id="kl-hero-revert" title="Revert crop to original" aria-label="Revert crop">${heroGlyph('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v2"/>', 14)}<span class="kl-hk kl-hrevert-lbl">Revert</span></button>` : '') +
-      `<button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${icon('trash-2', { size: 14 })}</button>` +
       `<span class="kl-hgrow"></span>` +
       // #627: zoom controls — explicit − / + buttons (plus the Z shortcut) replace the old text hint. They
       // drive the SAME zoom machinery as scroll-wheel zoom (zoomToward + clampZoom + minimap sync), centred
@@ -4948,12 +5272,39 @@ export function buildModal(
       } else {
         delete annotationsByIndex[index]
       }
-      ;(undoStacks[index] ??= []).push(preSnap)
+      pushUndoSnap(index, preSnap)   // a new crop starts a fresh branch → clears the redo history
       ;(cropStacks[index] ??= []).push({ snap: preSnap, mark })
       fireAnnChanged(index) // KLA-772: a crop rebases the overlay coords → re-persist it
       updateStrip()
+      carryNumberMaskThroughCrop(srcUrl, cropped, src.naturalWidth, src.naturalHeight, rx, ry, cc.width, cc.height)
     }
     src.src = srcUrl
+  }
+
+  // KD-3088: keep Mask numbers working after a crop — the cropped image inherits the number rects (shifted into
+  // its own pixel space), and a crop of a MASKED image also gets a matching crop of the original, so toggling
+  // masking off afterwards still restores readable numbers.
+  function carryNumberMaskThroughCrop(srcUrl: string, cropped: string, sw: number, sh: number, rx: number, ry: number, cw: number, ch: number) {
+    const shift = (rects: MaskRect[] | null): MaskRect[] => (rects || [])
+      .map(r => ({ x: Math.max(0, r.x - rx), y: Math.max(0, r.y - ry), w: Math.min(cw, r.x - rx + r.w) - Math.max(0, r.x - rx), h: Math.min(ch, r.y - ry + r.h) - Math.max(0, r.y - ry) }))
+      .filter(r => r.w > 0 && r.h > 0)
+    const rects = shift(numberRectsFor(srcUrl, sw, sh))
+    if (rects.length) numberRectsByUrl.set(cropped, rects)
+    const orig = unmaskedOf.get(srcUrl)
+    if (!orig) return
+    const o = new Image()
+    o.onload = () => {
+      const c = document.createElement('canvas')
+      c.width = cw; c.height = ch
+      const cx = c.getContext('2d')
+      if (!cx) return
+      cx.drawImage(o, rx, ry, cw, ch, 0, 0, cw, ch)
+      let origCropped: string
+      try { origCropped = c.toDataURL('image/png') } catch { return }
+      unmaskedOf.set(cropped, origCropped); maskedOf.set(origCropped, cropped)
+      if (rects.length) numberRectsByUrl.set(origCropped, rects)
+    }
+    o.src = orig
   }
 
   function mountHeroAnnotator(index: number) {
@@ -4992,7 +5343,7 @@ export function buildModal(
       // host in utm_source/utm_content can never break out of the attribute (this file's XSS discipline).
       const logoLink = tools.querySelector('#kl-hero-logo') as HTMLAnchorElement | null
       if (logoLink) logoLink.href = heroLogoHref(cfg.projectId)
-      let activeTool = 'pen'
+      let activeTool = 'rect' // default tool = Rectangle (hierarchy: rect → circle → arrow → text)
       let activeColor = '#ef4444'
       let textSize = 26
       let textOutline: 'black' | 'white' | 'none' = 'black'
@@ -5000,23 +5351,59 @@ export function buildModal(
       // handler bails while this is set so letters land as text, not tool switches (KLA-593 BUG 0).
       let activeTextInput: HTMLInputElement | null = null
       const textOpts = tools.querySelector('#kl-hero-textopts') as HTMLElement | null
+      // The export path (getActiveAnnotatedShotSync) copies this canvas — let it hide the selection outline.
+      ;(canvas as any)._klvAnnotator = annotator
+      const undoBtn = tools.querySelector('#kl-hero-undo') as HTMLButtonElement | null
+      const redoBtn = tools.querySelector('#kl-hero-redo') as HTMLButtonElement | null
+      const refreshHist = () => {
+        if (undoBtn) undoBtn.disabled = !canUndo(index)
+        if (redoBtn) redoBtn.disabled = !canRedo(index)
+      }
       const persist = () => {
-        if (annotator.shapes.length) annotationsByIndex[index] = { w: canvas.width, h: canvas.height, shapes: annotator.shapes.map(s => ({ ...s })) }
+        // Deep-copy (pen points too) so later in-place edits never mutate what's already persisted.
+        if (annotator.shapes.length) annotationsByIndex[index] = { w: canvas.width, h: canvas.height, shapes: annotator.shapes.map(s => cloneShape(s)) }
         else delete annotationsByIndex[index]
         fireAnnChanged(index) // KLA-772: mirror the drawn overlay into the persisted evidence shot
+        refreshHist()
+      }
+      // ── Edit added annotations (Select tool) ──
+      const setSelected = (s: Shape | null) => {
+        annotator.selected = s
+        // Text options apply to a selected text even when the Select tool (not Text) is active.
+        if (textOpts) textOpts.hidden = !(activeTool === 'text' || (s && s.type === 'text'))
+        annotator.redraw()
+      }
+      // Change a property of the selected annotation as ONE undoable step.
+      const editSelected = (fn: (s: any) => void): boolean => {
+        const s = annotator.selected
+        if (!s || !annotator.shapes.includes(s)) return false
+        pushUndo(index)
+        fn(s)
+        annotator.redraw()
+        persist()
+        return true
       }
       const selectTool = (t: string) => {
         activeTool = t
         tools.querySelectorAll<HTMLElement>('[data-tool]').forEach(el => el.classList.toggle('kl-on', el.dataset.tool === t))
-        if (textOpts) textOpts.hidden = t !== 'text'
+        if (t !== 'select' && annotator.selected) setSelected(null)
+        if (textOpts) textOpts.hidden = !(t === 'text' || (annotator.selected && annotator.selected.type === 'text'))
+        // (zoom state is declared further down — don't read it here; applyZoomTransform owns the zoomed cursor)
+        canvas.style.cursor = t === 'select' ? 'default' : 'crosshair'
       }
       const customBtn = tools.querySelector('.kl-hcolor-custom') as HTMLElement | null
       const colorInput = tools.querySelector('.kl-hcolor-input') as HTMLInputElement | null
-      const selectColor = (col: string, btn?: HTMLElement) => {
-        activeColor = col
+      const markColor = (btn?: HTMLElement | null) => {
         tools.querySelectorAll<HTMLElement>('[data-color]').forEach(el => el.classList.toggle('kl-on', el === btn))
         // The custom swatch has no [data-color], so toggle its selected state explicitly.
         if (customBtn) customBtn.classList.toggle('kl-on', customBtn === btn)
+      }
+      const selectColor = (col: string, btn?: HTMLElement) => {
+        activeColor = col
+        markColor(btn)
+        // With an annotation selected, the colour applies to it too (text, counter badge, shapes).
+        const sel = annotator.selected
+        if (sel && sel.type !== 'pixelate' && (sel as any).color !== col) editSelected(s => { s.color = col })
       }
       tools.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => selectTool((b as HTMLElement).dataset.tool!)))
       tools.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => selectColor((b as HTMLElement).dataset.color!, b as HTMLElement)))
@@ -5029,25 +5416,33 @@ export function buildModal(
         colorInput.addEventListener('change', applyCustom)
       }
       // Mask-numbers toggle now lives at the top of the editing toolbar (moved from the capture panel). It
-      // drives the same `maskOn` flag consumed by every capture path, so masking behaviour is unchanged.
+      // drives the same `maskOn` flag consumed by every capture path, AND (KD-3088) applies to the shots
+      // already taken: it used to only affect the NEXT capture, so toggling it while marking up did nothing.
       const maskCb = tools.querySelector('.kl-hmask-cb') as HTMLInputElement | null
-      if (maskCb) maskCb.addEventListener('change', () => { maskOn = maskCb.checked })
+      if (maskCb) maskCb.addEventListener('change', () => { maskOn = maskCb.checked; trackMaskPass(applyNumberMask()) })
       tools.querySelectorAll('[data-outline]').forEach(b => b.addEventListener('click', () => {
         textOutline = (b as HTMLElement).dataset.outline as 'black' | 'white' | 'none'
         tools.querySelectorAll<HTMLElement>('[data-outline]').forEach(el => el.classList.toggle('kl-on', el === b))
+        if (annotator.selected?.type === 'text') editSelected(s => { s.outline = textOutline })
       }))
       tools.querySelectorAll('[data-size]').forEach(b => b.addEventListener('click', () => {
         textSize = Number((b as HTMLElement).dataset.size)
         tools.querySelectorAll<HTMLElement>('[data-size]').forEach(el => el.classList.toggle('kl-on', el === b))
+        if (annotator.selected?.type === 'text') editSelected(s => { s.size = textSize })
       }))
       tools.querySelectorAll('[data-stroke]').forEach(b => b.addEventListener('click', () => {
         annotator.strokeScale = Number((b as HTMLElement).dataset.stroke) || 1
         tools.querySelectorAll<HTMLElement>('[data-stroke]').forEach(el => el.classList.toggle('kl-on', el === b))
-        annotator.redraw()
+        // New shapes record their own stroke (sw); a selected stroke shape is re-weighted. Older shapes
+        // without sw still follow this setting, as before.
+        const sel = annotator.selected
+        if (sel && ['pen', 'line', 'rect', 'circle', 'arrow'].includes(sel.type)) editSelected(s => { s.sw = annotator.strokeScale })
+        else annotator.redraw()
       }))
       // #449: route the toolbar Undo through the unified per-image history so one click steps back one op
-      // (annotation OR crop), remounting to paint the restored state.
-      tools.querySelector('#kl-hero-undo')?.addEventListener('click', () => { undoShot(index) })
+      // (annotation OR crop), remounting to paint the restored state. Redo re-applies the last undone op.
+      undoBtn?.addEventListener('click', () => { undoShot(index) })
+      redoBtn?.addEventListener('click', () => { redoShot(index) })
       tools.querySelector('#kl-hero-revert')?.addEventListener('click', () => { revertCrop(index) })
       // Clear is itself undoable: snapshot the current markup before wiping it.
       tools.querySelector('#kl-hero-clear')?.addEventListener('click', () => { pushUndo(index); annotator.clearAll(); persist() })
@@ -5072,10 +5467,11 @@ export function buildModal(
       // KLAVITYKLA-507: build the shape for a rect/line/circle/arrow drag from origin→cursor. Kept in one
       // place so the live drag preview (pointermove) and the committed shape (pointerup) are byte-identical.
       const provisionalShape = (tool: string, sx: number, sy: number, ex: number, ey: number, color: string): Shape | null => {
-        if (tool === 'line') return { type: 'line', color, x1: sx, y1: sy, x2: ex, y2: ey }
-        if (tool === 'arrow') return { type: 'arrow', color, x1: sx, y1: sy, x2: ex, y2: ey }
-        if (tool === 'rect') return { type: 'rect', color, x: Math.min(sx, ex), y: Math.min(sy, ey), w: Math.abs(ex - sx), h: Math.abs(ey - sy) }
-        if (tool === 'circle') return { type: 'circle', color, x: (sx + ex) / 2, y: (sy + ey) / 2, rx: Math.abs(ex - sx) / 2, ry: Math.abs(ey - sy) / 2 }
+        const sw = annotator.strokeScale
+        if (tool === 'line') return { type: 'line', color, x1: sx, y1: sy, x2: ex, y2: ey, sw }
+        if (tool === 'arrow') return { type: 'arrow', color, x1: sx, y1: sy, x2: ex, y2: ey, sw }
+        if (tool === 'rect') return { type: 'rect', color, x: Math.min(sx, ex), y: Math.min(sy, ey), w: Math.abs(ex - sx), h: Math.abs(ey - sy), sw }
+        if (tool === 'circle') return { type: 'circle', color, x: (sx + ex) / 2, y: (sy + ey) / 2, rx: Math.abs(ex - sx) / 2, ry: Math.abs(ey - sy) / 2, sw }
         if (tool === 'pixelate') return { type: 'pixelate', x: Math.min(sx, ex), y: Math.min(sy, ey), w: Math.abs(ex - sx), h: Math.abs(ey - sy) }
         return null
       }
@@ -5223,6 +5619,34 @@ export function buildModal(
         }
         return null
       }
+      // Select-tool drag: move the selected annotation, or resize it from a handle. `orig` is the shape at
+      // drag start (each move re-applies from it, so there's no drift); the undo snapshot is pushed only once
+      // the pointer actually moves, so a plain click-to-select never adds an empty undo step.
+      let editDrag: { shape: Shape; orig: Shape; bounds: Box; mode: 'move' | 'resize'; handle: Handle | null; grabX: number; grabY: number; snap: ReturnType<typeof snapshotShot>; moved: boolean } | null = null
+      const handleCursor = (h: Handle) => (h === 'nw' || h === 'se' ? 'nwse-resize' : h === 'ne' || h === 'sw' ? 'nesw-resize' : 'move')
+      // Edit an existing text label's words in place (Select tool → double-click a text annotation).
+      const editTextContent = (shape: Extract<Shape, { type: 'text' }>, clientX: number, clientY: number) => {
+        const input = document.createElement('input')
+        const s = displayScale()
+        const size = shape.size ?? annotator.computeFontSize()
+        input.value = shape.text
+        input.style.cssText = `position:fixed;left:${clientX}px;top:${clientY}px;padding:0;margin:0;line-height:1;box-sizing:content-box;background:rgba(255,255,255,.92);border:0;color:${shape.color};font-size:${Math.max(6, size * s)}px;font-family:sans-serif;font-weight:700;outline:1px dashed ${shape.color};z-index:2147483647;min-width:120px;`
+        document.body.appendChild(input)
+        activeTextInput = input
+        requestAnimationFrame(() => { if (document.body.contains(input)) { input.focus(); input.select() } })
+        input.addEventListener('blur', () => {
+          activeTextInput = null
+          const v = input.value.trim()
+          if (v && v !== shape.text) { setSelected(shape); editSelected(t => { t.text = v }) }
+          safeRemove(input)
+        }, { once: true })
+        input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur(); if (ke.key === 'Escape') { input.value = shape.text; input.blur() } ke.stopPropagation() })
+      }
+      canvas.addEventListener('dblclick', (e) => {
+        if (activeTool !== 'select') return
+        const hit = annotator.hitShape(toImg(e as unknown as PointerEvent).x, toImg(e as unknown as PointerEvent).y)
+        if (hit && hit.type === 'text') { e.stopPropagation(); editTextContent(hit, e.clientX, e.clientY) }
+      })
       canvas.addEventListener('pointerdown', (e) => {
         // Shift+drag pans the zoomed image instead of drawing.
         if (e.shiftKey && zoom > 1) {
@@ -5232,6 +5656,22 @@ export function buildModal(
           e.preventDefault(); return
         }
         const pt = toImg(e); startX = pt.x; startY = pt.y
+        if (activeTool === 'select') {
+          annotator.uiScale = 1 / displayScale()
+          const handle = annotator.hitHandle(pt.x, pt.y)
+          const target = handle ? annotator.selected : annotator.hitShape(pt.x, pt.y)
+          if (!target) { setSelected(null); return }
+          if (target !== annotator.selected) setSelected(target)
+          const bounds = annotator.shapeBounds(target) || { x: pt.x, y: pt.y, w: 0, h: 0 }
+          editDrag = { shape: target, orig: cloneShape(target), bounds, mode: handle ? 'resize' : 'move', handle, grabX: pt.x, grabY: pt.y, snap: snapshotShot(index), moved: false }
+          // Sync the toolbar to the picked annotation's colour, so the swatch shows what it is.
+          const col = (target as any).color as string | undefined
+          if (col) { activeColor = col; markColor(tools.querySelector(`[data-color="${col}"]`) as HTMLElement | null) }
+          try { canvas.setPointerCapture(e.pointerId) } catch { /* noop */ }
+          canvas.style.cursor = handle ? handleCursor(handle) : 'move'
+          e.preventDefault()
+          return
+        }
         if (activeTool === 'crop') {
           drawing = true
           // KLAVITYKLA-507: capture the pointer so a release OUTSIDE the canvas still fires pointerup here.
@@ -5293,6 +5733,25 @@ export function buildModal(
       })
       canvas.addEventListener('pointermove', (e) => {
         if (panning) { canvas.style.transition = 'none'; panX = panBaseX + (e.clientX - panSX); panY = panBaseY + (e.clientY - panSY); applyZoomTransform(); canvas.style.cursor = 'grabbing'; return }
+        if (editDrag) {
+          const pt = toImg(e)
+          if (!editDrag.moved) {
+            if (Math.hypot(pt.x - editDrag.grabX, pt.y - editDrag.grabY) < 2) return   // ignore click jitter
+            editDrag.moved = true
+            pushUndoSnap(index, editDrag.snap)   // one undo step for the whole move/resize gesture
+          }
+          if (editDrag.mode === 'move') translateShape(editDrag.shape, editDrag.orig, pt.x - editDrag.grabX, pt.y - editDrag.grabY)
+          else if (editDrag.handle) resizeShape(editDrag.shape, editDrag.orig, editDrag.bounds, editDrag.handle, pt.x, pt.y)
+          annotator.redraw()
+          return
+        }
+        if (activeTool === 'select') {
+          const hp = toImg(e)
+          annotator.uiScale = 1 / displayScale()
+          const h = annotator.hitHandle(hp.x, hp.y)
+          canvas.style.cursor = h ? handleCursor(h) : annotator.hitShape(hp.x, hp.y) ? 'move' : 'default'
+          return
+        }
         // KLA-770: live text move/resize — mutate the grabbed shape and repaint (base + committed) each move.
         if (textDrag) {
           const pt = toImg(e)
@@ -5316,7 +5775,7 @@ export function buildModal(
         if (activeTool === 'pen') {
           penPoints.push(toImg(e))
           // KLAVITYKLA-507: live pen preview (base + committed + the in-progress stroke).
-          if (penPoints.length > 1) annotator.drawPreview({ type: 'pen', color: activeColor, points: penPoints })
+          if (penPoints.length > 1) annotator.drawPreview({ type: 'pen', color: activeColor, points: penPoints, sw: annotator.strokeScale })
           return
         }
         if (activeTool === 'crop' && cropBox) {
@@ -5338,6 +5797,15 @@ export function buildModal(
       })
       canvas.addEventListener('pointerup', (e) => {
         if (panning) { panning = false; canvas.style.cursor = zoom > 1 ? 'grab' : 'crosshair'; try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ } return }
+        if (editDrag) {
+          const moved = editDrag.moved
+          editDrag = null
+          try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ }
+          canvas.style.cursor = 'default'
+          annotator.redraw()
+          if (moved) persist()
+          return
+        }
         // KLA-770: finish a text move/resize — commit the shape's new position/size into the overlay.
         if (textDrag) {
           textDrag = null
@@ -5360,13 +5828,19 @@ export function buildModal(
         }
         // #449: snapshot before adding so this shape becomes one undo step in the unified history.
         const isPixel = activeTool === 'pixelate' && Math.abs(pt.x - startX) > 4 && Math.abs(pt.y - startY) > 4
-        const willAdd = (activeTool === 'pen' && penPoints.length > 1) || activeTool === 'line' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'arrow' || isPixel
+        // Rectangle is now the default tool, so a plain click (no drag) must not drop an invisible 0×0 shape + an
+        // undo step. Line / rect / circle / arrow are added only after a real drag of a few pixels.
+        const dragged = Math.abs(pt.x - startX) > 3 || Math.abs(pt.y - startY) > 3
+        const isShape = (activeTool === 'line' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'arrow') && dragged
+        const willAdd = (activeTool === 'pen' && penPoints.length > 1) || isShape || isPixel
         if (willAdd) pushUndo(index)
-        if (activeTool === 'pen' && penPoints.length > 1) annotator.addShape({ type: 'pen', color: activeColor, points: penPoints })
-        else if (activeTool === 'line') annotator.addShape({ type: 'line', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
-        else if (activeTool === 'rect') annotator.addShape({ type: 'rect', color: activeColor, x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
-        else if (activeTool === 'circle') annotator.addShape({ type: 'circle', color: activeColor, x: (startX + pt.x) / 2, y: (startY + pt.y) / 2, rx: Math.abs(pt.x - startX) / 2, ry: Math.abs(pt.y - startY) / 2 })
-        else if (activeTool === 'arrow') annotator.addShape({ type: 'arrow', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
+        // Each shape records the stroke it was drawn with (sw) so it keeps it in the editor AND the export.
+        const sw = annotator.strokeScale
+        if (activeTool === 'pen' && penPoints.length > 1) annotator.addShape({ type: 'pen', color: activeColor, points: penPoints, sw })
+        else if (isShape && activeTool === 'line') annotator.addShape({ type: 'line', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y, sw })
+        else if (isShape && activeTool === 'rect') annotator.addShape({ type: 'rect', color: activeColor, x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY), sw })
+        else if (isShape && activeTool === 'circle') annotator.addShape({ type: 'circle', color: activeColor, x: (startX + pt.x) / 2, y: (startY + pt.y) / 2, rx: Math.abs(pt.x - startX) / 2, ry: Math.abs(pt.y - startY) / 2, sw })
+        else if (isShape && activeTool === 'arrow') annotator.addShape({ type: 'arrow', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y, sw })
         else if (isPixel) annotator.addShape({ type: 'pixelate', x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
         persist()
       })
@@ -5379,10 +5853,11 @@ export function buildModal(
         // KLA-770: an interrupted text drag keeps its last position (already mutated); commit + clear state so
         // the gesture can't get stuck holding the shape.
         if (textDrag) { textDrag = null; canvas.style.cursor = 'crosshair'; annotator.redraw(); persist() }
+        if (editDrag) { const moved = editDrag.moved; editDrag = null; annotator.redraw(); if (moved) persist() }
         if (drawing) { drawing = false; annotator.redraw() } // discard the provisional shape, keep committed
       })
 
-      const TOOL_KEYS: Record<string, string> = { p: 'pen', l: 'line', r: 'rect', o: 'circle', a: 'arrow', t: 'text', c: 'count', b: 'pixelate', k: 'crop' }
+      const TOOL_KEYS: Record<string, string> = { v: 'select', p: 'pen', l: 'line', r: 'rect', o: 'circle', a: 'arrow', t: 'text', c: 'count', b: 'pixelate', k: 'crop' }
       heroKeyHandler = (e: KeyboardEvent) => {
         if (!document.body.contains(host)) { detachHeroKeys(); return }
         // KLA-593 BUG 0 (defense-in-depth): if a text-annotation input is open, NEVER treat keys as tool
@@ -5396,8 +5871,19 @@ export function buildModal(
         if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return
         // #449 addendum: BOTH Cmd+Z (metaKey, macOS) and Ctrl+Z (ctrlKey, Win/Linux) step back one op
         // through the unified draw+crop history — repeat to walk all the way to the clean image.
+        // Redo: Cmd/Ctrl+Shift+Z (macOS + most editors) or Ctrl+Y (Windows). Checked before plain undo.
+        if ((e.metaKey || e.ctrlKey) && ((e.shiftKey && e.key.toLowerCase() === 'z') || (!e.shiftKey && e.key.toLowerCase() === 'y'))) { e.preventDefault(); redoShot(index); return }
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undoShot(index); return }
         if (e.metaKey || e.ctrlKey || e.altKey) return
+        // Select tool: Delete/Backspace removes the selected annotation (undoable); Escape deselects.
+        if (annotator.selected && (e.key === 'Delete' || e.key === 'Backspace')) {
+          e.preventDefault()
+          const sel = annotator.selected
+          const i = annotator.shapes.indexOf(sel)
+          if (i >= 0) { pushUndo(index); annotator.shapes.splice(i, 1); setSelected(null); persist() }
+          return
+        }
+        if (annotator.selected && e.key === 'Escape') { e.preventDefault(); setSelected(null); return }
         const k = e.key.toLowerCase()
         // #627: bare Z toggles zoom — fit (1×) ⇄ 2× centred on the stage. No modifiers here (Cmd/Ctrl+Z is
         // handled above as undo; the text-input/textarea guard earlier means it never fires while typing).
@@ -5431,10 +5917,10 @@ export function buildModal(
       toolbar.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px;background:#1e1e2e;flex-wrap:wrap;'
       const keyHint = (k: string) => `<span style="opacity:.45;margin-left:5px;font-size:11px;">${k}</span>`
       toolbar.innerHTML = `
-        <button data-tool="pen" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${icon('pencil', { size: 14 })} Pen</button>
         <button data-tool="rect" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${icon('square', { size: 14 })} Rect</button>
         <button data-tool="arrow" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">↗ Arrow</button>
         <button data-tool="text" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">T Text</button>
+        <button data-tool="pen" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${icon('pencil', { size: 14 })} Pen</button>
         <button data-color="#ef4444" style="background:#ef4444;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
         <button data-color="#f97316" style="background:#f97316;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
         <button data-color="#16a34a" style="background:#16a34a;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
@@ -5835,6 +6321,14 @@ export function buildModal(
   // KD-1074: recordings seeded on open (a resumed evidence session) must show in the strip straight away —
   // select the newest as the hero, like a fresh "Record me" capture.
   if (recordings.length) { activeRecordingIndex = recordings.length - 1; renderRecordings() }
+  // Files seeded on open (Resume after Minimize) show straight away; the newest video becomes the hero
+  // unless a seeded recording already took it.
+  if (attachedFiles.length) {
+    if (activeRecordingIndex == null) {
+      for (let i = attachedFiles.length - 1; i >= 0; i--) { if (attachmentKind(attachedFiles[i]) === 'video') { activeVideoIndex = i; break } }
+    }
+    renderFiles(); updateStrip()
+  }
 
   if (callbacks.autoCaptureOnOpen) {
     // KLAVITYKLA-506: very large DOMs make the html-to-image render slow enough to jank the composer's first

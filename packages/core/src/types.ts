@@ -195,6 +195,8 @@ export interface SubmitReportPayload {
   screenshots: string[] // data URLs (PNG or JPEG)
   // PX4 #425: non-image file attachments (PDF, logs, .har, ...). Optional; screenshots keep their own path.
   files?: ReportFileAttachment[]
+  // Large files already uploaded in chunks (/api/uploads/*): signed refs sent as `file_refs`. Optional.
+  fileRefs?: string[]
   // KLAVITYKLA-438: "Record me" video recordings (screen+camera+mic). Optional + additive — absent when the
   // composer's recording flag is off or the reporter attached none. Threaded to /api/feedback as `recording`.
   recordings?: ReportRecording[]
@@ -239,6 +241,8 @@ export interface IntegrationConfig {
   title?: string
   kind?: IssueKind
   files?: ReportFileAttachment[]
+  // Large files already uploaded in chunks (/api/uploads/*): signed refs sent as `file_refs`. Optional.
+  fileRefs?: string[]
   recordings?: ReportRecording[]
   reporter?: Reporter
   clientInfo?: ClientInfo
@@ -264,6 +268,9 @@ export type BackgroundMessage =
   | { kind: 'KLAV_CONSENT'; projectId: string; status: 'granted' | 'paused' | 'revoked' }               // POST /api/consent
   | { kind: 'KLAV_RECONCILE_SCRIPTS' }                       // re-register dynamic content scripts after a host-permission grant
   | { kind: 'KLAV_DEPLOY_SIMS'; projectId: string; simIds: string[] | 'all' } // trigger sims-live deploy (Dev2 hook)
+  // Large-file upload: content proxies one /api/uploads/* call through the SW (which holds the auth token).
+  // `b64` carries a chunk's bytes (Blobs/ArrayBuffers don't survive runtime messaging). Reply: { status, text }.
+  | { kind: 'LARGE_UPLOAD'; path: string; query?: Record<string, string>; json?: unknown; b64?: string }
 
 export type KlavMonitoredProject = { id: string; name: string; reviewMode: string; monitoredUrls: string[] }
 export interface KlavConfig {
@@ -294,16 +301,20 @@ export type ContentMessage =
   // ── Ad-hoc "Analyze this page" (Task 4) ──
   | { kind: 'KLAV_ADHOC_REVIEW'; projectId: string }             // popup → content: run an explicit one-shot review
 
+// `sw` (stroke shapes) = the stroke-width multiplier chosen when the shape was drawn (S=0.6 … XL=2.8), so a
+// shape keeps its own weight in the editor AND in the exported image; absent on older shapes → the
+// editor's current Stroke setting applies (pre-existing behaviour).
 export type Shape =
-  | { type: 'pen'; color: string; points: Array<{ x: number; y: number }> }
-  | { type: 'rect'; color: string; x: number; y: number; w: number; h: number }
-  | { type: 'arrow'; color: string; x1: number; y1: number; x2: number; y2: number }
+  | { type: 'pen'; color: string; points: Array<{ x: number; y: number }>; sw?: number }
+  | { type: 'rect'; color: string; x: number; y: number; w: number; h: number; sw?: number }
+  | { type: 'arrow'; color: string; x1: number; y1: number; x2: number; y2: number; sw?: number }
   // straight line segment from (x1,y1) to (x2,y2)
-  | { type: 'line'; color: string; x1: number; y1: number; x2: number; y2: number }
+  | { type: 'line'; color: string; x1: number; y1: number; x2: number; y2: number; sw?: number }
   | { type: 'text'; color: string; x: number; y: number; text: string; size?: number; outline?: 'black' | 'white' | 'none' }
   // circle is an axis-aligned ellipse; (x,y) is the centre, rx/ry the radii (from the drag bbox)
-  | { type: 'circle'; color: string; x: number; y: number; rx: number; ry: number }
-  // numbered marker pin: filled dot with a step number, dropped by the count tool
-  | { type: 'count'; color: string; x: number; y: number; n: number }
+  | { type: 'circle'; color: string; x: number; y: number; rx: number; ry: number; sw?: number }
+  // numbered marker pin: filled dot with a step number, dropped by the count tool. `size` = badge radius
+  // (image px) once the user resizes it; absent → the default radius.
+  | { type: 'count'; color: string; x: number; y: number; n: number; size?: number }
   // redaction: an axis-aligned region that is pixelated (mosaic) into the baked image for privacy
   | { type: 'pixelate'; x: number; y: number; w: number; h: number }
