@@ -1108,7 +1108,10 @@ async function mount() {
     const keep = new Set<string>()
     const rows = files.map((f) => {
       const id = evFileId(f); keep.add(id); evFilesMem.set(id, f)
-      return { id, name: f.name, type: f.type, size: f.size, dataUrl: f.dataUrl && f.dataUrl.length <= EV_FILE_STORE_MAX_CHARS ? f.dataUrl : "" }
+      const dataUrl = f.dataUrl && f.dataUrl.length <= EV_FILE_STORE_MAX_CHARS ? f.dataUrl : ""
+      // Attached videos are kept as a Blob (never base64'd) → persist the Blob itself (IndexedDB stores it natively),
+      // so the video survives minimize + a navigation/reload instead of being dropped.
+      return { id, name: f.name, type: f.type, size: f.size, dataUrl, ...(!dataUrl && f.blob ? { blob: f.blob } : {}) }
     })
     for (const id of [...evFilesMem.keys()]) if (!keep.has(id)) evFilesMem.delete(id)
     void queueEvWrite(async () => { evSession = await setEvidenceFiles(sessionId, rows) ?? evSession; updateEvDock() })
@@ -1119,8 +1122,9 @@ async function mount() {
     for (const row of session.files ?? []) {
       const mem = evFilesMem.get(row.id)
       if (mem) { out.push(mem); continue }
-      if (row.dataUrl) {
-        const f = { name: row.name, type: row.type, size: row.size, dataUrl: row.dataUrl }
+      if (row.dataUrl || row.blob) {
+        const f: any = { name: row.name, type: row.type, size: row.size, dataUrl: row.dataUrl || "" }
+        if (!row.dataUrl && row.blob) f.blob = row.blob   // a stored video: the composer previews + uploads the Blob
         evFileIds.set(f, row.id); evFilesMem.set(row.id, f); out.push(f)
         continue
       }
