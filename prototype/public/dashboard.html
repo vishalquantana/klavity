@@ -314,6 +314,61 @@
       user-select: text
     }
 
+    /* KD-3132: billing managed by the customer's admin (body.plan-locked, set by applyPlanLock) — the Plan &
+       billing drawer opens as usual, but its content is blurred and inert with a "contact your admin" popup on
+       top; the sidebar upgrade pill keeps its space but is not shown. */
+    #planContactAdmin {
+      display: none
+    }
+
+    body.plan-locked #planDrawer .drawer-in {
+      position: relative;
+      min-height: 520px
+    }
+
+    body.plan-locked #planDrawer .drawer-in > :not(#planContactAdmin) {
+      filter: blur(6px);
+      pointer-events: none;
+      user-select: none
+    }
+
+    body.plan-locked #planContactAdmin {
+      display: flex;
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 32px 16px 16px
+    }
+
+    /* Same look as the Sims/AutoSims "Upgrade to unlock" wall (.uw-card & co.), sized up for the drawer. */
+    .plan-lock-card {
+      width: 520px;
+      max-width: 100%;
+      padding: 36px 36px 30px
+    }
+
+    .plan-lock-card .uw-benefits {
+      max-width: 400px
+    }
+
+    .plan-lock-cta {
+      display: inline-block;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--paper);
+      padding: 10px 16px;
+      background: rgba(99, 102, 241, .10);
+      border: 1px solid rgba(99, 102, 241, .30);
+      border-radius: 10px
+    }
+
+    body.plan-locked #planPill {
+      visibility: hidden;
+      pointer-events: none
+    }
+
     /* compact upgrade pill for free accounts — sits under the brand, opens the Plan & billing drawer */
     .side-plan-pill {
       display: flex;
@@ -8210,6 +8265,45 @@
       font-family: var(--body);
       font-size: 13px;
       font-weight: 600
+    }
+
+    /* KD-3118: Customer details — read-only lines inside the Description box, after the text (mirrors the Jira body). */
+    .tkt-cust {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--line)
+    }
+
+    .tkt-cust-h {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--paper);
+      margin-bottom: 4px
+    }
+
+    /* the editor replaces the text in place; keep the read-only details out of the way while editing */
+    .tkt-desc-editing .tkt-cust {
+      display: none
+    }
+
+    .tkt-cust-grid {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 4px 12px;
+      font-size: 14px;
+      line-height: 1.5
+    }
+
+    .tkt-cust-k {
+      color: var(--paper-faint);
+      white-space: nowrap
+    }
+
+    .tkt-cust-v {
+      color: var(--paper);
+      overflow-wrap: anywhere;
+      min-width: 0;
+      user-select: text
     }
 
     .contacts-head {
@@ -19911,6 +20005,29 @@
             style="font-size:11px;text-transform:none;letter-spacing:0">Stripe checkout + customer portal</span> <span
             class="caret">›</span></summary>
         <div class="drawer-in">
+          <!-- KD-3132: for projects whose billing is managed by the customer's own admin (see
+           BILLING_CONTACT_ADMIN_PROJECTS / applyPlanLock) the drawer still opens, but the plan/billing content
+           is blurred + non-interactive and this popup sits over it. Hidden for every other project. -->
+          <div id="planContactAdmin" class="plan-lock-overlay">
+            <div class="uw-card plan-lock-card" role="note" aria-labelledby="planLockTitle">
+              <div class="uw-lock"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+                  fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  aria-hidden="true">
+                  <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg></div>
+              <h2 id="planLockTitle">Your plan is managed by admin</h2>
+              <p class="uw-sub">Good news: everything on this project is already set up for you. Plan and billing for
+                your organisation are handled by your admin, so there is nothing you need to do here.</p>
+              <div class="uw-benefits">
+                <div>Need more Sims, AutoSims or projects? Your admin can change the plan.</div>
+                <div>Questions about invoices, payments or renewals go to your admin.</div>
+                <div>Hit a usage limit? Ask your admin to review your allowance.</div>
+              </div>
+              <div class="plan-lock-cta">Please contact your admin for any plan or billing request.</div>
+              <div class="uw-note">Keep reporting bugs as usual. Nothing about your access changes.</div>
+            </div>
+          </div>
           <p class="tacc-hint" style="margin-bottom:12px">Current plan: <b id="planLabel">…</b> <span
               id="billingStatusLabel" class="muted" style="font-size:12px"></span></p>
           <div id="billingQuotaNote" class="muted" style="font-size:12px;margin-bottom:12px"></div>
@@ -24575,6 +24692,24 @@
             matches: [],       // filtered project list currently shown
             active: -1         // index into matches of the highlighted row
           }
+          // KD-3132: projects whose plan & billing is handled by the customer's own admin, not in Klavity. For
+          // these the Settings "Plan & billing" drawer shows only a "please contact your admin" note, and the
+          // sidebar upgrade pill is hidden. Matched on the project ID (stable across renames).
+          const BILLING_CONTACT_ADMIN_PROJECTS = [
+            "proj_6c601d46-7a83-4359-aab4-01b6ebd4a1ea", // PX4 QA
+          ]
+          function applyPlanLock(project) {
+            const id = project && project.id ? String(project.id) : ""
+            const locked = !!id && BILLING_CONTACT_ADMIN_PROJECTS.includes(id)
+            document.body.classList.toggle("plan-locked", locked)
+            // The CSS blur + pointer-events only stop the mouse; `inert` also keeps the blurred controls out of
+            // keyboard focus and the accessibility tree, so only the contact-admin popup is reachable.
+            const inner = document.querySelector("#planDrawer .drawer-in")
+            if (inner) Array.from(inner.children).forEach(el => {
+              if (el.id === "planContactAdmin") return
+              if (locked) el.setAttribute("inert", ""); else el.removeAttribute("inert")
+            })
+          }
           function renderSwitcher() {
             // KLA-829: null-safe — renderSwitcher runs as "chrome" on every render AND from load()'s failure
             // branch where `state` can still be null (cold fetch miss). Guard every deref so a dead page still
@@ -24582,6 +24717,7 @@
             const projects = (state && state.projects) || []
             const activeId = state && state.active ? state.active.id : null
             const isAdmin = !!(state && state.active && state.active.role === "admin")
+            applyPlanLock(projects.find(p => p.id === activeId))
             const btnName = $("projComboName")
             if (btnName) {
               const cur = projects.find(p => p.id === activeId)
@@ -25748,7 +25884,9 @@
             const raw = String(text == null ? "" : text)
             return raw.trim() ? linkifyDescription(raw) : '<span class="tkt-desc-placeholder">Add a description…</span>'
           }
-          function descriptionBlockHtml(text) {
+          // KD-3118: `extraHtml` (pre-escaped) renders INSIDE the Description box after the text, e.g. the
+          // read-only "Customer details:" lines that follow "Steps to reproduce:" exactly as in the Jira body.
+          function descriptionBlockHtml(text, extraHtml) {
             const raw = String(text == null ? "" : text)
             const label = "Description"
             // #653: editable description — a pencil button (or clicking empty prompt) swaps in a textarea + Save/Cancel.
@@ -25758,7 +25896,7 @@
       <div class="tkt-desc-label">${label}</div>
       <button class="tkt-desc-edit" type="button" title="Edit description" aria-label="Edit description">${kicon('pencil', { size: 13 })}</button>
     </div>
-    <div class="tkt-obs">${descObsInner(raw)}</div>
+    <div class="tkt-obs">${descObsInner(raw)}</div>${extraHtml || ""}
   </div>`
           }
           // KLAVITYKLA-438 "Record me" (Phase 2): format seconds → m:ss for a transcript timestamp.
@@ -27121,7 +27259,24 @@
             const _showBugBody = !!_bugBody && !_sameAsSingleTitle(_bugBody)
             const _showBug = !!t.suggestedBug && (_showBugTitle || _showBugBody)
             const _hasDupAck = (t.recurrenceCount || t.recurrence || 1) >= 2
-            const _hasContextItems = _showObs || _showBug || !!t.sourceQuote
+            // KD-3118: "Customer details" — the same reporter identity block the exported Jira ticket carries
+            // (server reporterLines(): same keys, order and labels), rendered INSIDE the Description box after the
+            // text, so it follows "Steps to reproduce:" exactly as in Jira. Read-only: it is not part of the editable
+            // observation, and is hidden while the description editor is open (.tkt-desc-editing).
+            // Arrives via GET /api/feedback/:id (`reporter`); omitted entirely when there are no fields.
+            const _custRows = (t.reporter && typeof t.reporter === "object")
+              ? [["id", "User ID"], ["email", "Email"], ["name", "Name"], ["org", "Company Name"], ["orgId", "Org ID"],
+                 ["role", "Role"], ["product", "Product"], ["env", "Environment"], ["server", "Server"]]
+                  .filter(([k]) => t.reporter[k] != null && String(t.reporter[k]).trim() !== "")
+                  .map(([k, lb]) => `<span class="tkt-cust-k">${esc(lb)}:</span><span class="tkt-cust-v">${esc(String(t.reporter[k]))}</span>`).join("")
+              : ""
+            const _custHtml = _custRows ? `<div class="tkt-cust">
+      <div class="tkt-cust-h">Customer details:</div>
+      <div class="tkt-cust-grid">${_custRows}</div>
+    </div>` : ""
+            // Customer details live inside the Description box, so show that box whenever there are any.
+            const _showDesc = _showObs || !!_custHtml
+            const _hasContextItems = _showDesc || _showBug || !!t.sourceQuote
               || (_showSevChip || _showSentiment || _showSimChip) || _hasDupAck || !!t.isRegression
             const _hasContext = _hasContextItems
 
@@ -27129,7 +27284,7 @@
       <div class="tkt-context">
         ${dupAckHtml(t)}
         ${regrBannerHtml(t)}
-        ${_showObs ? descriptionBlockHtml(t.observation) : ""}
+        ${_showDesc ? descriptionBlockHtml(t.observation, _custHtml) : ""}
         ${(_showSevChip || _showSentiment || _showSimChip) ? `<div class="tkt-chips">${_showSevChip ? `<span class="chip sev-${esc(t.priority)}">${esc(t.priority)}</span>` : ""}${_showSentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${_showSimChip ? `<span class="chip">${esc(t.simName)}</span>` : ""}</div>` : ""}
         ${_showBug ? `<div class="tkt-bug">${_showBugTitle ? `<div class="tkt-bug-t">${kicon('bug')} ${esc(_bugTitle)}</div>` : ""}${_showBugBody ? `<div class="tkt-bug-b">${esc(_bugBody)}</div>` : ""}</div>` : ""}
         ${t.sourceQuote ? `<div class="tkt-prov">"${esc(t.sourceQuote)}"${t.sourceDate ? ` · raised ${esc(ago(t.sourceDate))}` : ""}</div>` : ""}
@@ -29265,6 +29420,7 @@
             p.catch(() => { if (_tktReads.get(key) === p) _tktReads.delete(key) })
             return p
           }
+          let _tktOpenSeq = 0, _tktOpenAbort = null   // latest openSingleTicket() call + its in-flight fetch
           async function openSingleTicket(id, mode, context) {
             _tktOriginContext = context || (document.body && document.body.getAttribute("data-view") === "triage" ? "triage" : "tickets")
             // KD-239: any ticket opened in this page load means the boot deep link (if any) is done with. Opening one from
@@ -29284,9 +29440,18 @@
               const ae = document.activeElement
               if (ae && ae !== document.body && !$("ticketSingle").contains(ae)) window.__klavTktInvoker = ae
             } catch (e) { }
+            // Prev / Next race: every open renders from cache, then re-renders when the fresh /api/feedback/<id>
+            // arrives. Stepping A → B while A's fetch was still in flight let A's late response re-render A over B
+            // (and push A's URL back) — "the current ticket opens again instead of the next one" + a double render
+            // (the lag). Each open now owns a sequence number and cancels the previous open's fetch; a stale
+            // response may still refresh the cached data, but never re-renders or re-routes.
+            const mySeq = ++_tktOpenSeq
+            try { if (_tktOpenAbort) _tktOpenAbort.abort() } catch (e) { }
+            const ctrl = typeof AbortController === "function" ? new AbortController() : null
+            _tktOpenAbort = ctrl
             _renderSingleTicket(id)
             try {
-              const r = await fetch("/api/feedback/" + encodeURIComponent(id))
+              const r = await fetch("/api/feedback/" + encodeURIComponent(id), ctrl ? { signal: ctrl.signal } : undefined)
               if (!r.ok) return
               const d = await r.json().catch(() => null)
               const fresh = d && d.report
@@ -29298,11 +29463,13 @@
               const ix = state.tickets.findIndex(x => String(x.id) === String(id))
               if (ix >= 0) state.tickets[ix] = { ...state.tickets[ix], ...fresh }
               else state.tickets.push(fresh)
-              // Only re-render if this ticket is still the one being viewed.
+              // Only re-render if this ticket is STILL the one being viewed (no newer open since, panel still shown).
+              if (mySeq !== _tktOpenSeq) return
               const single = $("ticketSingle")
               if (single && !single.classList.contains("hide")) tktRenderReusing(() => _renderSingleTicket(id))   // reuse render 1's reads
               if (fresh.exportPending) pollTicketExports(id)
             } catch (e) { }
+            finally { if (_tktOpenAbort === ctrl) _tktOpenAbort = null }
           }
           // KD-983: a ticket opened while its background auto-file is still running (AI title → Jira create) used
           // to show no tracker link until a page refresh. While the server reports exportPending, re-check every

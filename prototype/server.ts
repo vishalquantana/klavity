@@ -13973,6 +13973,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // projection so the standalone /t/:ref page renders reporter + page context without a second
           // fetch. Member-gated (fbRow already access-checked above) — never surfaced to non-members.
           reporterEmail: fbRow.contactEmail || fbRow.actorEmail || null,
+          // KD-3118: the host-supplied customer identity (sanitized to REPORTER_KEYS at ingest). It is already
+          // written into the exported Jira/connector body as "Customer details:"; the ticket detail shows the
+          // same block. Null on anonymous / older rows. Member-gated like reporterEmail above.
+          reporter: fbRow.reporter && typeof fbRow.reporter === "object" ? fbRow.reporter : null,
           pageUrl: fbRow.reportUrl || (fbRow.urlHost ? `https://${fbRow.urlHost}${fbRow.urlPath || ""}` : (fbRow.urlPath || null)),
           ref: String(fbRow.id).split("-")[0],
           sourceReferrer: fbRow.sourceReferrer,
