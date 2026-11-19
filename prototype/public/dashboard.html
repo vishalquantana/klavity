@@ -18130,7 +18130,9 @@
     [data-view="triage"] .kb-list { margin-top: .8px; padding-top: 15px; }
     .bar-left { gap: 6px; }
     :root:not([data-theme="dark"]) .bar-left .nav-snap { width: 116px; justify-content: center; padding: 0; }
-    :root:not([data-theme="dark"]) .bar-left .nav-studio { width: 106px; justify-content: center; padding: 0; }
+    :root:not([data-theme="dark"]) .bar-left .nav-studio { width: auto; min-width: 122px; justify-content: center; padding: 0 14px; }
+    /* KD-3121: "Sims Studio" label must stay on one line (also with the lock badge shown on Snap-only projects). */
+    .bar-left .nav-studio, .nav-studio-lbl { white-space: nowrap; flex-shrink: 0; }
     [data-view="triage"] .tg-filters { padding-bottom: 13.3px; }
     .nav-snap-lbl, .nav-studio-lbl, .create-lbl { letter-spacing: 0; }
     .bar-left .create-wrap { position: relative; margin-left: 19px; }

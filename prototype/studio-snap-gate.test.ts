@@ -53,3 +53,8 @@ test("Plan & billing stays visible on a Snap-only project (target of Upgrade to 
   expect(HTML).not.toContain("body.snap-only #planDrawer")
   expect(HTML).toContain('id="planDrawer"')
 })
+
+test("Sims Studio nav button keeps its label on one line", () => {
+  expect(HTML).toContain(".bar-left .nav-studio, .nav-studio-lbl { white-space: nowrap; flex-shrink: 0; }")
+  expect(HTML).toContain(".bar-left .nav-studio { width: auto; min-width: 122px;")
+})
