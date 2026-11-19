@@ -118,6 +118,14 @@ export interface SplitIssueLike {
   narration?: string
 }
 
+// The "Report Multiple Issues" review state, JSON-safe, so a host can keep it across minimize / navigation.
+// `items` are the reporter's current tickets (edits + selections), `original` the AI's untouched list (Back
+// restores it). Thumbnails are not stored (re-grabbed from the clip on restore); `pendingEnhance` marks an
+// item whose AI write-up was still in flight when the snapshot was taken (re-run on restore).
+export interface MultiIssueSnapshotItem extends SplitIssueLike { id: string; selected: boolean; edited?: boolean; pendingEnhance?: boolean }
+// `reviewOpen`: the "AI Analysis Complete" review was on screen — Resume reopens it there, not on the composer.
+export interface MultiIssuesSnapshot { recordingId: string; items: MultiIssueSnapshotItem[]; original: MultiIssueSnapshotItem[] | null; reviewOpen?: boolean }
+
 // KD-995 "Report Multiple Issues": the review screen speaks High/Medium/Low; tickets carry P1/P2/P3 + C1/C2/C3.
 const MULTI_PRIORITIES = [
   { label: 'High', priority: 'P1', severity: 'C1' },
@@ -646,6 +654,13 @@ export interface ModalCallbacks {
   // walkthrough but finished after the composer that started it was unloaded. The composer analyses it on open,
   // exactly as if the reporter had just stopped the recording here.
   initialMultiRecordingId?: string
+  // "Report Multiple Issues" results (the "N issues identified" review: tickets, selections, edits) seeded when
+  // the composer re-opens — e.g. Resume after Minimize — so the analysis is NOT lost or re-run. `recordingId`
+  // must match a recording in initialRecordings (the walkthrough clip).
+  initialMultiIssues?: MultiIssuesSnapshot
+  // Fired whenever those results change (analysed, edited, selection toggled, cleared → null) so the host can
+  // keep them across minimize / navigation.
+  onMultiIssuesChange?: (snapshot: MultiIssuesSnapshot | null) => void
   // KLA-505: server-side LIVE DICTATION for the Voice button. When provided AND MediaRecorder is available,
   // the composer PREFERS this over the flaky Web Speech backend: it records short mic segments and hands each
   // as an audio Blob to this callback, which POSTs it to the STT endpoint (POST /api/voice/transcribe) and
@@ -2945,7 +2960,53 @@ export function buildModal(
   // The first selected ticket carries the video + the composer's evidence; every other ticket gets a frame
   // from its moment in the clip and points back to the video. No issues found → the clip is attached to the
   // composer as a normal recording so nothing is lost.
+  // ── Keep the analysis across Minimize → Resume ── Minimize closes this composer; the host stores this snapshot
+  // (onMultiIssuesChange) and hands it back as initialMultiIssues, so "N issues identified" + every edit and
+  // selection survive instead of vanishing (which forced a fresh, permission-prompting recording).
+  let multiSnapKey = ''
+  function multiSnapshot(): MultiIssuesSnapshot | null {
+    if (multiState !== 'done' || !multiItems || !multiItems.length || !multiRec || !multiRec.id || mrDone) return null
+    const strip = (i: MultiItem): MultiIssueSnapshotItem => {
+      const { thumb: _t, enhancing, ...rest } = i
+      return { ...rest, ...(enhancing ? { pendingEnhance: true } : {}) }
+    }
+    return JSON.parse(JSON.stringify({
+      recordingId: multiRec.id, items: multiItems.map(strip), original: multiOriginal ? multiOriginal.map(strip) : null,
+      ...(mrEl ? { reviewOpen: true } : {}),
+    }))
+  }
+  let multiRestoring = false
+  function notifyMulti() {
+    if (_closed || multiRestoring || !callbacks.onMultiIssuesChange) return
+    const snap = multiSnapshot()
+    const key = snap ? JSON.stringify(snap) : ''
+    if (key === multiSnapKey) return
+    multiSnapKey = key
+    try { callbacks.onMultiIssuesChange(snap) } catch { /* host persistence is best-effort */ }
+  }
+  // Restore a saved analysis onto the seeded walkthrough clip (no re-recording, no re-analysis).
+  function restoreMulti(snap: MultiIssuesSnapshot) {
+    const rec = recordings.find((r) => r.id === snap.recordingId)
+    if (!rec || !Array.isArray(snap.items) || !snap.items.length || multiState !== 'idle') return
+    const seq = ++multiSeq
+    const revive = (i: MultiIssueSnapshotItem): MultiItem => { const { pendingEnhance: _p, ...rest } = i; return { ...rest, thumb: null } }
+    multiRec = rec
+    multiItems = snap.items.map(revive)
+    multiOriginal = (snap.original && snap.original.length ? snap.original : snap.items).map(revive)
+    multiDirty = false
+    mrDone = null; mrError = ''
+    multiState = 'done'
+    // Restoring is not a change worth echoing back; reopen the review if that's where the reporter minimized.
+    multiRestoring = true
+    try { paintMultiCard(); if (snap.reviewOpen) openMultiReview() } finally { multiRestoring = false }
+    multiSnapKey = JSON.stringify(multiSnapshot())
+    // Thumbnails only — the AI write-ups are already in the saved tickets; just finish any that were mid-flight.
+    const pending = new Set(snap.items.filter((i) => i.pendingEnhance).map((i) => i.id))
+    void loadMultiThumbs(seq, (id) => pending.has(id))
+  }
+
   function paintMultiCard() {
+    notifyMulti()
     const btn = shadowRoot.getElementById('klavity-multi-start') as HTMLButtonElement | null
     const st = shadowRoot.getElementById('klavity-multi-status') as HTMLElement | null
     if (!btn || !st) return
@@ -3056,7 +3117,7 @@ export function buildModal(
 
   // Thumbnails: one frame per issue, ~1s into its span. Sequential (one decoder at a time), best-effort. Each
   // frame then feeds that issue's Enhance call (in parallel with the next frame grab).
-  async function loadMultiThumbs(seq: number) {
+  async function loadMultiThumbs(seq: number, shouldEnhance: (id: string) => boolean = () => true) {
     const rec = multiRec
     if (!rec || !multiItems) return
     let src = rec.dataUrl
@@ -3073,7 +3134,7 @@ export function buildModal(
           for (const list of [multiItems, multiOriginal]) { const m = list?.find((x) => x.id === it.id); if (m) m.thumb = thumb }
           renderMultiReview()
         }
-        void enhanceMultiItem(it.id, thumb, seq)
+        if (shouldEnhance(it.id)) void enhanceMultiItem(it.id, thumb, seq)
       }
     } finally { if (url) { try { URL.revokeObjectURL(url) } catch { /* ignore */ } } }
   }
@@ -3142,6 +3203,7 @@ export function buildModal(
     mrEl?.remove()
     mrEl = null
     shadowRoot.getElementById('klavity-side')?.classList.remove('kl-mr-open')
+    notifyMulti()   // the review closed → Resume should land on the composer, not reopen it
   }
 
   // The walkthrough clip lives in the gallery like a Record me clip; removing its tile drops the analysis.
@@ -3182,6 +3244,7 @@ export function buildModal(
   }
 
   function renderMultiReview() {
+    notifyMulti()   // every edit / selection / Enhance result re-renders the review → keep the saved copy current
     if (!mrEl || !multiItems) return
     if (mrDone) { renderMultiDone(); return }
     const items = multiItems
@@ -4822,6 +4885,7 @@ export function buildModal(
     paintMultiCard()
     shadowRoot.getElementById('klavity-multi-start')?.addEventListener('click', () => { void startMulti() })
     if (callbacks.initialMultiRecordingId) resumeMulti(callbacks.initialMultiRecordingId)
+    else if (multiEnabled && callbacks.initialMultiIssues) restoreMulti(callbacks.initialMultiIssues)
   }
 
   // Region capture button — only rendered when the host provides onRegionCapture
