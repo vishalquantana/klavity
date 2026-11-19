@@ -8212,6 +8212,45 @@
       font-weight: 600
     }
 
+    /* KD-3118: Customer details — read-only lines inside the Description box, after the text (mirrors the Jira body). */
+    .tkt-cust {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--line)
+    }
+
+    .tkt-cust-h {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--paper);
+      margin-bottom: 4px
+    }
+
+    /* the editor replaces the text in place; keep the read-only details out of the way while editing */
+    .tkt-desc-editing .tkt-cust {
+      display: none
+    }
+
+    .tkt-cust-grid {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 4px 12px;
+      font-size: 14px;
+      line-height: 1.5
+    }
+
+    .tkt-cust-k {
+      color: var(--paper-faint);
+      white-space: nowrap
+    }
+
+    .tkt-cust-v {
+      color: var(--paper);
+      overflow-wrap: anywhere;
+      min-width: 0;
+      user-select: text
+    }
+
     .contacts-head {
       display: flex;
       align-items: center;
@@ -25748,7 +25787,9 @@
             const raw = String(text == null ? "" : text)
             return raw.trim() ? linkifyDescription(raw) : '<span class="tkt-desc-placeholder">Add a description…</span>'
           }
-          function descriptionBlockHtml(text) {
+          // KD-3118: `extraHtml` (pre-escaped) renders INSIDE the Description box after the text, e.g. the
+          // read-only "Customer details:" lines that follow "Steps to reproduce:" exactly as in the Jira body.
+          function descriptionBlockHtml(text, extraHtml) {
             const raw = String(text == null ? "" : text)
             const label = "Description"
             // #653: editable description — a pencil button (or clicking empty prompt) swaps in a textarea + Save/Cancel.
@@ -25758,7 +25799,7 @@
       <div class="tkt-desc-label">${label}</div>
       <button class="tkt-desc-edit" type="button" title="Edit description" aria-label="Edit description">${kicon('pencil', { size: 13 })}</button>
     </div>
-    <div class="tkt-obs">${descObsInner(raw)}</div>
+    <div class="tkt-obs">${descObsInner(raw)}</div>${extraHtml || ""}
   </div>`
           }
           // KLAVITYKLA-438 "Record me" (Phase 2): format seconds → m:ss for a transcript timestamp.
@@ -27121,7 +27162,24 @@
             const _showBugBody = !!_bugBody && !_sameAsSingleTitle(_bugBody)
             const _showBug = !!t.suggestedBug && (_showBugTitle || _showBugBody)
             const _hasDupAck = (t.recurrenceCount || t.recurrence || 1) >= 2
-            const _hasContextItems = _showObs || _showBug || !!t.sourceQuote
+            // KD-3118: "Customer details" — the same reporter identity block the exported Jira ticket carries
+            // (server reporterLines(): same keys, order and labels), rendered INSIDE the Description box after the
+            // text, so it follows "Steps to reproduce:" exactly as in Jira. Read-only: it is not part of the editable
+            // observation, and is hidden while the description editor is open (.tkt-desc-editing).
+            // Arrives via GET /api/feedback/:id (`reporter`); omitted entirely when there are no fields.
+            const _custRows = (t.reporter && typeof t.reporter === "object")
+              ? [["id", "User ID"], ["email", "Email"], ["name", "Name"], ["org", "Company Name"], ["orgId", "Org ID"],
+                 ["role", "Role"], ["product", "Product"], ["env", "Environment"], ["server", "Server"]]
+                  .filter(([k]) => t.reporter[k] != null && String(t.reporter[k]).trim() !== "")
+                  .map(([k, lb]) => `<span class="tkt-cust-k">${esc(lb)}:</span><span class="tkt-cust-v">${esc(String(t.reporter[k]))}</span>`).join("")
+              : ""
+            const _custHtml = _custRows ? `<div class="tkt-cust">
+      <div class="tkt-cust-h">Customer details:</div>
+      <div class="tkt-cust-grid">${_custRows}</div>
+    </div>` : ""
+            // Customer details live inside the Description box, so show that box whenever there are any.
+            const _showDesc = _showObs || !!_custHtml
+            const _hasContextItems = _showDesc || _showBug || !!t.sourceQuote
               || (_showSevChip || _showSentiment || _showSimChip) || _hasDupAck || !!t.isRegression
             const _hasContext = _hasContextItems
 
@@ -27129,7 +27187,7 @@
       <div class="tkt-context">
         ${dupAckHtml(t)}
         ${regrBannerHtml(t)}
-        ${_showObs ? descriptionBlockHtml(t.observation) : ""}
+        ${_showDesc ? descriptionBlockHtml(t.observation, _custHtml) : ""}
         ${(_showSevChip || _showSentiment || _showSimChip) ? `<div class="tkt-chips">${_showSevChip ? `<span class="chip sev-${esc(t.priority)}">${esc(t.priority)}</span>` : ""}${_showSentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${_showSimChip ? `<span class="chip">${esc(t.simName)}</span>` : ""}</div>` : ""}
         ${_showBug ? `<div class="tkt-bug">${_showBugTitle ? `<div class="tkt-bug-t">${kicon('bug')} ${esc(_bugTitle)}</div>` : ""}${_showBugBody ? `<div class="tkt-bug-b">${esc(_bugBody)}</div>` : ""}</div>` : ""}
         ${t.sourceQuote ? `<div class="tkt-prov">"${esc(t.sourceQuote)}"${t.sourceDate ? ` · raised ${esc(ago(t.sourceDate))}` : ""}</div>` : ""}
