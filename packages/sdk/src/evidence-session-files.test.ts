@@ -34,3 +34,15 @@ describe('attached files survive minimize → reload → resume', () => {
     expect((await getActiveSession(PROJECT, ORIGIN))!.files).toEqual([])
   })
 })
+
+import { setMulti } from './evidence-session'
+describe('Report Multiple Issues analysis survives minimize → reload → resume', () => {
+  it('stores and clears the multi-issue snapshot', async () => {
+    const s = await startOrContinue(PROJECT, ORIGIN)
+    const snap = { recordingId: 'rec_1', items: [{ id: 'mi_0', title: 'Heading wrong', selected: true }], original: null }
+    await setMulti(s.id, snap)
+    expect((await getActiveSession(PROJECT, ORIGIN))!.multi).toEqual(snap)
+    await setMulti(s.id, null)
+    expect((await getActiveSession(PROJECT, ORIGIN))!.multi).toBeNull()
+  })
+})

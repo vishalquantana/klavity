@@ -35,6 +35,7 @@ import {
   makeShotId, pageCount, MAX_SHOTS, updateShotAnnotations, updateFields as updateEvidenceFields,
   setRecordings as setEvidenceRecordings,
   setFiles as setEvidenceFiles,
+  setMulti as setEvidenceMulti,
   type EvidenceSession, type EvidenceShot,
 } from "./evidence-session"
 import { SimsLive, type LiveObservation } from "./sims-live"  // side-effecting: auto-installs window.KlavitySims on load
@@ -1545,13 +1546,22 @@ async function mount() {
       // so we skip the full-page auto-capture and let the zoomed-in region lead. KLA-412: also skip it when
       // resuming an evidence session that already holds shots (we seed those below); a BRAND-NEW session
       // (empty, no region shot) still auto-captures so the first shot lands + persists via onShotAdded.
-      autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0) && !opts?.initialRecordings?.length && !seedFiles.length,
+      // Resuming a report that already holds a recording (incl. a "Report Multiple Issues" walkthrough, whose
+      // default snap is dropped) must NOT auto-capture again — that re-prompted for screen-share permission on
+      // every Resume. Check the merged seed list (session recordings + arrived ones), not just opts.
+      autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0) && !seedRecordings.length && !seedFiles.length && !(ev && ev.multi),
       // Saved session recordings + a "Record me" video that finished after the reporter navigated (see above).
       initialRecordings: seedRecordings.length ? seedRecordings : undefined,
       // Files attached via Attach used to live ONLY in the open composer, so Minimize → Resume lost them.
       initialFiles: seedFiles.length ? seedFiles : undefined,
       onFilesChange: ev ? (files) => evPersistFiles(ev.id, files) : undefined,
       initialMultiRecordingId: multiRecordingId,
+      // "Report Multiple Issues": keep the analysed ticket list (+ edits/selections) across Minimize → Resume.
+      // Only restored when its walkthrough clip is among the seeded recordings (else it would point at nothing).
+      initialMultiIssues: !multiRecordingId && ev?.multi && seedRecordings.some((r) => r.id === ev.multi!.recordingId) ? (ev.multi as any) : undefined,
+      onMultiIssuesChange: ev ? (snap) => {
+        void queueEvWrite(async () => { evSession = await setEvidenceMulti(ev.id, snap as any) ?? evSession; if (evSession) ev.multi = evSession.multi; updateEvDock() })
+      } : undefined,
       // #638: render the "Attach console logs" toggle (default OFF) in the composer. When the reporter enables
       // it, the submit payload carries attachConsole:true and onSubmit includes the captured console logs.
       consoleAttachToggle: true,

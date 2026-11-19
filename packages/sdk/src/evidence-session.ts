@@ -60,6 +60,9 @@ export interface EvidenceSession {
   recordings?: EvidenceRecording[]
   /** Files attached via Attach. Small ones keep their bytes (dataUrl); big ones only metadata (dataUrl ''), their bytes stay in page memory. */
   files?: EvidenceFile[]
+  /** "Report Multiple Issues" results (the AI's ticket list + the reporter's edits/selections) for the
+   *  walkthrough recording `recordingId`, so Minimize → Resume keeps "N issues identified" instead of losing it. */
+  multi?: { recordingId: string; items: unknown[]; original: unknown[] | null } | null
   isOpen?: boolean
 }
 
@@ -293,6 +296,16 @@ export async function setRecordings(sessionId: string, recordings: EvidenceRecor
     id: r.id, dataUrl: r.dataUrl, mime: r.mime, durationMs: r.durationMs, bytes: r.bytes,
     width: r.width, height: r.height, screenOnly: r.screenOnly,
   }))
+  cur.updatedAt = Date.now()
+  await putSession(cur)
+  return cur
+}
+
+/** Store (or clear with null) the "Report Multiple Issues" analysis so it survives minimize / navigation. */
+export async function setMulti(sessionId: string, multi: EvidenceSession['multi']): Promise<EvidenceSession | null> {
+  const cur = await getById(sessionId)
+  if (!cur) return null
+  cur.multi = multi ? JSON.parse(JSON.stringify(multi)) : null
   cur.updatedAt = Date.now()
   await putSession(cur)
   return cur
