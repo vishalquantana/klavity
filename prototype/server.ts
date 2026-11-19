@@ -10125,7 +10125,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     } catch (err: any) { return json(oops(err, "audit"), 500) }
   }
 
-  if (req.method === "GET" && path === "/app") return me ? file(PUB + "/index.html") : loginGate(path, url.search)
+  if (req.method === "GET" && path === "/app") {
+    if (!me) return loginGate(path, url.search)
+    // KD-3121: the Sims Studio is a Sims feature — a Snap-only project is bounced to the upgrade prompt, same as
+    // the Sims/AutoSims pages (snapLocked). Lookup failures fall through so the studio never breaks on a hiccup.
+    const studioProj = await resolveProject(me, url.searchParams.get("project")).catch(() => null)
+    const studioRow = studioProj ? await projectById(studioProj.id).catch(() => null) : null
+    const studioLock = studioRow ? snapLocked(studioRow) : null
+    if (studioLock) return new Response(null, { status: 302, headers: { location: studioLock.upgradeUrl } })
+    return file(PUB + "/index.html")
+  }
   // Sim Profile page — clicking a Sim row in the dashboard opens /sim/:id (read-only persona +
   // its triaged feedback + the calls that seeded it). The id is read client-side from the path.
   if (req.method === "GET" && /^\/sim\/[^/]+$/.test(path)) return me ? htmlPage(PUB + "/sim-profile.html") : loginGate(path, url.search)
