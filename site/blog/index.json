@@ -1097,5 +1097,12 @@
     "excerpt": "Vibe coded app performance issues come from N+1 queries, missing indexes, client-side filtering and unoptimised images. Here's how to find and fix them.",
     "category": "Guides",
     "date": "2026-11-18"
+  },
+  {
+    "slug": "ai-qa-for-website-migrations",
+    "title": "AI QA for Website Migrations: A Pre-Launch Playbook",
+    "excerpt": "AI QA for website migrations captures a verified baseline of the old site, then replays it against the new build so regressions surface before launch.",
+    "category": "Guides",
+    "date": "2026-11-19"
   }
 ]

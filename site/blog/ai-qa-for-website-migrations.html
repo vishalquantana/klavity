@@ -1,0 +1,195 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI QA for Website Migrations: A Pre-Launch Playbook · Klavity</title>
+<meta name="description" content="AI QA for website migrations captures a verified baseline of the old site, then replays it against the new build so regressions surface before launch.">
+<link rel="canonical" href="https://klavity.in/blog/ai-qa-for-website-migrations">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI QA for Website Migrations: A Pre-Launch Playbook"><meta property="og:description" content="AI QA for website migrations captures a verified baseline of the old site, then replays it against the new build so regressions surface before launch.">
+<meta property="og:url" content="https://klavity.in/blog/ai-qa-for-website-migrations"><meta property="og:image" content="https://klavity.in/blog/ai-qa-for-website-migrations.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI QA for Website Migrations: A Pre-Launch Playbook"><meta name="twitter:description" content="AI QA for website migrations captures a verified baseline of the old site, then replays it against the new build so regressions surface before launch."><meta name="twitter:image" content="https://klavity.in/blog/ai-qa-for-website-migrations.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI QA for Website Migrations: A Pre-Launch Playbook","description":"AI QA for website migrations captures a verified baseline of the old site, then replays it against the new build so regressions surface before launch.","datePublished":"2026-11-19","dateModified":"2026-11-19","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-qa-for-website-migrations.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-qa-for-website-migrations","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI QA for Website Migrations: A Pre-Launch Playbook","item":"https://klavity.in/blog/ai-qa-for-website-migrations"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-qa-for-website-migrations"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"When should migration QA start?","acceptedAnswer":{"@type":"Answer","text":"Before cutover, while the old site is still live. The baseline crawl — every URL with its status code, title and screenshots at desktop and mobile widths — can only be captured from the old build. Once DNS has switched, that reference is gone and you are left guessing at what used to work."}},{"@type":"Question","name":"What is the most commonly missed migration bug?","acceptedAnswer":{"@type":"Answer","text":"Forms that render correctly but no longer deliver. The markup and the thank-you page survive the migration while the handler, SMTP credentials or CRM integration does not. Nothing errors, so error monitoring stays silent. The only reliable check is submitting a real entry and confirming it arrived."}},{"@type":"Question","name":"Do I still need migration QA if a developer rebuilt the site by hand?","acceptedAnswer":{"@type":"Answer","text":"Yes. Migration regressions come from the thousands of undocumented behaviours in the old site, not from developer skill. No one has read the whole old site, so no one can hold its full behaviour in their head — which is exactly why a captured baseline beats a careful reviewer."}},{"@type":"Question","name":"How is this different from running a normal test suite on the new site?","acceptedAnswer":{"@type":"Answer","text":"A normal suite asks whether the new site works. Migration QA asks whether it still does what the old one did. Those differ on every page where the old behaviour was never specified — which, on most legacy sites, is nearly all of them."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-11-19</div>
+    <h1>AI QA for Website Migrations: A Pre-Launch Playbook</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Old site baseline compared against new build, with parity checks and one regression flagged">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="660" cy="60" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="120" cy="380" r="120" fill="#f5f0e8" opacity="0.03"/>
+
+  <rect x="56" y="92" width="250" height="186" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="56" y="92" width="250" height="186" rx="12" fill="none" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="1.5"/>
+  <line x1="56" y1="124" x2="306" y2="124" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="1.5"/>
+  <circle cx="74" cy="108" r="4" fill="#f5f0e8" opacity="0.35"/>
+  <circle cx="88" cy="108" r="4" fill="#f5f0e8" opacity="0.25"/>
+  <rect x="76" y="144" width="126" height="12" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="76" y="170" width="210" height="8" rx="4" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="76" y="188" width="180" height="8" rx="4" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="76" y="214" width="92" height="26" rx="6" fill="#4ade80" opacity="0.55"/>
+  <rect x="180" y="214" width="106" height="26" rx="6" fill="#f5f0e8" opacity="0.12"/>
+
+  <rect x="494" y="92" width="250" height="186" rx="12" fill="#6366f1" opacity="0.12"/>
+  <rect x="494" y="92" width="250" height="186" rx="12" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <line x1="494" y1="124" x2="744" y2="124" stroke="#6366f1" stroke-opacity="0.6" stroke-width="1.5"/>
+  <circle cx="512" cy="108" r="4" fill="#6366f1"/>
+  <circle cx="526" cy="108" r="4" fill="#6366f1" opacity="0.5"/>
+  <rect x="514" y="144" width="126" height="12" rx="4" fill="#f5f0e8" opacity="0.4"/>
+  <rect x="514" y="170" width="210" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="514" y="188" width="180" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="514" y="214" width="92" height="26" rx="6" fill="none" stroke="#f87171" stroke-width="2" stroke-dasharray="5 4"/>
+  <path d="M549 222l12 12M561 222l-12 12" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="618" y="214" width="106" height="26" rx="6" fill="#f5f0e8" opacity="0.12"/>
+
+  <path d="M322 150h150" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <polyline points="462,142 474,150 462,158" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M322 190h150" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="7 6"/>
+  <polyline points="462,182 474,190 462,198" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M322 230h150" stroke="#f87171" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="7 6"/>
+  <polyline points="462,222 474,230 462,238" fill="none" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="398" cy="150" r="13" fill="#1e1b2e" stroke="#4ade80" stroke-width="2"/>
+  <polyline points="392,150 397,155 405,145" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+  <circle cx="398" cy="190" r="13" fill="#1e1b2e" stroke="#4ade80" stroke-width="2"/>
+  <polyline points="392,190 397,195 405,185" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+  <circle cx="398" cy="230" r="13" fill="#1e1b2e" stroke="#f87171" stroke-width="2"/>
+  <path d="M398 224v7M398 235v1.5" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+
+  <rect x="56" y="316" width="688" height="56" rx="10" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="76" y="338" width="150" height="12" rx="6" fill="#4ade80" opacity="0.7"/>
+  <rect x="236" y="338" width="150" height="12" rx="6" fill="#4ade80" opacity="0.5"/>
+  <rect x="396" y="338" width="150" height="12" rx="6" fill="#6366f1" opacity="0.7"/>
+  <rect x="556" y="338" width="60" height="12" rx="6" fill="#f87171" opacity="0.8"/>
+  <rect x="626" y="338" width="98" height="12" rx="6" fill="#f5f0e8" opacity="0.12"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI QA for website migrations works by comparison, not inspection: crawl the live old site first to capture every URL, screenshot and flow, then replay that baseline against staging. The bugs that sink migrations are absences — a form that renders but never delivers, a ranking page that quietly 404s — and they are invisible to any test that only looks at the new build.</div>
+    <div class="prose"><p><strong>AI QA for website migrations</strong> means using automated agents to capture a verified baseline of the old site, then replay that same baseline against the new one — so every URL, form, redirect and layout is checked before launch instead of after a client reports it. On a migration the risk is not that the new site is broken; it is that <em>something that used to work quietly stopped working</em>. AI QA closes that gap by testing the old and new builds as a pair rather than testing the new build on its own.</p>
+
+<h2>Why do website migrations break things nobody noticed in QA?</h2>
+<p>A migration changes the substrate under thousands of small behaviours at once: URL structure, templating, CSS cascade, form handlers, analytics hooks, redirects, image paths, CMS field mappings. Most of those are never written down anywhere. The old site is its own spec, and nobody ever read the whole thing.</p>
+<p>That is why migration bugs have a signature shape:</p>
+<ul>
+  <li><strong>They are absences, not errors.</strong> A contact form that silently stops emailing throws no exception and lights up no dashboard. Error monitoring only sees what crashes.</li>
+  <li><strong>They live on pages nobody clicks during QA.</strong> Teams test the homepage, the pricing page and one blog post. The broken page is a 2019 case study that still ranks and still converts.</li>
+  <li><strong>They surface on real devices and real data.</strong> A layout that holds with lorem ipsum collapses on a 94-character German product name.</li>
+  <li><strong>They are found by the client.</strong> Which is the one failure mode an agency cannot afford, because it reframes the whole project as "the rebuild broke our site".</li>
+</ul>
+<p>Manual QA fails here not from laziness but from arithmetic. A 400-page site has far more states than any human can click through in the two days between staging freeze and launch — and it needs re-checking after every fix.</p>
+
+<h2>What does AI QA for website migrations actually check?</h2>
+<p>Four passes, run against both builds and compared. Each one maps to a class of migration failure:</p>
+<table>
+  <thead><tr><th>Pass</th><th>What it compares</th><th>Migration bug it catches</th></tr></thead>
+  <tbody>
+    <tr><td>URL &amp; redirect parity</td><td>Every old URL → status code on new host</td><td>Dead links, 404s on ranking pages, redirect chains and loops</td></tr>
+    <tr><td>Content parity</td><td>Headings, body text, images, metadata per page</td><td>Truncated CMS fields, missing images, lost meta descriptions, empty templates</td></tr>
+    <tr><td>Visual diff</td><td>Screenshots at multiple widths, old vs new</td><td>Broken responsive breakpoints, overflow, webfont fallbacks, z-index regressions</td></tr>
+    <tr><td>Flow replay</td><td>Real journeys: search → form → submit → confirm</td><td>Forms that render but never deliver; broken checkout, login, booking</td></tr>
+  </tbody>
+</table>
+<p>The important word is <em>parity</em>. A generic test suite asks "does this page work?" A migration suite asks "does this page still do what the old one did?" — a much sharper question, and one you can only ask if you crawled the old site before switching DNS.</p>
+
+<h2>How do you set up migration QA before you cut over?</h2>
+<p>The sequence matters more than the tooling. Doing step 1 after cutover is the single most common and most expensive mistake on a migration, because once the old site is gone the baseline is unrecoverable.</p>
+<ol>
+  <li><strong>Crawl the live old site first.</strong> Export every URL with status code, title, H1 and a screenshot at desktop and mobile widths. Keep it in the repo, not someone's laptop. This is your spec.</li>
+  <li><strong>Rank URLs by consequence, not by depth.</strong> Pull the top pages from analytics and Search Console, add every page with a form or a payment step, and add every page a client has ever personally mentioned. Those get full flow testing; the long tail gets parity checks.</li>
+  <li><strong>Write down the flows the site actually earns money with.</strong> Usually three to six: contact, quote request, booking, signup, checkout, search. Everything else is secondary.</li>
+  <li><strong>Replay the baseline against staging and fix in loops.</strong> The first run is noisy — expect intentional redesign differences. Triage once, mark the accepted diffs, then re-run so later runs show only real regressions.</li>
+  <li><strong>Keep the suite running after launch.</strong> Migration bugs arrive late: cached pages expire, cron jobs fire weekly, a CDN rule propagates on day three.</li>
+</ol>
+
+<h2>How does Klavity handle a migration?</h2>
+<p>Klavity is built around exactly this old-versus-new comparison, split across three pieces:</p>
+<ul>
+  <li><a href="/sims">Sims</a> runs AI personas through the new build the way different real users would — a mobile visitor arriving from search, a returning customer hunting an old URL, someone filling the quote form with messy real-world data. This is how you cover the long tail of pages and inputs that manual QA skips.</li>
+  <li><a href="/autosim">AutoSim</a> turns the money flows into self-healing end-to-end tests. Because selectors change wholesale in a migration, conventional E2E suites break on contact and get deleted in week one; self-healing tests re-anchor instead of failing.</li>
+  <li><a href="/snap">Snap</a> gives the client and your own team right-click bug reporting during UAT, with the console log, network trace and DOM state attached. On a migration the stakeholder review is unusually noisy — Snap is what stops "the page looks weird on my laptop" from becoming a three-day investigation.</li>
+</ul>
+<p>For the broader method behind this, see our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>. For the launch-day checklist, see <a href="/blog/pre-launch-qa-checklist-for-web-agencies">the pre-launch QA checklist for web agencies</a>, and for the general approach to automated site coverage, <a href="/blog/ai-website-testing">AI website testing</a>.</p>
+
+<h2>Does this apply to vibe-coded rebuilds too?</h2>
+<p>It applies <em>more</em>. A common 2026 pattern is rebuilding an aging site in Cursor, Lovable, v0 or Bolt in a few days. The output ships fast and looks right, which is precisely the risk: generated code tends to reproduce the <em>appearance</em> of the old site without its behaviour. Forms get the markup but not the handler. Pages get the layout but not the redirect. Nothing errors; things just quietly do less.</p>
+<p>If you rebuilt with AI, the baseline crawl is non-negotiable, and so is flow replay on anything that submits data. The model never saw your old backend. It cannot know what the form used to do.</p>
+
+<h2>What should you check in the first 48 hours after cutover?</h2>
+<p>Launch is not the end of migration QA — it is where a different set of failures starts. Watch these specifically:</p>
+<ul>
+  <li><strong>Redirects under real traffic.</strong> Crawl your top URLs again from outside your network, after DNS and CDN caches settle.</li>
+  <li><strong>Form deliverability end to end.</strong> Submit a real test entry and confirm it arrived in the inbox or CRM — not just that the thank-you page rendered.</li>
+  <li><strong>Analytics and conversion tracking.</strong> Migrations routinely drop tags, which hides every other problem by making traffic look merely "down".</li>
+  <li><strong>Scheduled and transactional email.</strong> Weekly digests and receipts break on a schedule you will not notice for days.</li>
+  <li><strong>Search Console coverage.</strong> New 404s and soft-404s appear within days and are the clearest early signal that a parity check was missed.</li>
+</ul>
+
+<h2>Start your next migration with a baseline</h2>
+<p>The agencies that survive migrations are not the ones with better developers; they are the ones who captured the old site before they replaced it. That single artefact converts a vague "did we break anything?" into a list you can actually close out — and it is the difference between you finding the regression and your client finding it.</p>
+<p><a href="/onboarding">Scan your next client site free</a> — crawl the old build, replay it against staging, and go into launch day with a diff instead of a hope.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Crawl and screenshot the live old site before cutover — that export is your spec.</li><li>Rank URLs by traffic and revenue, not by site depth, then flow-test the top set.</li><li>Verify forms end to end: confirm delivery to inbox or CRM, not just the thank-you page.</li><li>Keep the suite running for 48 hours past launch — cache, cron and CDN bugs arrive late.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>When should migration QA start?</summary><p>Before cutover, while the old site is still live. The baseline crawl — every URL with its status code, title and screenshots at desktop and mobile widths — can only be captured from the old build. Once DNS has switched, that reference is gone and you are left guessing at what used to work.</p></details><details><summary>What is the most commonly missed migration bug?</summary><p>Forms that render correctly but no longer deliver. The markup and the thank-you page survive the migration while the handler, SMTP credentials or CRM integration does not. Nothing errors, so error monitoring stays silent. The only reliable check is submitting a real entry and confirming it arrived.</p></details><details><summary>Do I still need migration QA if a developer rebuilt the site by hand?</summary><p>Yes. Migration regressions come from the thousands of undocumented behaviours in the old site, not from developer skill. No one has read the whole old site, so no one can hold its full behaviour in their head — which is exactly why a captured baseline beats a careful reviewer.</p></details><details><summary>How is this different from running a normal test suite on the new site?</summary><p>A normal suite asks whether the new site works. Migration QA asks whether it still does what the old one did. Those differ on every page where the old behaviour was never specified — which, on most legacy sites, is nearly all of them.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
