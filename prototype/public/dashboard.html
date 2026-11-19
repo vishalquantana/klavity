@@ -5226,6 +5226,8 @@
    Sims/Overview .grid, or the AutoSims card's own inner content (its outer .grid is display:none
    on that view) — never scoped to .grid alone, so either target actually blurs. */
     /* KD-3121: Sims-only overview widgets (Sims stat, Your Sims, Live activity, What your Sims are saying) are hidden on a Snap-only project. */
+    /* KD-3121: top navbar no longer shows the Snap Reports button or the Inbox icon (all projects). */
+    #snapNavBtn, #inboxNavBtn { display: none !important }
     body.snap-only .sims-only { display: none !important }
     body.snap-only .stats { grid-template-columns: repeat(3, minmax(0, 1fr)) }
     /* KD-3121: Settings drawers for Sims/AutoSims features . */

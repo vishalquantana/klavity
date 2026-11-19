@@ -63,3 +63,9 @@ test("every upgrade popup covers the content area only (not the sidebar or top b
   expect(HTML).toContain(".upgrade-wall.show { position: fixed; top: 49px; right: 0; bottom: 0; left: 214px; z-index: 25;")
   expect(HTML).toContain("body.side-collapsed .upgrade-wall.show { left: 64px }")
 })
+
+test("top navbar hides the Snap Reports button and the Inbox icon", () => {
+  expect(HTML).toContain("#snapNavBtn, #inboxNavBtn { display: none !important }")
+  expect(HTML).toContain('id="snapNavBtn"')
+  expect(HTML).toContain('id="inboxNavBtn"')
+})
