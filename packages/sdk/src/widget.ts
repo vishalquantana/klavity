@@ -477,6 +477,40 @@ function hideFixedSticky(out: Array<{ el: HTMLElement; v: string }>) {
 // "Stop sharing" bar (the track's 'ended' event drops our handle so the next capture re-prompts cleanly).
 let _sharedDisplayStream: MediaStream | null = null
 let _sharedDisplayVideo: HTMLVideoElement | null = null
+// KD-3088: resolves once Chrome's "Sharing this tab" bar has settled after a NEW share (see acquireDisplayStream).
+let _shareBarSettled: Promise<void> = Promise.resolve()
+
+// KD-3088: right after a share starts, Chrome adds its "Sharing this tab" bar, which shrinks the page's viewport a
+// moment LATER. A frame grabbed before that is the old size (the page at the top, a black band below) and no longer
+// matches the page's layout, so Mask numbers can't place its boxes and the shot gets a black strip. Resolves on the
+// first resize after the share starts (plus a short layout beat), or after `maxMs` when no bar shows up.
+export function watchShareBarSettle(maxMs = 1200): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    let done = false
+    const finish = () => { if (done) return; done = true; window.removeEventListener("resize", onResize); clearTimeout(timer); resolve() }
+    const onResize = () => { setTimeout(finish, 120) }
+    const timer = setTimeout(finish, maxMs)
+    window.addEventListener("resize", onResize)
+  })
+}
+
+// KD-3088: wait (bounded) until the stream's frame has the page viewport's shape and the viewport height has stopped
+// changing, so the grabbed frame and the page layout (which Mask numbers measures) agree. Best-effort: on timeout the
+// caller grabs anyway, exactly as before.
+export async function waitForFrameToMatchViewport(video: HTMLVideoElement, maxMs = 1000, stepMs = 50): Promise<boolean> {
+  const deadline = Date.now() + maxMs
+  let lastH = -1
+  for (;;) {
+    const vw = Math.max(1, window.innerWidth), vh = Math.max(1, window.innerHeight)
+    const fw = video.videoWidth, fh = video.videoHeight
+    const shapeOk = fw > 0 && fh > 0 && Math.abs(fw / fh - vw / vh) / (vw / vh) < 0.01
+    if (shapeOk && vh === lastH) return true
+    lastH = vh
+    if (Date.now() >= deadline) return false
+    await _sleep(stepMs)
+  }
+}
 
 // Return the live shared stream, or null if none / it has ended (user stopped sharing). Self-heals a dead one.
 export function activeSharedStream(): MediaStream | null {
@@ -506,6 +540,7 @@ export async function acquireDisplayStream(): Promise<MediaStream> {
     preferCurrentTab: true,
   })
   _sharedDisplayStream = stream
+  _shareBarSettled = watchShareBarSettle()   // KD-3088: the first grab waits for Chrome's sharing bar to settle
   // snap-share-hint: the reporter just granted a screen-share — remember it so the "click Allow" hover hint on
   // the FAB stops showing (they know the flow now). Best-effort; private mode / disabled storage is fine.
   try { localStorage.setItem("klavity_share_ok", "1") } catch { /* noop */ }
@@ -534,6 +569,9 @@ async function grabDisplayViewportFrame(stream: MediaStream): Promise<{ dataUrl:
     const deadline = Date.now() + 3000
     while ((video.videoWidth === 0 || video.videoHeight === 0) && Date.now() < deadline) await _sleep(50)
     if (!video.videoWidth || !video.videoHeight) throw new Error("sharp viewport capture: no video frame")
+    // KD-3088: never grab before the sharing bar has settled and the frame matches the page's current shape.
+    await _shareBarSettled
+    await waitForFrameToMatchViewport(video)
     const vw = Math.max(1, window.innerWidth)
     const vh = Math.max(1, window.innerHeight)
     const scale = video.videoWidth / vw
@@ -616,6 +654,9 @@ async function captureSharpFullPage(): Promise<string> {
     const deadline = Date.now() + 3000
     while ((video.videoWidth === 0 || video.videoHeight === 0) && Date.now() < deadline) await _sleep(50)
     if (!video.videoWidth || !video.videoHeight) throw new Error("sharp capture: no video frame")
+    // KD-3088: same as the viewport grab — wait for the sharing bar to settle before measuring/stitching.
+    await _shareBarSettled
+    await waitForFrameToMatchViewport(video)
 
     const vw = Math.max(1, window.innerWidth)
     const vh = Math.max(1, window.innerHeight)
