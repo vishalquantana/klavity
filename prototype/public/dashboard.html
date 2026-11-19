@@ -29265,6 +29265,7 @@
             p.catch(() => { if (_tktReads.get(key) === p) _tktReads.delete(key) })
             return p
           }
+          let _tktOpenSeq = 0, _tktOpenAbort = null   // latest openSingleTicket() call + its in-flight fetch
           async function openSingleTicket(id, mode, context) {
             _tktOriginContext = context || (document.body && document.body.getAttribute("data-view") === "triage" ? "triage" : "tickets")
             // KD-239: any ticket opened in this page load means the boot deep link (if any) is done with. Opening one from
@@ -29284,9 +29285,18 @@
               const ae = document.activeElement
               if (ae && ae !== document.body && !$("ticketSingle").contains(ae)) window.__klavTktInvoker = ae
             } catch (e) { }
+            // Prev / Next race: every open renders from cache, then re-renders when the fresh /api/feedback/<id>
+            // arrives. Stepping A → B while A's fetch was still in flight let A's late response re-render A over B
+            // (and push A's URL back) — "the current ticket opens again instead of the next one" + a double render
+            // (the lag). Each open now owns a sequence number and cancels the previous open's fetch; a stale
+            // response may still refresh the cached data, but never re-renders or re-routes.
+            const mySeq = ++_tktOpenSeq
+            try { if (_tktOpenAbort) _tktOpenAbort.abort() } catch (e) { }
+            const ctrl = typeof AbortController === "function" ? new AbortController() : null
+            _tktOpenAbort = ctrl
             _renderSingleTicket(id)
             try {
-              const r = await fetch("/api/feedback/" + encodeURIComponent(id))
+              const r = await fetch("/api/feedback/" + encodeURIComponent(id), ctrl ? { signal: ctrl.signal } : undefined)
               if (!r.ok) return
               const d = await r.json().catch(() => null)
               const fresh = d && d.report
@@ -29298,11 +29308,13 @@
               const ix = state.tickets.findIndex(x => String(x.id) === String(id))
               if (ix >= 0) state.tickets[ix] = { ...state.tickets[ix], ...fresh }
               else state.tickets.push(fresh)
-              // Only re-render if this ticket is still the one being viewed.
+              // Only re-render if this ticket is STILL the one being viewed (no newer open since, panel still shown).
+              if (mySeq !== _tktOpenSeq) return
               const single = $("ticketSingle")
               if (single && !single.classList.contains("hide")) tktRenderReusing(() => _renderSingleTicket(id))   // reuse render 1's reads
               if (fresh.exportPending) pollTicketExports(id)
             } catch (e) { }
+            finally { if (_tktOpenAbort === ctrl) _tktOpenAbort = null }
           }
           // KD-983: a ticket opened while its background auto-file is still running (AI title → Jira create) used
           // to show no tracker link until a page refresh. While the server reports exportPending, re-check every
