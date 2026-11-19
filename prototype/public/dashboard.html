@@ -11774,6 +11774,61 @@
       align-items: center
     }
 
+    /* Creating a label: indeterminate progress bar under the form + a spinner in the Add button. */
+    .ml-progress {
+      height: 3px;
+      margin-top: 8px;
+      border-radius: 99px;
+      background: var(--ink-3);
+      overflow: hidden
+    }
+
+    .ml-progress[hidden] {
+      display: none
+    }
+
+    .ml-progress span {
+      display: block;
+      width: 35%;
+      height: 100%;
+      border-radius: 99px;
+      background: var(--indigo);
+      animation: mlProgress 1.1s ease-in-out infinite
+    }
+
+    @keyframes mlProgress {
+      0% { margin-left: -35% }
+      100% { margin-left: 100% }
+    }
+
+    #mlAddBtn .sup-spin {
+      width: 12px;
+      height: 12px;
+      border-width: 2px;
+      margin-right: 6px;
+      display: inline-block;
+      vertical-align: -2px
+    }
+
+    #mlAddBtn:disabled {
+      opacity: .75;
+      cursor: progress
+    }
+
+    /* The label that was just created flashes once so it's easy to spot in the list. */
+    .ml-row.ml-just-added {
+      animation: mlJustAdded 1.6s ease-out
+    }
+
+    @keyframes mlJustAdded {
+      0%, 40% { background: color-mix(in srgb, var(--indigo) 16%, transparent) }
+      100% { background: transparent }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .ml-progress span, .ml-row.ml-just-added { animation: none }
+    }
+
     .ml-new-inp {
       flex: 1;
       background: var(--ink-2);
@@ -19097,6 +19152,7 @@
                 <input type="color" class="ml-color-pick" id="mlNewColor" value="#6366f1" title="Pick color" />
                 <button class="btn btn-sm" id="mlAddBtn" type="button">Add</button>
               </div>
+              <div class="ml-progress" id="mlProgress" role="progressbar" aria-label="Creating label" hidden><span></span></div>
               <div style="font-size:12px;color:var(--rose);min-height:16px" id="mlErr"></div>
               <div style="margin-top:4px;text-align:right"><button class="btn btn-ghost btn-sm" id="mlCloseBtn"
                   type="button">Close</button></div>
@@ -31330,14 +31386,15 @@
           // Generic one-line toast on the shared .tg-toast surface — green check by default, amber warn
           // variant. msgHtml is trusted caller-built markup (links allowed); escape any user data upstream.
           let _klavToastTimer = null
-          function klavToast(msgHtml, warn) {
+          // `ms`: how long the toast stays (default 8s); short confirmations pass less (e.g. 1s for "Label created").
+          function klavToast(msgHtml, warn, ms) {
             let toast = $("klavToast")
             if (!toast) { toast = document.createElement("div"); toast.id = "klavToast"; document.body.appendChild(toast) }
             toast.className = "tg-toast" + (warn ? " tg-toast-warn" : "")
             if (_klavToastTimer) { clearTimeout(_klavToastTimer); _klavToastTimer = null }
             toast.innerHTML = `<span class="tg-toast-msg">${kicon(warn ? 'triangle-alert' : 'check-circle', { size: 15 })} ${msgHtml}</span>`
             toast.classList.add("show")
-            _klavToastTimer = setTimeout(() => { toast.classList.remove("show") }, 8000)
+            _klavToastTimer = setTimeout(() => { toast.classList.remove("show") }, ms > 0 ? ms : 8000)
           }
           let _assignWarnTimer = null
           function assignEmailWarnToast(msg) {
@@ -34341,7 +34398,33 @@
               const closeMl = () => { bg.classList.remove("show"); _mlTicket = null }
               document.getElementById("mlCloseBtn").addEventListener("click", closeMl)
               bg.addEventListener("click", ev => { if (ev.target === bg) closeMl() })
+              // Visible progress while the label is created: Add / name / colour locked, spinner + "Adding…" in the
+              // button and an indeterminate bar under the form. Also blocks a double click / Enter double-create.
+              let mlAdding = false
+              const setMlBusy = (on) => {
+                mlAdding = on
+                const btn = document.getElementById("mlAddBtn")
+                const bar = document.getElementById("mlProgress")
+                ;["mlNewName", "mlNewColor", "mlAddBtn"].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = on })
+                if (btn) {
+                  btn.innerHTML = on ? '<span class="sup-spin" aria-hidden="true"></span>Adding…' : "Add"
+                  btn.setAttribute("aria-busy", on ? "true" : "false")
+                }
+                if (bar) bar.hidden = !on
+                if (!on) { const inp = document.getElementById("mlNewName"); if (inp) { try { inp.focus() } catch (e) { } } }
+              }
+              // Flash the just-created label's row so it's easy to spot in the list.
+              const flashMlRow = (lid) => {
+                const nameEl = document.querySelector(`#mlList .ml-name[data-lid="${CSS.escape(String(lid))}"]`)
+                const row = nameEl && nameEl.closest(".ml-row")
+                if (row) { row.classList.add("ml-just-added"); try { row.scrollIntoView({ block: "nearest" }) } catch (e) { } }
+              }
               const addLabel = async () => {
+                if (mlAdding) return
+                setMlBusy(true)
+                try { await addLabelNow() } finally { setMlBusy(false) }
+              }
+              const addLabelNow = async () => {
                 const name = document.getElementById("mlNewName").value.trim()
                 const color = document.getElementById("mlNewColor").value
                 const err = document.getElementById("mlErr")
@@ -34373,7 +34456,10 @@
                 refreshTicketLabelOptions()
                 document.getElementById("mlNewName").value = ""
                 renderMlList()
-                await _mlAddToTicket(d.label)
+                await _mlAddToTicket(d.label)   // (re-renders the list when opened from a ticket)
+                flashMlRow(d.label.id)
+                // Success feedback (toast sits above the modal).
+                if (typeof klavToast === "function") klavToast(`Label <b>${esc(d.label.name)}</b> created${_mlTicket ? " and added to this ticket" : ""}.`, false, 1000)
               }
               document.getElementById("mlAddBtn").addEventListener("click", addLabel)
               document.getElementById("mlNewName").addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); addLabel() } })
