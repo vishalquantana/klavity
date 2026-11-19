@@ -314,6 +314,61 @@
       user-select: text
     }
 
+    /* KD-3132: billing managed by the customer's admin (body.plan-locked, set by applyPlanLock) — the Plan &
+       billing drawer opens as usual, but its content is blurred and inert with a "contact your admin" popup on
+       top; the sidebar upgrade pill keeps its space but is not shown. */
+    #planContactAdmin {
+      display: none
+    }
+
+    body.plan-locked #planDrawer .drawer-in {
+      position: relative;
+      min-height: 520px
+    }
+
+    body.plan-locked #planDrawer .drawer-in > :not(#planContactAdmin) {
+      filter: blur(6px);
+      pointer-events: none;
+      user-select: none
+    }
+
+    body.plan-locked #planContactAdmin {
+      display: flex;
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 32px 16px 16px
+    }
+
+    /* Same look as the Sims/AutoSims "Upgrade to unlock" wall (.uw-card & co.), sized up for the drawer. */
+    .plan-lock-card {
+      width: 520px;
+      max-width: 100%;
+      padding: 36px 36px 30px
+    }
+
+    .plan-lock-card .uw-benefits {
+      max-width: 400px
+    }
+
+    .plan-lock-cta {
+      display: inline-block;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--paper);
+      padding: 10px 16px;
+      background: rgba(99, 102, 241, .10);
+      border: 1px solid rgba(99, 102, 241, .30);
+      border-radius: 10px
+    }
+
+    body.plan-locked #planPill {
+      visibility: hidden;
+      pointer-events: none
+    }
+
     /* compact upgrade pill for free accounts — sits under the brand, opens the Plan & billing drawer */
     .side-plan-pill {
       display: flex;
@@ -19950,6 +20005,29 @@
             style="font-size:11px;text-transform:none;letter-spacing:0">Stripe checkout + customer portal</span> <span
             class="caret">›</span></summary>
         <div class="drawer-in">
+          <!-- KD-3132: for projects whose billing is managed by the customer's own admin (see
+           BILLING_CONTACT_ADMIN_PROJECTS / applyPlanLock) the drawer still opens, but the plan/billing content
+           is blurred + non-interactive and this popup sits over it. Hidden for every other project. -->
+          <div id="planContactAdmin" class="plan-lock-overlay">
+            <div class="uw-card plan-lock-card" role="note" aria-labelledby="planLockTitle">
+              <div class="uw-lock"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+                  fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  aria-hidden="true">
+                  <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg></div>
+              <h2 id="planLockTitle">Your plan is managed by admin</h2>
+              <p class="uw-sub">Good news: everything on this project is already set up for you. Plan and billing for
+                your organisation are handled by your admin, so there is nothing you need to do here.</p>
+              <div class="uw-benefits">
+                <div>Need more Sims, AutoSims or projects? Your admin can change the plan.</div>
+                <div>Questions about invoices, payments or renewals go to your admin.</div>
+                <div>Hit a usage limit? Ask your admin to review your allowance.</div>
+              </div>
+              <div class="plan-lock-cta">Please contact your admin for any plan or billing request.</div>
+              <div class="uw-note">Keep reporting bugs as usual. Nothing about your access changes.</div>
+            </div>
+          </div>
           <p class="tacc-hint" style="margin-bottom:12px">Current plan: <b id="planLabel">…</b> <span
               id="billingStatusLabel" class="muted" style="font-size:12px"></span></p>
           <div id="billingQuotaNote" class="muted" style="font-size:12px;margin-bottom:12px"></div>
@@ -24614,6 +24692,24 @@
             matches: [],       // filtered project list currently shown
             active: -1         // index into matches of the highlighted row
           }
+          // KD-3132: projects whose plan & billing is handled by the customer's own admin, not in Klavity. For
+          // these the Settings "Plan & billing" drawer shows only a "please contact your admin" note, and the
+          // sidebar upgrade pill is hidden. Matched on the project ID (stable across renames).
+          const BILLING_CONTACT_ADMIN_PROJECTS = [
+            "proj_6c601d46-7a83-4359-aab4-01b6ebd4a1ea", // PX4 QA
+          ]
+          function applyPlanLock(project) {
+            const id = project && project.id ? String(project.id) : ""
+            const locked = !!id && BILLING_CONTACT_ADMIN_PROJECTS.includes(id)
+            document.body.classList.toggle("plan-locked", locked)
+            // The CSS blur + pointer-events only stop the mouse; `inert` also keeps the blurred controls out of
+            // keyboard focus and the accessibility tree, so only the contact-admin popup is reachable.
+            const inner = document.querySelector("#planDrawer .drawer-in")
+            if (inner) Array.from(inner.children).forEach(el => {
+              if (el.id === "planContactAdmin") return
+              if (locked) el.setAttribute("inert", ""); else el.removeAttribute("inert")
+            })
+          }
           function renderSwitcher() {
             // KLA-829: null-safe — renderSwitcher runs as "chrome" on every render AND from load()'s failure
             // branch where `state` can still be null (cold fetch miss). Guard every deref so a dead page still
@@ -24621,6 +24717,7 @@
             const projects = (state && state.projects) || []
             const activeId = state && state.active ? state.active.id : null
             const isAdmin = !!(state && state.active && state.active.role === "admin")
+            applyPlanLock(projects.find(p => p.id === activeId))
             const btnName = $("projComboName")
             if (btnName) {
               const cur = projects.find(p => p.id === activeId)
