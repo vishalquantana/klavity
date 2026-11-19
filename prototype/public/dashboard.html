@@ -5280,6 +5280,14 @@
     /* .uw-blurred is applied to whichever container is the CURRENT view's real content — the shared
    Sims/Overview .grid, or the AutoSims card's own inner content (its outer .grid is display:none
    on that view) — never scoped to .grid alone, so either target actually blurs. */
+    /* KD-3121: Sims-only overview widgets (Sims stat, Your Sims, Live activity, What your Sims are saying) are hidden on a Snap-only project. */
+    /* KD-3121: top navbar no longer shows the Snap Reports button or the Inbox icon (all projects). */
+    #snapNavBtn, #inboxNavBtn { display: none !important }
+    body.snap-only .sims-only { display: none !important }
+    body.snap-only .stats { grid-template-columns: repeat(3, minmax(0, 1fr)) }
+    /* KD-3121: Settings drawers for Sims/AutoSims features . */
+    body.snap-only #liveDrawer, body.snap-only #obsDrawer, body.snap-only #taccDrawer, body.snap-only #trailsAutofileDrawer, body.snap-only #aiInstrDrawer { display: none !important }
+
     .uw-blurred {
       filter: blur(6px);
       opacity: .55;
@@ -5301,6 +5309,13 @@
     .upgrade-wall.show {
       display: grid
     }
+
+    /* KD-3121: every "Upgrade to unlock" popup (Sims, AutoSims, Sim Reports, Sims Studio) dims the WHOLE content side of the screen
+       (top bar and sidebar left clear so navigation stays usable) with the card centred in that area. The overlay is fixed to
+       the viewport below the 48px top bar (+1px border) and right of the sidebar (214px, 64px collapsed, 0 on mobile where the rail is static). */
+    .upgrade-wall.show { position: fixed; top: 49px; right: 0; bottom: 0; left: 214px; z-index: 25; border-radius: 0; place-items: center }
+    body.side-collapsed .upgrade-wall.show { left: 64px }
+    @media(max-width:820px) { .upgrade-wall.show, body.side-collapsed .upgrade-wall.show { left: 0 } }
 
     .upgrade-wall.hide {
       display: none
@@ -18273,7 +18288,9 @@
     [data-view="triage"] .kb-list { margin-top: .8px; padding-top: 15px; }
     .bar-left { gap: 6px; }
     :root:not([data-theme="dark"]) .bar-left .nav-snap { width: 116px; justify-content: center; padding: 0; }
-    :root:not([data-theme="dark"]) .bar-left .nav-studio { width: 106px; justify-content: center; padding: 0; }
+    :root:not([data-theme="dark"]) .bar-left .nav-studio { width: auto; min-width: 122px; justify-content: center; padding: 0 14px; }
+    /* KD-3121: "Sims Studio" label must stay on one line (also with the lock badge shown on Snap-only projects). */
+    .bar-left .nav-studio, .nav-studio-lbl { white-space: nowrap; flex-shrink: 0; }
     [data-view="triage"] .tg-filters { padding-bottom: 13.3px; }
     .nav-snap-lbl, .nav-studio-lbl, .create-lbl { letter-spacing: 0; }
     .bar-left .create-wrap { position: relative; margin-left: 19px; }
@@ -18992,7 +19009,7 @@
                   d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719" />
               </svg></span>Feedback received</div>
         </div>
-        <div class="stat">
+        <div class="stat sims-only">
           <div class="n" id="stSims"><span class="sk sk-num"></span></div>
           <div class="l"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18"
                 viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -19070,7 +19087,7 @@
         </div>
 
         <!-- Sims overview (compact grid — shows on overview only; Sims tab uses simsFeed for full detail) -->
-        <div class="card" data-view="overview">
+        <div class="card sims-only" data-view="overview">
           <h2 style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" class="icon"
               width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -19317,7 +19334,7 @@
         <div id="ticketSingle" class="hide"></div>
 
         <!-- Live activity -->
-        <div class="card" data-view="overview">
+        <div class="card sims-only" data-view="overview">
           <h2><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24"
               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
               aria-hidden="true">
@@ -19344,7 +19361,7 @@
         </div>
 
         <!-- What your Sims are saying (overview only — capped, recent activity feed) -->
-        <div class="card full" data-view="overview">
+        <div class="card full sims-only" data-view="overview">
           <h2><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24"
               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
               aria-hidden="true">
@@ -24458,7 +24475,7 @@
             const overlay = $("upgradeWallOverlay")
             if (!overlay) return
             const view = document.body.getAttribute("data-view")
-            const gated = (view === "sims" || view === "autosims") && snapOnly()
+            const gated = (view === "sims" || view === "autosims" || view === "triage") && snapOnly()
             // Clear blur from BOTH possible targets unconditionally — switching views/gate state must
             // never leave a stale blur on the container we are not using this pass.
             const simsGrid = document.querySelector(".content > .grid")
@@ -24471,7 +24488,7 @@
               return
             }
             const target = view === "autosims" ? autosimsCard : simsGrid
-            const feature = view === "autosims" ? "AutoSims" : "Sims"
+            const feature = view === "autosims" ? "AutoSims" : view === "triage" ? "Sim Reports" : "Sims"
             const projectName = state && state.active ? state.active.name : ""
             overlay.innerHTML = renderUpgradeWall(feature, projectName)
             overlay.className = "upgrade-wall show"
@@ -24483,7 +24500,22 @@
           // active project is snap-only, so the gate is visible before the user even clicks in.
           function applyNavLocks() {
             const gated = snapOnly()
-            document.querySelectorAll('.side .nv[data-go="sims"], .side .nv[data-go="autosims"]').forEach(btn => {
+            document.body.classList.toggle("snap-only", gated)
+            // KD-3121: Sims Studio entry points follow the same gate as Sims/AutoSims — locked on a Snap-only project,
+            // click opens the upgrade drawer (the capture-phase [data-snap-locked] handler below) instead of /app.
+            ;[$("studioNavBtn"), $("checklistStudioLink"), document.querySelector('.card[data-view~="sims"] a[href^="/app"]')].forEach(el => {
+              if (!el) return
+              el.classList.toggle("snap-locked", gated)
+              let badge = el.querySelector(".cg-lock")
+              if (gated) {
+                el.setAttribute("data-snap-locked", "studio"); el.title = "Upgrade to unlock"
+                if (!badge) { badge = document.createElement("span"); badge.className = "cg-lock"; badge.innerHTML = kicon("lock", { size: 12 }); el.appendChild(badge) }
+              } else {
+                el.removeAttribute("data-snap-locked"); if (el.title === "Upgrade to unlock") el.removeAttribute("title")
+                if (badge) badge.remove()
+              }
+            })
+            document.querySelectorAll('.side .nv[data-go="sims"], .side .nv[data-go="autosims"], .side .nv[data-go="triage"]').forEach(btn => {
               btn.classList.toggle("gated", gated)
               let badge = btn.querySelector(".nv-lock")
               if (gated) {
@@ -24527,8 +24559,20 @@
             if (!t || !snapOnly()) return
             e.preventDefault(); e.stopImmediatePropagation()
             const m = document.getElementById("createMenu"); if (m) m.classList.add("hide")
+            // KD-3121: Sims Studio shows the same "Unlock … / Upgrade to unlock" card as the Sims/AutoSims pages, as a popup.
+            if (t.getAttribute("data-snap-locked") === "studio") { showStudioUpgradePopup(); return }
             if (typeof openPlanDrawer === "function") openPlanDrawer()
           }, true)
+          // Same wall as Sims/AutoSims: sits over the current page's content (sidebar stays usable, no close control) and
+          // is cleared by applyUpgradeWall() as soon as the user navigates to another view.
+          function showStudioUpgradePopup() {
+            const overlay = $("upgradeWallOverlay"); if (!overlay) return
+            const view = document.body.getAttribute("data-view")
+            const target = view === "autosims" ? document.querySelector('.card[data-view~="autosims"]') : document.querySelector(".content > .grid")
+            overlay.innerHTML = renderUpgradeWall("Sims Studio", state && state.active ? state.active.name : "")
+            overlay.className = "upgrade-wall show"
+            if (target) target.classList.add("uw-blurred")
+          }
           window.applyCreateGates = applyCreateGates
 
           // AI-settings note: when snap-only, disable the Sims/AutoSim-only admin controls (live-Sims
