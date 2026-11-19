@@ -76,6 +76,90 @@ export function haloColor(color: string): string {
   return luminance(color) > 0.55 ? 'rgba(17,17,17,0.92)' : 'rgba(255,255,255,0.92)'
 }
 
+// ── Edit-annotation geometry (pure; unit-tested) ──────────────────────────────────────────────────────
+export interface Box { x: number; y: number; w: number; h: number }
+/** Resize handle ids: corners for boxed shapes, p1/p2 for line + arrow endpoints. */
+export type Handle = 'nw' | 'ne' | 'sw' | 'se' | 'p1' | 'p2'
+
+function normBox(x: number, y: number, w: number, h: number): Box {
+  return { x: Math.min(x, x + w), y: Math.min(y, y + h), w: Math.abs(w), h: Math.abs(h) }
+}
+function distToSeg(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+  const dx = x2 - x1, dy = y2 - y1, len2 = dx * dx + dy * dy
+  const t = len2 ? Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / len2)) : 0
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
+}
+
+/** Does `s` contain / sit under the image-space point? Lines are hit near the stroke; boxed shapes inside. */
+export function shapeContains(s: Shape, px: number, py: number, tol: number, a: Annotator): boolean {
+  if (s.type === 'line' || s.type === 'arrow') return distToSeg(px, py, s.x1, s.y1, s.x2, s.y2) <= tol + a.computeLineWidth(s)
+  if (s.type === 'pen') {
+    const reach = tol + a.computeLineWidth(s)
+    if (s.points.length === 1) return Math.hypot(px - s.points[0].x, py - s.points[0].y) <= reach
+    for (let i = 1; i < s.points.length; i++) {
+      const p = s.points[i - 1], q = s.points[i]
+      if (distToSeg(px, py, p.x, p.y, q.x, q.y) <= reach) return true
+    }
+    return false
+  }
+  if (s.type === 'circle') {
+    const rx = Math.abs(s.rx) + tol, ry = Math.abs(s.ry) + tol
+    return ((px - s.x) / rx) ** 2 + ((py - s.y) / ry) ** 2 <= 1
+  }
+  if (s.type === 'count') return Math.hypot(px - s.x, py - s.y) <= a.countRadius(s) + tol
+  const b = a.shapeBounds(s)
+  return !!b && px >= b.x - tol && px <= b.x + b.w + tol && py >= b.y - tol && py <= b.y + b.h + tol
+}
+
+export function cloneShape<T extends Shape>(s: T): T { return JSON.parse(JSON.stringify(s)) }
+
+/** Copy `from`'s geometry onto `to` in place (same shape object stays selected / in history order). */
+function assignGeometry(to: Shape, from: Shape): void { Object.assign(to, cloneShape(from)) }
+
+/** Move: `orig` is the shape as it was when the drag started; the live shape becomes orig shifted by dx,dy. */
+export function translateShape(shape: Shape, orig: Shape, dx: number, dy: number): void {
+  assignGeometry(shape, orig)
+  const s = shape as any
+  if (s.type === 'pen') s.points = s.points.map((p: { x: number; y: number }) => ({ x: p.x + dx, y: p.y + dy }))
+  else if (s.type === 'line' || s.type === 'arrow') { s.x1 += dx; s.y1 += dy; s.x2 += dx; s.y2 += dy }
+  else { s.x += dx; s.y += dy }
+}
+
+/** Resize from a handle: the opposite corner (or the other endpoint) stays put and the grabbed one follows
+ *  the pointer. `origBounds` = the shape's bounds at drag start. Text/counter scale uniformly (font size /
+ *  badge radius); a pen stroke scales its points. */
+export function resizeShape(shape: Shape, orig: Shape, origBounds: Box, handle: Handle, px: number, py: number): void {
+  assignGeometry(shape, orig)
+  const s = shape as any
+  if (s.type === 'line' || s.type === 'arrow') {
+    if (handle === 'p1') { s.x1 = px; s.y1 = py } else if (handle === 'p2') { s.x2 = px; s.y2 = py }
+    return
+  }
+  const b = origBounds
+  if (s.type === 'text') {
+    const k = Math.max(0.2, (py - b.y) / Math.max(1, b.h))
+    s.size = Math.max(10, Math.min(240, Math.round((orig as any).size * k)))
+    return
+  }
+  if (s.type === 'count') {
+    s.size = Math.max(8, Math.min(400, Math.max(px - s.x, py - s.y)))
+    return
+  }
+  // Fixed (opposite) corner → new box spanning fixed..pointer.
+  const fx = handle === 'nw' || handle === 'sw' ? b.x + b.w : b.x
+  const fy = handle === 'nw' || handle === 'ne' ? b.y + b.h : b.y
+  const nb = normBox(fx, fy, px - fx, py - fy)
+  const MIN = 4
+  if (nb.w < MIN) nb.w = MIN
+  if (nb.h < MIN) nb.h = MIN
+  if (s.type === 'rect' || s.type === 'pixelate') { s.x = nb.x; s.y = nb.y; s.w = nb.w; s.h = nb.h }
+  else if (s.type === 'circle') { s.x = nb.x + nb.w / 2; s.y = nb.y + nb.h / 2; s.rx = nb.w / 2; s.ry = nb.h / 2 }
+  else if (s.type === 'pen') {
+    const sx = b.w ? nb.w / b.w : 1, sy = b.h ? nb.h / b.h : 1
+    s.points = s.points.map((p: { x: number; y: number }) => ({ x: nb.x + (p.x - b.x) * sx, y: nb.y + (p.y - b.y) * sy }))
+  }
+}
+
 export class Annotator {
   readonly shapes: Shape[] = []
   private canvas: HTMLCanvasElement
@@ -91,12 +175,110 @@ export class Annotator {
     this.imageDataUrl = imageDataUrl
   }
 
-  computeLineWidth(): number {
-    return Math.max(3, this.canvas.width / 400) * this.strokeScale
+  /** Base stroke width. A shape that recorded its own stroke multiplier (`sw`) keeps it; otherwise the
+   *  editor's current Stroke setting (`strokeScale`) applies. */
+  computeLineWidth(shape?: Shape | null): number {
+    const sw = shape && 'sw' in shape && typeof shape.sw === 'number' && shape.sw > 0 ? shape.sw : this.strokeScale
+    return Math.max(3, this.canvas.width / 400) * sw
   }
 
   computeFontSize(): number {
     return Math.max(16, this.canvas.width / 60)
+  }
+
+  /** Radius (image px) of a numbered counter badge — its own `size` once resized, else the default. */
+  countRadius(shape: Extract<Shape, { type: 'count' }>): number {
+    return shape.size && shape.size > 0 ? shape.size : Math.max(13, this.computeFontSize())
+  }
+
+  // ── Selection (edit added annotations) ─────────────────────────────────────────────────────────────
+  /** The shape being edited with the Select tool (drawn with a dashed outline + handles). Display-only:
+   *  never part of `shapes`, and the export path (renderAnnotatedImage) never sets it. */
+  selected: Shape | null = null
+  /** Screen-to-image scale (1 / object-fit display scale) so handles keep a usable on-screen size on big
+   *  screenshots. Set by the editor; 1 = draw handles at their nominal size. */
+  uiScale = 1
+
+  /** Image-space bounding box of any shape (null when it can't be measured, e.g. text in a headless env). */
+  shapeBounds(shape: Shape): Box | null {
+    switch (shape.type) {
+      case 'pen': {
+        if (!shape.points.length) return null
+        let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity
+        for (const p of shape.points) { x1 = Math.min(x1, p.x); y1 = Math.min(y1, p.y); x2 = Math.max(x2, p.x); y2 = Math.max(y2, p.y) }
+        return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 }
+      }
+      case 'rect': case 'pixelate':
+        return normBox(shape.x, shape.y, shape.w, shape.h)
+      case 'arrow': case 'line':
+        return { x: Math.min(shape.x1, shape.x2), y: Math.min(shape.y1, shape.y2), w: Math.abs(shape.x2 - shape.x1), h: Math.abs(shape.y2 - shape.y1) }
+      case 'circle':
+        return { x: shape.x - Math.abs(shape.rx), y: shape.y - Math.abs(shape.ry), w: Math.abs(shape.rx) * 2, h: Math.abs(shape.ry) * 2 }
+      case 'count': {
+        const r = this.countRadius(shape)
+        return { x: shape.x - r, y: shape.y - r, w: r * 2, h: r * 2 }
+      }
+      case 'text':
+        return this.textBounds(shape)
+    }
+    return null
+  }
+
+  /** Resize handles for a shape: endpoints for line/arrow, the bottom-right corner for text and counters
+   *  (they scale uniformly), four corners for everything else. */
+  handlesFor(shape: Shape): Array<{ id: Handle; x: number; y: number }> {
+    if (shape.type === 'line' || shape.type === 'arrow') return [{ id: 'p1', x: shape.x1, y: shape.y1 }, { id: 'p2', x: shape.x2, y: shape.y2 }]
+    const b = this.shapeBounds(shape)
+    if (!b) return []
+    if (shape.type === 'text' || shape.type === 'count') return [{ id: 'se', x: b.x + b.w, y: b.y + b.h }]
+    return [{ id: 'nw', x: b.x, y: b.y }, { id: 'ne', x: b.x + b.w, y: b.y }, { id: 'sw', x: b.x, y: b.y + b.h }, { id: 'se', x: b.x + b.w, y: b.y + b.h }]
+  }
+
+  /** Grab tolerance in image px (scaled so it stays ~8 screen px whatever the zoom/fit). */
+  hitTolerance(): number { return Math.max(6, 8 * this.uiScale) }
+
+  /** Topmost shape under an image-space point (strokes are hit near the line, filled/boxed shapes inside). */
+  hitShape(px: number, py: number): Shape | null {
+    const tol = this.hitTolerance()
+    for (let i = this.shapes.length - 1; i >= 0; i--) {
+      const s = this.shapes[i]
+      if (shapeContains(s, px, py, tol, this)) return s
+    }
+    return null
+  }
+
+  /** Which handle of the selected shape is under the point, if any. */
+  hitHandle(px: number, py: number): Handle | null {
+    if (!this.selected) return null
+    const r = this.handleSize() / 2 + this.hitTolerance() / 2
+    for (const h of this.handlesFor(this.selected)) if (Math.abs(px - h.x) <= r && Math.abs(py - h.y) <= r) return h.id
+    return null
+  }
+
+  private handleSize(): number { return Math.max(8, 10 * this.uiScale) }
+
+  private drawSelection(ctx: CanvasRenderingContext2D, shape: Shape): void {
+    const b = this.shapeBounds(shape)
+    if (!b) return
+    const pad = Math.max(4, 5 * this.uiScale), lw = Math.max(1.5, 1.5 * this.uiScale)
+    ctx.save()
+    ctx.setLineDash?.([6 * this.uiScale, 4 * this.uiScale])
+    ctx.lineWidth = lw + 2 * this.uiScale
+    ctx.strokeStyle = 'rgba(255,255,255,.9)'
+    ctx.strokeRect(b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2)
+    ctx.lineWidth = lw
+    ctx.strokeStyle = '#6366f1'
+    ctx.strokeRect(b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2)
+    ctx.setLineDash?.([])
+    const hs = this.handleSize()
+    for (const h of this.handlesFor(shape)) {
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(h.x - hs / 2, h.y - hs / 2, hs, hs)
+      ctx.lineWidth = lw
+      ctx.strokeStyle = '#6366f1'
+      ctx.strokeRect(h.x - hs / 2, h.y - hs / 2, hs, hs)
+    }
+    ctx.restore()
   }
 
   addShape(shape: Shape): void {
@@ -136,6 +318,7 @@ export class Annotator {
     ctx.drawImage(img, 0, 0)
     this.shapes.forEach(s => this.drawShape(ctx, s))
     if (preview) this.drawShape(ctx, preview)
+    if (this.selected && this.shapes.includes(this.selected)) this.drawSelection(ctx, this.selected)
   }
 
   /** KLAVITYKLA-507: live rubber-band preview during a drag — base image + committed shapes + ONE
@@ -184,12 +367,12 @@ export class Annotator {
   private drawShape(ctx: CanvasRenderingContext2D, shape: Shape): void {
     ctx.strokeStyle = shape.color
     ctx.fillStyle = shape.color
-    ctx.lineWidth = this.computeLineWidth()
+    ctx.lineWidth = this.computeLineWidth(shape)
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
 
     if (shape.type === 'pen') {
-      const base = this.computeLineWidth()
+      const base = this.computeLineWidth(shape)
       this.strokeWithHalo(ctx, shape.color, base, () => {
         ctx.beginPath()
         shape.points.forEach((p, i) =>
@@ -197,7 +380,7 @@ export class Annotator {
         )
       })
     } else if (shape.type === 'rect') {
-      const base = this.computeLineWidth()
+      const base = this.computeLineWidth(shape)
       // strokeRect (not a path) — draw the halo rect first, then the colour rect on top.
       ctx.lineWidth = base + this.haloPad(base)
       ctx.strokeStyle = haloColor(shape.color)
@@ -208,7 +391,7 @@ export class Annotator {
     } else if (shape.type === 'arrow') {
       // Arrows read poorly at the base stroke weight, so they draw ~1.7x thicker by default (the S/M/L/XL
       // stroke control still scales this via computeLineWidth). The head grows with the thicker shaft.
-      const lw = this.computeLineWidth() * 1.7
+      const lw = this.computeLineWidth(shape) * 1.7
       const angle = Math.atan2(shape.y2 - shape.y1, shape.x2 - shape.x1)
       const headLen = Math.max(16, lw * 4)
       this.strokeWithHalo(ctx, shape.color, lw, () => {
@@ -227,25 +410,25 @@ export class Annotator {
       })
     } else if (shape.type === 'line') {
       // Lines also default thicker (parity with arrows) so they read clearly; still scaled by the stroke control.
-      const lw = this.computeLineWidth() * 1.7
+      const lw = this.computeLineWidth(shape) * 1.7
       this.strokeWithHalo(ctx, shape.color, lw, () => {
         ctx.beginPath()
         ctx.moveTo(shape.x1, shape.y1)
         ctx.lineTo(shape.x2, shape.y2)
       })
     } else if (shape.type === 'circle') {
-      const base = this.computeLineWidth()
+      const base = this.computeLineWidth(shape)
       this.strokeWithHalo(ctx, shape.color, base, () => {
         ctx.beginPath()
         ctx.ellipse(shape.x, shape.y, Math.abs(shape.rx), Math.abs(shape.ry), 0, 0, Math.PI * 2)
       })
     } else if (shape.type === 'count') {
-      const r = Math.max(13, this.computeFontSize())
+      const r = this.countRadius(shape)
       ctx.beginPath()
       ctx.arc(shape.x, shape.y, r, 0, Math.PI * 2)
       ctx.fill()
       // Contrasting ring so the badge reads even on a same-colour background (halo-under approach).
-      ctx.lineWidth = this.haloPad(this.computeLineWidth())
+      ctx.lineWidth = this.haloPad(this.computeLineWidth(shape))
       ctx.strokeStyle = haloColor(shape.color)
       ctx.stroke()
       ctx.fillStyle = '#fff'
