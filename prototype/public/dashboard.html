@@ -31386,7 +31386,16 @@
           async function fetchAndRenderTktList() {
             const listEl = document.getElementById("tktListView")
             if (!listEl) return
-            if (_tktListState.loading) return
+            // KD-3095: LATEST REQUEST WINS. This used to bail out (`if (loading) return`) while a fetch was in flight,
+            // so a search typed during a slow request ("6" → "68") was silently DROPPED and the list kept showing the
+            // older query's rows — "searching a ticket number works only sometimes" in List view (the Board filters
+            // client-side, so it never hit this). Now every call runs: it cancels the previous request, and only the
+            // newest response may touch the list or the shared state.
+            const reqSeq = (_tktListState.reqSeq = (_tktListState.reqSeq || 0) + 1)
+            try { if (_tktListState.abort) _tktListState.abort.abort() } catch (e) { }
+            const abortCtl = typeof AbortController === "function" ? new AbortController() : null
+            _tktListState.abort = abortCtl
+            const isLatest = () => reqSeq === _tktListState.reqSeq
 
             const projId = state && state.active && state.active.id
             if (!projId) { listEl.innerHTML = '<div class="tkt-list-empty">No project selected.</div>'; return }
@@ -31410,9 +31419,12 @@
 
             _tktListState.loading = true
             try {
-              const res = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets?${sp.toString()}`)
+              const res = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets?${sp.toString()}`, abortCtl ? { signal: abortCtl.signal } : undefined)
               if (!res.ok) throw new Error("HTTP " + res.status)
               const data = await res.json()
+              // KD-3095: a newer search/page/filter has started since — its request owns the list; drop this reply.
+              // (The SWR cache is still keyed per query, so it is safe to keep this result for that exact query.)
+              if (!isLatest()) { swrWrite(cacheKey, { tickets: data.tickets || [], total: data.total || 0, totalPages: data.totalPages || 1 }); return }
               _tktListState.totalPages = data.totalPages || 1
               _tktListState.total = data.total || 0
               // Live-refresh: record the project-level change-token so the rev poll (ticketsRevTick) can detect a
@@ -31428,10 +31440,13 @@
               if (window.__klavMutating > 0 && paintedFromCache) return
               renderTktList(listEl, data.tickets || [], data.total || 0)
             } catch (e) {
+              // KD-3095: a superseded/cancelled request is not a failure — the newer one is painting the list.
+              if (!isLatest()) return
               // KLA-837 — don't dead-end: offer an inline Retry that re-runs this exact fetch (swrSection spirit).
               if (!paintedFromCache) listEl.innerHTML = '<div class="tkt-list-empty">Failed to load tickets. <button class="btn btn-sm" type="button" onclick="fetchAndRenderTktList()">Retry</button></div>'
             } finally {
-              _tktListState.loading = false
+              // Only the newest request ends the "loading" state (the rev poll waits on it).
+              if (isLatest()) { _tktListState.loading = false; _tktListState.abort = null }
             }
           }
 
