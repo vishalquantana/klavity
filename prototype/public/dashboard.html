@@ -5253,6 +5253,13 @@
       display: grid
     }
 
+    /* KD-3121: every "Upgrade to unlock" popup (Sims, AutoSims, Sim Reports, Sims Studio) dims the WHOLE content side of the screen
+       (top bar and sidebar left clear so navigation stays usable) with the card centred in that area. The overlay is fixed to
+       the viewport below the 48px top bar (+1px border) and right of the sidebar (214px, 64px collapsed, 0 on mobile where the rail is static). */
+    .upgrade-wall.show { position: fixed; top: 49px; right: 0; bottom: 0; left: 214px; z-index: 25; border-radius: 0; place-items: center }
+    body.side-collapsed .upgrade-wall.show { left: 64px }
+    @media(max-width:820px) { .upgrade-wall.show, body.side-collapsed .upgrade-wall.show { left: 0 } }
+
     .upgrade-wall.hide {
       display: none
     }

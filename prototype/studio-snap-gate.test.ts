@@ -58,3 +58,8 @@ test("Sims Studio nav button keeps its label on one line", () => {
   expect(HTML).toContain(".bar-left .nav-studio, .nav-studio-lbl { white-space: nowrap; flex-shrink: 0; }")
   expect(HTML).toContain(".bar-left .nav-studio { width: auto; min-width: 122px;")
 })
+
+test("every upgrade popup covers the content area only (not the sidebar or top bar), card centred", () => {
+  expect(HTML).toContain(".upgrade-wall.show { position: fixed; top: 49px; right: 0; bottom: 0; left: 214px; z-index: 25;")
+  expect(HTML).toContain("body.side-collapsed .upgrade-wall.show { left: 64px }")
+})
