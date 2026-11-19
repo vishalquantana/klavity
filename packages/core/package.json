@@ -15,6 +15,7 @@
     "./annotator": "./src/annotator.ts",
     "./crop": "./src/crop.ts",
     "./integrations/backend": "./src/integrations/backend.ts",
+    "./large-upload": "./src/large-upload.ts",
     "./attribution": "./src/attribution.ts",
     "./modal": "./src/modal.ts",
     "./modal-theme": "./src/modal-theme.ts",
