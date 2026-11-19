@@ -31383,6 +31383,10 @@
             return sp
           }
 
+          // The list's SWR cache key for the query currently on screen (shared by the fetch and local updates).
+          function tktListCacheKey(projId) {
+            return "tktlist:" + projId + ":" + ticketQueryParams("list", _tktListState.page, _tktListState.limit || 50).toString()
+          }
           async function fetchAndRenderTktList() {
             const listEl = document.getElementById("tktListView")
             if (!listEl) return
@@ -31391,11 +31395,10 @@
             const projId = state && state.active && state.active.id
             if (!projId) { listEl.innerHTML = '<div class="tkt-list-empty">No project selected.</div>'; return }
 
-            const limit = _tktListState.limit || 50
-            const sp = ticketQueryParams("list", _tktListState.page, limit)
+            const sp = ticketQueryParams("list", _tktListState.page, _tktListState.limit || 50)
             // #720: SWR key encodes project + every filter + the page, so cached rows always match the exact
             // query on screen (sorting/filtering stays correct — a different filter/page is a different key).
-            const cacheKey = "tktlist:" + projId + ":" + sp.toString()
+            const cacheKey = tktListCacheKey(projId)
 
             // #720: paint the last-cached rows IMMEDIATELY (no 'Loading…' flash), then revalidate below.
             let paintedFromCache = false
@@ -31635,10 +31638,82 @@
           // selection cleared — WITHOUT awaiting the network. The PATCH then fires in the background; a hard
           // failure reverts the local change. Undo reverts locally + PATCHes the prior values back. Falls back to
           // the original blocking path when no optimistic handler applies (e.g. label add/remove, list view).
+          // Bulk label add/remove used to wait for the server and then repaint from data that never got the label:
+          // the board redraws from local _tktBoardTickets and the list first paints its cached rows — so the label
+          // only showed after a later refresh. Apply it LOCALLY first (board data, state.tickets, the list rows on
+          // screen + the list cache) and repaint at once; the PATCH runs after and a failure is reverted.
+          // Returns revert(onlyIds?) or null when the label isn't known locally.
+          function bulkLabelsLocal(body, ids, projId) {
+            const adding = body.addLabelId !== undefined
+            const lid = String(adding ? body.addLabelId : body.removeLabelId)
+            const lbl = (state._labels || []).find(l => String(l.id) === lid)
+            if (adding && !lbl) return null
+            const idSet = new Set(ids.map(String))
+            const apply = (t) => {
+              const prev = Array.isArray(t.labels) ? t.labels.slice() : []
+              if (adding) { if (!prev.some(x => String(x.id) === lid)) t.labels = [...prev, { id: lbl.id, name: lbl.name, color: lbl.color }] }
+              else t.labels = prev.filter(x => String(x.id) !== lid)
+              return prev
+            }
+            const touched = [], seen = new Set()
+            ;[_tktBoardTickets, state.tickets, _tktListState.lastRows].forEach(arr => {
+              if (!Array.isArray(arr)) return
+              arr.forEach(t => {
+                if (!t || seen.has(t) || !idSet.has(String(t.id))) return
+                seen.add(t); touched.push({ t, prev: apply(t) })
+              })
+            })
+            // Keep the list's cached page in step, so its paint-from-cache (on the refresh after the PATCH) shows it too.
+            const cacheKey = projId ? tktListCacheKey(projId) : null
+            try {
+              const c = cacheKey ? swrRead(cacheKey) : null
+              if (c && Array.isArray(c.tickets)) { c.tickets.forEach(t => { if (t && idSet.has(String(t.id))) apply(t) }); swrWrite(cacheKey, c) }
+            } catch (e) { }
+            return (onlyIds) => {
+              touched.forEach(({ t, prev }) => { if (!onlyIds || onlyIds.has(String(t.id))) t.labels = prev })
+              try { if (cacheKey) swrInvalidate(cacheKey) } catch (e) { }   // drop the optimistic cache → next fetch repaints server truth
+            }
+          }
+          // Repaint whichever ticket view is showing from the in-memory data (no network).
+          function rerenderTktViewsLocal() {
+            try {
+              if (_tktView === "list") {
+                const listEl = $("tktListView")
+                if (listEl && Array.isArray(_tktListState.lastRows)) renderTktList(listEl, _tktListState.lastRows, _tktListState.lastTotal || 0)
+              } else if (Array.isArray(_tktBoardTickets)) renderTicketsKanban(_tktBoardTickets)
+            } catch (e) { }
+          }
           async function applyBulkAction(projId, body, onDone, optimistic) {
             const ids = [..._bulkSelected]
             if (!ids.length) return
             const label = bulkActionLabel(body)
+            // ── instant bulk label add/remove (see bulkLabelsLocal) ────────────────────────────────────────
+            if (body.addLabelId !== undefined || body.removeLabelId !== undefined) {
+              const revert = bulkLabelsLocal(body, ids, projId)
+              if (revert) {
+                _bulkSelected.clear()
+                rerenderTktViewsLocal()
+                window.__klavMutating++
+                let r = null, data = {}
+                try {
+                  r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets/bulk`, {
+                    method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...body, ticketIds: ids })
+                  }).catch(() => null)
+                  data = r ? await r.json().catch(() => ({})) : {}
+                } finally { window.__klavMutating = Math.max(0, window.__klavMutating - 1) }
+                if (!r || (!r.ok && r.status !== 207)) {
+                  revert(); rerenderTktViewsLocal()
+                  klavToast(!r ? "Couldn't apply the bulk action — network error. Please try again." : ((data && data.error) || ("Bulk action failed (" + r.status + "). No changes were applied.")), true)
+                  return
+                }
+                const failures = Array.isArray(data.failures) ? data.failures : []
+                if (failures.length) { revert(new Set(failures.map(f => String(f.ticketId)))); rerenderTktViewsLocal() }
+                if (onDone) onDone()
+                bulkResultToast(ids.length, label, failures, [], projId, [], onDone)
+                return
+              }
+              // label not known locally → fall through to the blocking path (repaints after the server answers).
+            }
             // ── #704 optimistic path (board status/priority/assignee) ─────────────────────────────────────
             if (typeof optimistic === "function") {
               const applied = optimistic(body, ids)   // mutate local + DOM now, clear selection; null → decline
@@ -31952,6 +32027,8 @@
           }
 
           function renderTktList(listEl, tickets, total) {
+            // Remember what's on screen so an instant (local) update — e.g. a bulk label add — can repaint it.
+            _tktListState.lastRows = tickets; _tktListState.lastTotal = total
             const filtered = tickets
 
             const wrap = document.createElement("div")
