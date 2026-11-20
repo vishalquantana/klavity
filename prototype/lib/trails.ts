@@ -238,10 +238,13 @@ function rowToRunStep(r: any): RunStep {
   }
 }
 
+/** KD-3107: what started a Walk. manual = dashboard button; scheduled = cron; ci = CI token; api = public v1 API. */
+export type WalkTrigger = "manual" | "scheduled" | "ci" | "api"
+
 export async function startWalk(
   projectId: string,
   trailId: string,
-  trigger: "manual" = "manual",
+  trigger: WalkTrigger = "manual",
   /** KLA-93: optional named environment to run against. Recorded on the walk row; null = default baseUrl. */
   environmentName?: string | null,
 ): Promise<string> {

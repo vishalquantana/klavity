@@ -10191,7 +10191,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "POST" && ciTriggerMatch) {
       const trailId = ciTriggerMatch[1]
       try {
-        const { runId } = await runWalkNow(ciProject, trailId)
+        const { runId } = await runWalkNow(ciProject, trailId, { trigger: "ci" })
         return json({ runId }, 202)
       } catch (e: any) {
         if (e instanceof WalkBusyError) return json({ error: "A walk is already running" }, 409)
@@ -10620,7 +10620,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
 
       try {
-        const { runId } = await runWalkNow(projectId, trailId)
+        const { runId } = await runWalkNow(projectId, trailId, { trigger: "api" })
         // Persist git + idempotency mapping best-effort. On an idempotency race (INSERT OR IGNORE)
         // re-read to converge on the winner so both retries report the same run_id.
         let finalRunId = runId
