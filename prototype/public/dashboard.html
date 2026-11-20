@@ -31010,13 +31010,16 @@
           function hasActiveTktFilters() {
             const f = _tktFilters || {}
             const any = v => Array.isArray(v) ? v.length > 0 : !!v
-            return any(f.status) || any(f.priority) || any(f.label) || any(f.assignee) || any(f.source) || !!(f.search && String(f.search).trim())
+            // KD-3139: an Overview KPI-card filter (_kbFilter, e.g. "Open" / "Recurring") also narrows the board, so it
+            // counts as active — otherwise it was invisible and un-clearable and silently hid tickets on the board.
+            return any(f.status) || any(f.priority) || any(f.label) || any(f.assignee) || any(f.source) || !!(f.search && String(f.search).trim()) || !!_kbFilter
           }
           function syncTktClearBtn() {
             const fbClear = document.getElementById("fbClearBtn")
             if (fbClear) fbClear.classList.toggle("hide", !hasActiveTktFilters())
           }
           function applyQuickChip(q) {
+            _kbFilter = null   // KD-3139: a chip is a fresh filter preset — drop any leftover Overview KPI-card filter
             _tktQuick = q
             tktQuickToFilters(q)
             syncTktClearBtn()
@@ -31244,8 +31247,18 @@
             syncTktClearBtn()
 
             // View toggle
-            if (listBtn) listBtn.addEventListener("click", () => { _tktView = "list"; listBtn.classList.add("active"); boardBtn && boardBtn.classList.remove("active"); renderTicketsView() })
-            if (boardBtn) boardBtn.addEventListener("click", () => { _tktView = "board"; boardBtn.classList.add("active"); listBtn && listBtn.classList.remove("active"); renderTicketsView() })
+            // KD-3139: the List is server-filtered and can't apply an Overview KPI-card filter, so switching to it drops
+            // that filter (otherwise the Board and List disagreed on the same visible filters).
+            if (listBtn) listBtn.addEventListener("click", () => { _tktView = "list"; _kbFilter = null; syncTktClearBtn(); listBtn.classList.add("active"); boardBtn && boardBtn.classList.remove("active"); renderTicketsView() })
+            // KD-3139: the board's cached full set goes stale while the List is showing (the live poll only refreshes
+            // the visible view), so tickets filed/reassigned meanwhile were missing on the board. Paint the cache at
+            // once, then revalidate in the background (warm cache → no 'Loading…' flash).
+            if (boardBtn) boardBtn.addEventListener("click", () => {
+              _tktView = "board"; boardBtn.classList.add("active"); listBtn && listBtn.classList.remove("active")
+              renderTicketsView()
+              const pid = state && state.active && state.active.id
+              if (pid && _tktBoardLoadedPid === pid) fetchAndRenderTktBoard()
+            })
 
             // KLA-562: wire the quick-filter chips + the "Filters" (advanced dropdowns) toggle.
             const chipRow = document.getElementById("tktQuickChips")
@@ -31265,6 +31278,7 @@
 
             fbClear.addEventListener("click", () => {
               _tktFilters = { status: [], priority: [], label: [], assignee: [], source: [], search: "" }
+              _kbFilter = null   // KD-3139: Clear also drops an Overview KPI-card filter
               if (searchEl) searchEl.value = ""
               updateAllTktMultiSelects()
               fbClear.classList.add("hide")
@@ -31330,8 +31344,14 @@
             if (f.source && f.source.length) {
               const wantS = Array.isArray(f.source) ? f.source : String(f.source).split(",").filter(Boolean)
               if (wantS.length) {
-                const tSource = ticketSourceKind(t)
-                const match = wantS.some(s => s === tSource || s === t.source)
+                // KD-3139: mirror the SERVER's source rules exactly (listTicketsPaginated) so the Board and the List
+                // agree: "sim" = a Sim is attached; "manual" = source manual; "human" = neither. ticketSourceKind()
+                // (the badge) files AutoSim tickets under their own "autosim" kind, so they used to match NEITHER
+                // "Sim / AI" nor "Human report" on the Board while the List counted them.
+                const hasSim = !!t.simId
+                const isManual = !hasSim && t.source === "manual"
+                const kinds = { sim: hasSim, manual: isManual, human: !hasSim && !isManual }
+                const match = wantS.some(s => !!kinds[s] || s === t.source)
                 if (!match) return false
               }
             }
@@ -32258,6 +32278,7 @@
           // Jump to the Tickets board with a card-driven filter applied (used by the overview KPI cards).
           function goToTicketsFiltered(filter) {
             _kbFilter = filter || null
+            if (typeof syncTktClearBtn === "function") syncTktClearBtn()   // KD-3139: show "Clear filters" for it
             // Card-driven filters apply to the kanban board — switch to board view first
             _tktView = "board"
             const listBtn = document.getElementById("tktListBtn"), boardBtn = document.getElementById("tktBoardBtn")
@@ -32598,7 +32619,10 @@
             // observation/notes/suggested-bug text too so description-only search hits are NOT dropped), in
             // addition to the card-driven KPI filter (kbMatchesFilter).
             const tickets = sourceTickets.filter(t => kbMatchesFilter(t) && tktMatchesSelectFilters(t))
-            $("ticketKanbanCount").textContent = tickets.length ? tickets.length : ""
+            // KD-3139: this render also runs while the LIST is showing (after a ticket edit, status change, …). The
+            // header count then belongs to the list (server total); writing the board's possibly-stale client count
+            // here made the header disagree with "Showing … of N" (e.g. 14 vs 15).
+            if (_tktView !== "list") $("ticketKanbanCount").textContent = tickets.length ? tickets.length : ""
             if (!tickets.length) {
               board.innerHTML = emptyState(kicon('bug', { size: 32 }), "No tickets match these filters.", "")
               return
