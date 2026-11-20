@@ -1,10 +1,21 @@
 # AutoSims Implementation Progress
 
-Audit: `docs/AUTOSIMS_ARCHITECTURE_AUDIT.md`. Branch `Balaji_autosim-multiple-inputerror` (base 69551e13). Nothing committed yet.
+Audit: `docs/AUTOSIMS_ARCHITECTURE_AUDIT.md`. Branch `Balaji_autosim-multiple-inputerror` (base 69551e13).
+**Update 2026-11-20:** Increment 1 (F11) is committed and present at HEAD `b0b5a7bb` (see "Commit history" below). The text below is the original implementation record and is kept as written, including its "not committed" wording, which was true when it was written and is now superseded. Current plan and status: `docs/AUTOSIMS_IMPLEMENTATION_STATUS.md` (baseline audit) and `docs/AUTOSIMS_IMPLEMENTATION_TRACKER.md`.
 
 ## Increment 1 — F11 Selector optimisation (role + accessible name, scoped text)
 
-**Status:** implemented and tested locally; not committed. No QA2 actions used (local fixtures only).
+**Status (original record):** implemented and tested locally; not committed at the time. No QA2 actions used (local fixtures only).
+**Status (2026-11-20):** committed and present at HEAD `b0b5a7bb`. The implementation and test details below are unchanged.
+
+### Commit history
+| Commit | Date | Event |
+|---|---|---|
+| `e7cf3c25` | 2026-11-17 15:02 | Original F11 commit: "AutoSim: save role+name and row-scoped selectors for links/buttons instead of positional paths" (5 files, +539/−8) |
+| `2fcae2b2` | 2026-11-17 15:48 | Revert of `e7cf3c25` |
+| `b0b5a7bb` | 2026-11-20 08:11 | Reapply (revert of the revert); **HEAD**. The F11 files at HEAD are byte-identical to `e7cf3c25` |
+
+None of these commits is on `origin/Dev` or `origin/master` yet; they exist only on `Balaji_autosim-multiple-inputerror`. The test results in this file were measured before the revert; the 2026-11-20 re-run is in `AUTOSIMS_IMPLEMENTATION_STATUS.md` §6 (the semantic-selector tests are `KLAV_E2E`-gated and were skipped in the default run).
 
 ### Existing behaviour
 `stableSelectorBody` (`lib/trails-browser-page.ts`) tried id → data-testid → name → aria-label → placeholder → input type, then the shortest unique `nth-of-type` path. Bare links, buttons and row buttons therefore got positional paths.
