@@ -20685,6 +20685,11 @@
           transform: var(--mi-press)
         }
 
+        .pb-page.pb-page-on {
+          border-color: var(--indigo);
+          background: rgba(99, 102, 241, .1)
+        }
+
         .pb-page-url {
           font-family: var(--mono);
           font-size: 12.5px;
@@ -36167,14 +36172,80 @@
           // openSingleTicket drawer and klavToast — no new auth (the view is already team-gated).
           function pbProjId() { return (state && state.active && state.active.id) || null }
 
+          // KD-3135: the search box filters the reported-pages list as you type, and "Show bugs" accepts any part of a
+          // page address ("klavity.in/abc", "yoursite.com/pricing", with or without https://). Before, the list never
+          // filtered and only an exact full URL with https:// loaded bugs; anything else failed quietly below the
+          // full list, so the page looked unchanged.
+          var _pbPages = []
+          var _pbReq = 0
+          // "https://www.Site.com/a/?x=1#y" -> "site.com/a" (comparison key: no scheme, www., query, hash or trailing /).
+          function pbKey(raw) {
+            var k = String(raw || "").trim().toLowerCase()
+            k = k.replace(/^[a-z][a-z0-9+.-]*:\/\//, "").replace(/^www\./, "").replace(/[?#].*$/, "")
+            return k.length > 1 ? k.replace(/\/+$/, "") : k
+          }
+          function pbPageKey(p) { return pbKey((p.host || "") + (p.path || "")) }
+          function pbMatchingPages(q) {
+            var k = pbKey(q)
+            if (!k) return _pbPages.slice()
+            return _pbPages.filter(function (p) { return pbPageKey(p).indexOf(k) >= 0 })
+          }
+          function pbResetResults() {
+            var headRow = document.getElementById("pbHeadRow"); if (headRow) headRow.style.display = "none"
+            var listEl = document.getElementById("pbList"); if (listEl) listEl.innerHTML = ""
+          }
+          function pbRenderPages(pages, activeUrl) {
+            var host = document.getElementById("pbPagesList"); if (!host) return
+            if (!_pbPages.length) { host.innerHTML = '<div class="tkt-list-empty">No reported pages yet. Reports filed from your site will show up here.</div>'; return }
+            if (!pages.length) { host.innerHTML = '<div class="tkt-list-empty">No reported pages match “' + esc((document.getElementById("pbUrl") || {}).value || "") + '”.</div>'; return }
+            host.innerHTML = pages.map(function (p) {
+              return '<button type="button" class="pb-page' + (activeUrl && p.url === activeUrl ? " pb-page-on" : "") + '" data-url="' + esc(p.url) + '">' +
+                '<span class="pb-page-url">' + esc((p.host || "") + (p.path || "")) + '</span>' +
+                '<span class="pb-page-n">' + (p.count || 0) + " report" + (p.count === 1 ? "" : "s") + "</span></button>"
+            }).join("")
+            host.querySelectorAll(".pb-page").forEach(function (b) {
+              b.addEventListener("click", function () {
+                var u = b.getAttribute("data-url")
+                var inp = document.getElementById("pbUrl"); if (inp) inp.value = u
+                pbShowBugs(u)
+              })
+            })
+          }
+          // "Show bugs" / Enter / a page click: narrow the list to the matching page(s) and load the bugs.
+          function pbShowBugs(raw) {
+            var q = String(raw || "").trim()
+            if (!q) { _pbReq++; pbRenderPages(_pbPages); pbResetResults(); return }
+            var k = pbKey(q)
+            var matches = pbMatchingPages(q)
+            var exact = matches.filter(function (p) { return pbPageKey(p) === k })[0]
+            var target = exact || (matches.length === 1 ? matches[0] : null)
+            if (target) { pbRenderPages([target], target.url); loadPageBugs(target.url); return }
+            pbRenderPages(matches)
+            if (matches.length > 1) {
+              _pbReq++ // drop any bug list still loading for an earlier search
+              var headRow = document.getElementById("pbHeadRow"); if (headRow) headRow.style.display = "none"
+              var listEl = document.getElementById("pbList")
+              if (listEl) listEl.innerHTML = '<div class="tkt-list-empty">' + matches.length + ' pages match — pick one above to see its reports.</div>'
+              return
+            }
+            // No listed page matches: still ask the server (the list holds only the 200 most recent pages), adding https:// if missing.
+            loadPageBugs(/^[a-z][a-z0-9+.-]*:\/\//i.test(q) ? q : "https://" + q)
+          }
+
           function renderPageBugsView() {
             var input = document.getElementById("pbUrl")
             if (input && !input.dataset.bound) {
               input.dataset.bound = "1"
-              var go = function () { var u = (input.value || "").trim(); if (u) loadPageBugs(u) }
+              var go = function () { pbShowBugs(input.value) }
               var btn = document.getElementById("pbLoadBtn")
               if (btn) btn.addEventListener("click", go)
               input.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); go() } })
+              // Live filter while typing; the bug list for an older search is cleared so it can't contradict the box.
+              input.addEventListener("input", function () {
+                _pbReq++
+                pbRenderPages(pbMatchingPages(input.value))
+                pbResetResults()
+              })
             }
             loadReportedPages()
           }
@@ -36188,21 +36259,14 @@
             // 'Loading pages…', then revalidate. applyPages() runs on both the cached snapshot and fresh data.
             var ck = "reported-pages:" + pid
             var applyPages = function (pages) {
-              pages = pages || []
-              if (dl) dl.innerHTML = pages.map(function (p) { return '<option value="' + esc(p.url) + '"></option>' }).join("")
-              if (!pages.length) { host.innerHTML = '<div class="tkt-list-empty">No reported pages yet. Reports filed from your site will show up here.</div>'; return }
-              host.innerHTML = pages.map(function (p) {
-                return '<button type="button" class="pb-page" data-url="' + esc(p.url) + '">' +
-                  '<span class="pb-page-url">' + esc((p.host || "") + (p.path || "")) + '</span>' +
-                  '<span class="pb-page-n">' + (p.count || 0) + " report" + (p.count === 1 ? "" : "s") + "</span></button>"
-              }).join("")
-              host.querySelectorAll(".pb-page").forEach(function (b) {
-                b.addEventListener("click", function () {
-                  var u = b.getAttribute("data-url")
-                  var inp = document.getElementById("pbUrl"); if (inp) inp.value = u
-                  loadPageBugs(u)
-                })
-              })
+              _pbPages = pages || []
+              if (dl) dl.innerHTML = _pbPages.map(function (p) { return '<option value="' + esc(p.url) + '"></option>' }).join("")
+              // Keep what the search box currently narrows to (re-entering the view or a background refresh).
+              var activeEl = host.querySelector(".pb-page-on")
+              var activeUrl = activeEl ? activeEl.getAttribute("data-url") : null
+              var inp = document.getElementById("pbUrl")
+              var shown = activeUrl ? _pbPages.filter(function (p) { return p.url === activeUrl }) : pbMatchingPages(inp ? inp.value : "")
+              pbRenderPages(shown, activeUrl)
             }
             var cached = swrRead(ck)
             if (cached != null) { try { applyPages(cached) } catch (e) { } }
@@ -36222,17 +36286,19 @@
             var listEl = document.getElementById("pbList")
             var headRow = document.getElementById("pbHeadRow")
             if (!pid || !listEl) return
+            var my = ++_pbReq // latest search wins: a slower earlier response must not overwrite this one
+            if (headRow) headRow.style.display = "none"
             listEl.innerHTML = '<div class="tkt-list-empty">Loading…</div>'
             try {
               var res = await fetch("/api/projects/" + encodeURIComponent(pid) + "/page-bugs?url=" + encodeURIComponent(rawUrl))
               var data = await res.json().catch(function () { return {} })
+              if (my !== _pbReq) return
               if (!res.ok) {
-                if (headRow) headRow.style.display = "none"
-                listEl.innerHTML = '<div class="tkt-list-empty">' + esc((data && data.error) || "Could not load bugs for this page.") + "</div>"
+                listEl.innerHTML = '<div class="tkt-list-empty">' + esc(res.status === 400 ? "Enter a page address, e.g. yoursite.com/pricing" : ((data && data.error) || "Could not load bugs for this page.")) + "</div>"
                 return
               }
               renderPageBugList(data)
-            } catch (e) { listEl.innerHTML = '<div class="tkt-list-empty">Failed to load bugs.</div>' }
+            } catch (e) { if (my === _pbReq) listEl.innerHTML = '<div class="tkt-list-empty">Failed to load bugs.</div>' }
           }
 
           function pbCountsHtml(c) {
