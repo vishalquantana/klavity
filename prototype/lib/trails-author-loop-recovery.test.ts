@@ -1249,3 +1249,201 @@ test("KLA-788b: the done read-back + verify path pumps onHeartbeat (not just top
   // so this independently proves both are present (codex round-review C3).
   expect(beatsAtVerify).toBeGreaterThanOrEqual(4)
 })
+
+// ── (B2) The auto-advanced submit click is part of the saved trail ───────────────────────────────
+// dev, 2026-11-16: after typing the PX4 security code the model stalled, the loop auto-clicked Submit to move on, but that click was
+// never recorded, so the saved trail had no Submit step and every replay sat on the code page ("step 7: Select not found").
+
+test("(B2) loop-recovery: the auto-advance click is recorded in the trajectory (replay needs it)", async () => {
+  const page = makeStuckPage({ submitSelector: 'button[type="submit"]' })
+  const { handle } = makeBrowserHandle(page)
+  let callCount = 0
+  const model: AuthorModel = async () => {
+    callCount++
+    if (callCount < 10) {
+      return { action: { op: "type", selector: 'input[aria-label="Email"]', value: "test@test.com", url: null, checkpoint: null, rationale: "filling email again" }, costUsd: 0 }
+    }
+    return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "done" }, costUsd: 0 }
+  }
+  const verifier = async () => ({ achieved: true, reason: "", costUsd: 0 })
+  const out = await authorTrail("proj_loop_b2", { name: "Login B2", objective: "get past login", baseUrl: "https://example.com/login" }, {
+    model, verifier, browserFactory: async () => handle, shotUploader: async () => ({ key: "test" }),
+    ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  expect(page.clickLog.some((s) => s.includes("submit"))).toBe(true)        // the auto-advance really clicked Submit
+  expect(out.trailId).toBeTruthy()
+  const { listTrailSteps } = await import("./trails")
+  const steps = await listTrailSteps("proj_loop_b2", out.trailId!)
+  const clicks = steps.filter((s: any) => s.action === "click")
+  expect(clicks.length).toBeGreaterThanOrEqual(1)                            // ... and it is in the saved trail
+})
+
+// ── (H) A page action that never settles must fail the STEP, not hang the run ─────────────────────
+// Dev 2026-11-16 ("complete a action" v9): the click on the company "Select" button never returned (a stuck browser call; Puppeteer's
+// own protocol timeout is 180s), the loop beat no heartbeat, and the reaper marked the session "stale heartbeat" 3 minutes later.
+
+test("(H) a click that never resolves times out as a failed step and the run continues", async () => {
+  const page = makeStuckPage({ submitSelector: 'button[type="submit"]' })
+  let clicks = 0
+  ;(page as any).click = async (selector: string) => {
+    clicks++
+    if (clicks === 1) return new Promise<void>(() => {}) // hangs forever, like a wedged CDP call
+    page.clickLog.push(selector)
+  }
+  const { handle } = makeBrowserHandle(page)
+
+  let calls = 0
+  const model: AuthorModel = async () => {
+    calls++
+    if (calls <= 2) return { action: { op: "click", selector: 'button[type="submit"]', value: null, url: null, checkpoint: null, rationale: "submit" }, costUsd: 0 }
+    return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "done" }, costUsd: 0 }
+  }
+  const verifier = async () => ({ achieved: true, reason: "", costUsd: 0 })
+
+  const t0 = Date.now()
+  const out = await authorTrail("proj_loop_h", { name: "Hang", objective: "submit the form", baseUrl: "https://example.com/login" }, {
+    model, verifier, browserFactory: async () => handle, shotUploader: async () => ({ key: "test" }), ...noSleepOpts,
+    verificationVision: false as const, headless: true,
+  })
+  const took = Date.now() - t0
+
+  expect(out.status).toBe("crystallized")      // the second click went through, the run finished
+  expect(clicks).toBeGreaterThanOrEqual(2)
+  expect(took).toBeLessThan(40_000)            // bounded at ~18s, far inside the 180s stale window
+}, 60_000)
+
+// ── (I) "Click the 1st check box" is ONE step: a different record in the same position later is rejected ──────────────────────
+// Dev 2026-11-16 (v11): after Save the list reloaded, a new first row sat in the same place, and the model ran select -> complete ->
+// save again, completing a 2nd (then starting a 3rd) pending action. The objective asked for it once.
+
+function checkboxPage() {
+  const page = makeStuckPage({})
+  ;(page as any).count = async (sel: string) => (sel === "#c1" || sel === "#c2" ? 1 : 0)
+  ;(page as any).fingerprint = async (sel: string) => ({
+    domPath: "tr:nth-of-type(1)>td:nth-of-type(1)>input:nth-of-type(1)", inputType: "checkbox", accessibleName: "", text: "", role: undefined, id: sel.slice(1),
+  })
+  ;(page as any).isChecked = async () => false
+  ;(page as any).stableSelector = async (sel: string) => sel
+  return page
+}
+const checkboxModel = (): AuthorModel => {
+  let n = 0
+  return async () => {
+    n++
+    if (n === 1) return { action: { op: "click", selector: "#c1", value: null, url: null, checkpoint: null, rationale: "first checkbox" }, costUsd: 0 }
+    if (n === 2) return { action: { op: "click", selector: "#c2", value: null, url: null, checkpoint: null, rationale: "first checkbox again (new first row)" }, costUsd: 0 }
+    return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "done" }, costUsd: 0 }
+  }
+}
+const verifierOk = async () => ({ achieved: true, reason: "", costUsd: 0 })
+
+test("(I1) the same checkbox position is not selected a 2nd time for a different record", async () => {
+  const page = checkboxPage()
+  const { handle } = makeBrowserHandle(page)
+  const out = await authorTrail("proj_loop_i1", { name: "Once", objective: "Click on the 1st check box on the pending actions page.", baseUrl: "https://example.com/p" }, {
+    model: checkboxModel(), verifier: verifierOk, browserFactory: async () => handle, shotUploader: async () => ({ key: "test" }), ...noSleepOpts,
+    verificationVision: false as const, headless: true,
+  })
+  expect(page.clickLog.filter((s) => s === "#c1").length).toBe(1)
+  expect(page.clickLog.includes("#c2")).toBe(false) // rejected, never executed
+  expect(out.status).toBe("crystallized")
+})
+
+test("(I2) the objective asking for several rows lets the second record through", async () => {
+  const page = checkboxPage()
+  const { handle } = makeBrowserHandle(page)
+  await authorTrail("proj_loop_i2", { name: "Two", objective: "Select the first two rows' check boxes on the pending actions page.", baseUrl: "https://example.com/p" }, {
+    model: checkboxModel(), verifier: verifierOk, browserFactory: async () => handle, shotUploader: async () => ({ key: "test" }), ...noSleepOpts,
+    verificationVision: false as const, headless: true,
+  })
+  expect(page.clickLog.includes("#c1")).toBe(true)
+  expect(page.clickLog.includes("#c2")).toBe(true)
+})
+
+test("(I3) multipleRowsRequested ignores the boilerplate words in a long objective", async () => {
+  const { multipleRowsRequested } = await import("./trails-author")
+  const boiler = "Execute each step in the exact sequence. Re-identify elements after every navigation. Do not consider the test successful merely because all clicks were executed. Click on the 1st check box on the pending actions page."
+  expect(multipleRowsRequested(boiler)).toBe(false)
+  expect(multipleRowsRequested("Select every row")).toBe(true)
+  expect(multipleRowsRequested("tick the first 3 check boxes")).toBe(true)
+  expect(multipleRowsRequested("check both boxes")).toBe(true)
+})
+
+// ── (W) Step watchdog ────────────────────────────────────────────────────────────────────────────────────────────
+// Dev 2026-11-16: two runs were reaped as "stale heartbeat" with nothing saying where the loop was stuck. A browser call the
+// loop does not bound (here: the `wait` op) that never returns must be failed by the watchdog - stage named, checkpoint kept.
+
+test("(W1) a browser call that never returns is failed by the step watchdog, naming the stage", async () => {
+  const page = makeStuckPage({})
+  let release: () => void = () => {}
+  const hung = new Promise<void>((_, rej) => { release = () => rej(new Error("Target closed")) })
+  hung.catch(() => {})
+  ;(page as any).waitMs = async () => hung // unbounded in the loop; only closing the browser frees it, like a wedged CDP call
+  let closed = 0
+  const handle: any = { newPage: async () => page, close: async () => { closed++; release() }, kind: "local" }
+  const model: AuthorModel = async () => ({ action: { op: "wait", value: "1000", selector: null, url: null, checkpoint: null, rationale: "wait for the page" }, costUsd: 0 })
+  const checkpoints: any[] = []
+  const t0 = Date.now()
+  const out = await authorTrail("proj_wd1", { name: "Hang", objective: "wait for something", baseUrl: "https://example.com/login" }, {
+    model, verifier: async () => ({ achieved: true, reason: "", costUsd: 0 }), browserFactory: async () => handle,
+    shotUploader: async () => ({ key: "test" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+    watchdog: { tickMs: 100, abortMs: 600 },
+    onCheckpoint: async (c: any) => { checkpoints.push(c) },
+  } as any)
+  expect(out.status).toBe("stalled")
+  expect(out.stallReason).toMatch(/step watchdog: no progress for \d+s at ".+"/)
+  expect(out.stallReason).toMatch(/Resume/)
+  expect(closed).toBeGreaterThan(0)            // the browser was closed to unblock the hung call
+  expect(checkpoints.length).toBeGreaterThan(0) // the session stays resumable
+  expect(Date.now() - t0).toBeLessThan(15_000)
+}, 30_000)
+
+test("(W2) a slow-but-moving step is NOT tripped: only silence between waits counts", async () => {
+  const page = makeStuckPage({ submitSelector: 'button[type="submit"]' })
+  const { handle } = makeBrowserHandle(page)
+  let n = 0
+  const model: AuthorModel = async () => {
+    n++
+    await new Promise((r) => setTimeout(r, 1500)) // a slow model call (bounded, in flight): longer than abortMs, must be allowed
+    return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "done" }, costUsd: 0 }
+  }
+  const out = await authorTrail("proj_wd2", { name: "Slow", objective: "do a thing", baseUrl: "https://example.com/login" }, {
+    model, verifier: async () => ({ achieved: true, reason: "", costUsd: 0 }), browserFactory: async () => handle,
+    shotUploader: async () => ({ key: "test" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+    watchdog: { tickMs: 100, abortMs: 600 },
+  } as any)
+  expect(n).toBeGreaterThan(0)
+  expect(String(out.stallReason ?? "")).not.toMatch(/step watchdog/)
+}, 30_000)
+
+// ── (N) Dropped network connections ──────────────────────────────────────────────────────────────────────────────
+// Dev v16 (2026-11-16): a fully authored run (18 steps, objective verified) ended "failed" with "The socket connection was closed
+// unexpectedly" - one dropped DB/API call threw away the whole authoring. Transient network errors must be retried or paused, not fatal.
+
+test("(N1) a dropped connection while saving a step does not end the run", async () => {
+  const page = checkboxPage()
+  const { handle } = makeBrowserHandle(page)
+  let saves = 0
+  const out = await authorTrail("proj_loop_n1", { name: "Flaky", objective: "Click on the 1st check box on the pending actions page.", baseUrl: "https://example.com/p" }, {
+    model: checkboxModel(), verifier: verifierOk, browserFactory: async () => handle, shotUploader: async () => ({ key: "test" }), ...noSleepOpts,
+    verificationVision: false as const, headless: true,
+    onStep: async () => { saves++; throw new Error("The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()") },
+  } as any)
+  expect(saves).toBeGreaterThan(0)
+  expect(out.status).toBe("crystallized")
+}, 30_000)
+
+test("(N2) retryTransient retries a dropped connection but not a real error", async () => {
+  const { retryTransient, isTransientNetworkError } = await import("./trails-crystallize")
+  let n = 0
+  const v = await retryTransient(async () => { n++; if (n < 3) throw new Error("The socket connection was closed unexpectedly"); return "ok" })
+  expect(v).toBe("ok"); expect(n).toBe(3)
+  let m = 0
+  await expect(retryTransient(async () => { m++; throw new Error("SQLITE_CONSTRAINT: UNIQUE failed") })).rejects.toThrow(/UNIQUE/)
+  expect(m).toBe(1)
+  let k = 0
+  await expect(retryTransient(async () => { k++; throw new Error("fetch failed") }, undefined, 3)).rejects.toThrow(/fetch failed/)
+  expect(k).toBe(3)
+  expect(isTransientNetworkError(new Error("ECONNRESET"))).toBe(true)
+  expect(isTransientNetworkError(new Error("element not found"))).toBe(false)
+})
