@@ -4135,6 +4135,9 @@ export const NOTIFY_ASSIGNEE_TYPES = new Set([
   "ticket_commented", "ticket_label_added", "ticket_label_removed", "ticket_description_changed",
 ])
 
+// KD-3134: updates the ticket's reporter hears about too (besides the assignee).
+export const REPORTER_NOTIFY_TYPES = new Set(["ticket_status_changed", "ticket_priority_changed"])
+
 const _notifEmail = (v: unknown): string | null => {
   const e = v == null ? "" : String(v).trim().toLowerCase()
   return e && e.includes("@") ? e : null
@@ -4162,9 +4165,17 @@ export async function notifyAssigneeOfTicketUpdate(a: ActivityInsert): Promise<n
   if (a.type === "ticket_assignee_changed") {
     for (const e of [a.meta?.to, a.meta?.from]) { const r = _notifEmail(e); if (r) recipients.push(r) }
   } else {
-    const r = await db.execute({ sql: "SELECT assignee FROM feedback WHERE id=? AND project_id=?", args: [a.feedbackId, a.projectId] })
-    const assignee = _notifEmail(r.rows[0]?.assignee)
+    const r = await db.execute({ sql: "SELECT assignee, contact_email, actor_email FROM feedback WHERE id=? AND project_id=?", args: [a.feedbackId, a.projectId] })
+    const row: any = r.rows[0] || {}
+    const assignee = _notifEmail(row.assignee)
     if (assignee) recipients.push(assignee)
+    // KD-3134: a status or priority change also notifies the ticket's REPORTER (the "Reporter" shown on the ticket:
+    // the composer's contact email, else whoever filed it), matching who the status-change email goes to. Before,
+    // only the assignee heard, so a change to an unassigned ticket, or by its assignee, put nothing in anyone's bell.
+    if (REPORTER_NOTIFY_TYPES.has(a.type)) {
+      const reporter = _notifEmail(row.contact_email) || _notifEmail(row.actor_email)
+      if (reporter) recipients.push(reporter)
+    }
   }
   const uniq = [...new Set(recipients)].filter(e => e !== actor)
   for (const to of uniq) {
