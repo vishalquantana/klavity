@@ -30797,7 +30797,7 @@
           }
 
           // ── KD-221: Notifications bell (top bar) ──────────────────────────────────────────────────────────────
-          // Updates on tickets assigned to you (status, priority, comments, labels, description, assignment…), made
+          // Updates on tickets assigned to you, plus status/priority changes on tickets you reported (KD-3134) (status, priority, comments, labels, description, assignment…), made
           // by someone else. Polls /api/notifications (every 60s + when the tab regains focus); opening the panel
           // shows the latest 30; clicking one marks it read and opens the ticket.
           function ntfText(n) {
@@ -30840,7 +30840,7 @@
               if (markAll) markAll.disabled = unread <= 0
             }
             const paintList = () => {
-              if (!items.length) { list.innerHTML = '<div class="ntf-empty">You\'re all caught up — updates on tickets assigned to you show up here.</div>'; return }
+              if (!items.length) { list.innerHTML = '<div class="ntf-empty">You\'re all caught up — updates on tickets assigned to you, and status or priority changes on tickets you reported, show up here.</div>'; return }
               list.innerHTML = items.map(n => `<button type="button" class="ntf-item${n.readAt ? "" : " unread"}" data-id="${esc(n.id)}"${n.readAt ? "" : ' aria-describedby="ntfUnreadHint"'}>
           <span class="ntf-dot" aria-hidden="true"></span>
           <span class="ntf-body">
