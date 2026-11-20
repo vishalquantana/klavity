@@ -256,7 +256,10 @@ export interface TestCaseRun {
   trigger: string; status: string; startedAt: number; durationMs: number | null
   /** 0 = pure deterministic replay of the recorded script; >0 = AI self-heal/vision was needed. */
   aiCalls: number
-  steps: number; passed: number; failed: number; healed: number; skipped: number; findings: number
+  /** steps = total steps in the AutoSim (denominator); executed = steps that ran (numerator) =
+   *  passed + healed ("fixed") + review + failed. notRun = steps - executed (skipped or not reached). */
+  steps: number; executed: number; passed: number; failed: number; healed: number; review: number
+  skipped: number; notRun: number; findings: number
 }
 
 /** Execution history of a test case — every Walk of every AutoSim it has had (re-recordings included). */
@@ -264,9 +267,16 @@ export async function testCaseRuns(projectId: string, testCaseId: string, limit 
   const r = await db!.execute({
     sql: `SELECT tr.id, tr.trail_id, t.name AS trail_name, t.status AS trail_status, tr.trigger, tr.status, tr.llm_calls,
                  tr.started_at, tr.finished_at,
-                 COUNT(rs.id) AS steps,
-                 COALESCE(SUM(rs.verdict='green'),0) AS passed, COALESCE(SUM(rs.verdict='red'),0) AS failed,
-                 COALESCE(SUM(rs.healed=1),0) AS healed, COALESCE(SUM(rs.verdict='skip'),0) AS skipped,
+                 COUNT(rs.id) AS step_rows,
+                 (SELECT COUNT(*) FROM trail_steps ts WHERE ts.project_id=tr.project_id AND ts.trail_id=tr.trail_id) AS trail_steps,
+                 -- Every executed step lands in exactly ONE bucket: passed (clean) | fixed (self-healed, then passed) |
+                 -- review (inconclusive amber) | failed. skip = not executed.
+                 COALESCE(SUM(rs.verdict IN ('green','amber','red')),0) AS executed,
+                 COALESCE(SUM(rs.verdict='green' AND COALESCE(rs.healed,0)!=1),0) AS passed,
+                 COALESCE(SUM(rs.verdict IN ('green','amber') AND rs.healed=1),0) AS healed,
+                 COALESCE(SUM(rs.verdict='amber' AND COALESCE(rs.healed,0)!=1),0) AS review,
+                 COALESCE(SUM(rs.verdict='red'),0) AS failed,
+                 COALESCE(SUM(rs.verdict='skip'),0) AS skipped,
                  (SELECT COUNT(*) FROM findings f WHERE f.project_id=tr.project_id AND f.run_id=tr.id) AS findings
           FROM trail_runs tr
           JOIN trails t ON t.id=tr.trail_id AND t.project_id=tr.project_id
@@ -279,8 +289,14 @@ export async function testCaseRuns(projectId: string, testCaseId: string, limit 
     runId: s(x.id), trailId: s(x.trail_id), trailName: s(x.trail_name), current: x.trail_status !== "archived",
     trigger: s(x.trigger), status: s(x.status), startedAt: Number(x.started_at),
     durationMs: x.finished_at != null ? Number(x.finished_at) - Number(x.started_at) : null,
-    aiCalls: Number(x.llm_calls || 0), steps: Number(x.steps), passed: Number(x.passed), failed: Number(x.failed),
-    healed: Number(x.healed), skipped: Number(x.skipped), findings: Number(x.findings),
+    aiCalls: Number(x.llm_calls || 0),
+    // Agreed formula: denominator = the AutoSim's total steps; numerator = executed steps (passed + fixed +
+    // needs-review + failed). If the AutoSim changed since this run, never report fewer total than recorded rows.
+    steps: Math.max(Number(x.trail_steps || 0), Number(x.step_rows || 0)),
+    executed: Number(x.executed), passed: Number(x.passed), failed: Number(x.failed),
+    healed: Number(x.healed), review: Number(x.review), skipped: Number(x.skipped),
+    notRun: Math.max(0, Math.max(Number(x.trail_steps || 0), Number(x.step_rows || 0)) - Number(x.executed)),
+    findings: Number(x.findings),
   }))
 }
 
