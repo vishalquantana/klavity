@@ -75,7 +75,8 @@
     "browserstack alternative": "browserstack-alternative",
     "mabl alternative": "mabl-alternative",
     "qa wolf alternative": "qa-wolf-alternative",
-    "cypress alternatives": "cypress-alternatives"
+    "cypress alternatives": "cypress-alternatives",
+    "logrocket alternative": "logrocket-alternative"
   },
   "tier-d": {
     "how to reduce cannot reproduce bug reports": "reduce-cannot-reproduce-bug-tickets",

@@ -1104,5 +1104,12 @@
     "excerpt": "AI QA for website migrations captures a verified baseline of the old site, then replays it against the new build so regressions surface before launch.",
     "category": "Guides",
     "date": "2026-11-19"
+  },
+  {
+    "slug": "logrocket-alternative",
+    "title": "LogRocket Alternative: 6 Options for Agencies in 2026",
+    "excerpt": "The best LogRocket alternative depends on whether you need session replay, self-hosted error monitoring, or AI QA that catches bugs pre-launch.",
+    "category": "Compare",
+    "date": "2026-11-20"
   }
 ]
