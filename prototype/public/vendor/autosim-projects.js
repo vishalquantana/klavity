@@ -704,6 +704,19 @@
   }
 
   // Execution results: summary strip + one row per run. Polls while a run is in progress.
+  // "12/12 executed" + "9 passed · 3 fixed · 3 failed · 1 needs review · 1 not run" (parts with 0 are left out).
+  function runStepsSummary(r) {
+    var executed = r.executed != null ? r.executed : (r.passed + r.healed + (r.review || 0) + r.failed)
+    var notRun = r.notRun != null ? r.notRun : Math.max(0, r.steps - executed)
+    var parts = []
+    if (r.passed) parts.push(r.passed + ' passed')
+    if (r.healed) parts.push(r.healed + ' fixed')
+    if (r.failed) parts.push('<span style="color:var(--rose)">' + r.failed + ' failed</span>')
+    if (r.review) parts.push(r.review + ' needs review')
+    if (notRun) parts.push('<span class="muted">' + notRun + ' not run</span>')
+    var tip = 'Executed ' + executed + ' of ' + r.steps + ' steps. Fixed = ran and passed after Klavity repaired a changed selector (counts as executed).'
+    return '<span title="' + esc(tip) + '"><b>' + executed + '/' + r.steps + ' executed</b>' + (parts.length ? '<div class="muted" style="font-size:12px">' + parts.join(' · ') + '</div>' : '') + '</span>'
+  }
   async function drawRuns(tc, tcBase) {
     clearTimeout(pollTimer)
     var self = function () { return drawRuns(tc, tcBase) }
@@ -725,7 +738,9 @@
       '<div class="table-wrap"><table><thead><tr><th>When</th><th>Result</th><th>Steps</th><th>Duration</th><th>Mode</th><th title="How the run started: by you, its schedule, your CI pipeline or the API">Started by</th><th></th></tr></thead><tbody>' +
       runs.map(function (r) {
         var res = RESULT[r.status] || [r.status, '']
-        var steps = r.steps ? (r.passed + '/' + r.steps + ' passed' + (r.failed ? ' · <span style="color:var(--rose)">' + r.failed + ' failed</span>' : '') + (r.healed ? ' · ' + r.healed + ' fixed' : '')) : '<span class="muted">–</span>'
+        // Agreed formula: executed / total steps. Every executed step is in exactly one bucket — passed, fixed
+        // (self-healed, then passed), needs review, failed — so the breakdown always adds up to "executed".
+        var steps = r.steps ? runStepsSummary(r) : '<span class="muted">–</span>'
         var mode = r.aiCalls === 0 ? 'Script replay' : 'Replay + AI fixes (' + r.aiCalls + ')'
         return '<tr><td>' + esc(fmtWhen(r.startedAt)) + (r.current ? '' : '<div class="muted">previous recording</div>') + '</td>' +
           '<td><span class="asp-pill ' + res[1] + '">' + esc(res[0]) + '</span>' + (r.findings ? '<div class="muted">' + plural(r.findings, 'finding') + '</div>' : '') + '</td>' +

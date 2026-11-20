@@ -123,3 +123,29 @@ test("duplicate project name in the same Klavity project is rejected, allowed ac
   await expect(asp.createAutosimProject(P, { name: "Dup" })).rejects.toThrow(/UNIQUE/i)
   await asp.createAutosimProject(OTHER, { name: "Dup" })
 })
+
+// Bug: "9/12 passed · 3 fixed" / "10/17 passed · 3 failed · 3 fixed" didn't add up. Agreed formula: denominator =
+// the AutoSim's total steps; numerator = executed steps; fixed (self-healed) counts as executed.
+test("execution results: executed/total, with passed + fixed + needs review + failed = executed", async () => {
+  const ap = await asp.createAutosimProject(P, { name: "Counts" })
+  const tc = await asp.createTestCase(P, ap, { name: "Counts tc" })
+  const sess = await createAuthorSession(P, { name: "c", objective: "count the steps", baseUrl: "https://x.test", testCaseId: tc })
+  const trail = await createTrail(P, { name: "counts", baseUrl: "https://x.test" })
+  await updateAuthorSession(P, sess, { trailId: trail, status: "crystallized" })
+  const addSteps = async (n: number) => { for (let i = 0; i < n; i++) await db.execute({ sql: "INSERT INTO trail_steps (id,trail_id,project_id,idx,action,created_at) VALUES (?,?,?,?,'click',1)", args: [`cst_${trail}_${i}`, trail, P, i] }) }
+  const addRun = async (id: string, verdicts: Array<[string, number]>) => {
+    await db.execute({ sql: "INSERT INTO trail_runs (id,trail_id,project_id,trigger,status,llm_calls,started_at,finished_at) VALUES (?,?,?,'manual','amber',0,?,?)", args: [id, trail, P, Date.now(), Date.now()] })
+    let i = 0
+    for (const [v, healed] of verdicts) { await db.execute({ sql: "INSERT INTO run_steps (id,run_id,trail_id,step_id,project_id,idx,verdict,healed,created_at) VALUES (?,?,?,?,?,?,?,?,1)", args: [`${id}_${i}`, id, trail, `cst_${trail}_${i}`, P, i, v, healed] }); i++ }
+  }
+  await addSteps(17)
+  // 9 clean + 3 fixed (one healed green, two healed amber) — ticket example 1 (on a 12-step slice of a 17-step AutoSim)
+  await addRun("cnt_a", [...Array(9).fill(["green", 0]), ["green", 1], ["amber", 1], ["amber", 1]] as any)
+  // 10 clean + 3 failed + 3 fixed + 1 skipped — ticket example 2
+  await addRun("cnt_b", [...Array(10).fill(["green", 0]), ...Array(3).fill(["red", 0]), ...Array(3).fill(["amber", 1]), ["skip", 0]] as any)
+  const runs = await asp.testCaseRuns(P, tc)
+  const a = runs.find(r => r.runId === "cnt_a")!, b = runs.find(r => r.runId === "cnt_b")!
+  expect(a).toMatchObject({ steps: 17, executed: 12, passed: 9, healed: 3, review: 0, failed: 0, notRun: 5 })
+  expect(b).toMatchObject({ steps: 17, executed: 16, passed: 10, healed: 3, review: 0, failed: 3, skipped: 1, notRun: 1 })
+  for (const r of [a, b]) expect(r.passed + r.healed + r.review + r.failed).toBe(r.executed)
+})
