@@ -548,6 +548,17 @@
     green: ['Passed', 'green'], amber: ['Passed with fixes', 'draft'], red: ['Failed', 'red'],
     running: ['Running', 'draft'], paused: ['Waiting for input', 'draft'], needs_auth: ['Needs login', 'red'], skip: ['Skipped', ''],
   }
+  // KD-3107: who/what started the run — readable label + tooltip instead of the raw enum.
+  var TRIGGER = {
+    manual: ['You', 'Started from the dashboard'],
+    scheduled: ['Schedule', 'Started automatically by this AutoSim’s schedule'],
+    ci: ['CI pipeline', 'Started automatically by your CI pipeline'],
+    api: ['API', 'Started through the Klavity API'],
+  }
+  function triggerCell(t) {
+    var v = TRIGGER[t] || [t || '–', '']
+    return '<td class="muted"' + (v[1] ? ' title="' + esc(v[1]) + '"' : '') + '>' + esc(v[0]) + '</td>'
+  }
   function fmtDur(ms) { if (ms == null) return '…'; var s = Math.round(ms / 1000); return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's' }
   function fmtWhen(ms) { try { return new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) } catch (e) { return '' } }
   var pollTimer = null
@@ -711,14 +722,14 @@
       stat(runs.length, 'Runs') + stat(passed, 'Passed') + stat(done.length - passed, 'Failed') +
       stat(done.length ? Math.round(passed * 100 / done.length) + '%' : '–', 'Pass rate') +
       stat((RESULT[last.status] || [last.status])[0], 'Last result') + '</div></div>' +
-      '<div class="table-wrap"><table><thead><tr><th>When</th><th>Result</th><th>Steps</th><th>Duration</th><th>Mode</th><th>Trigger</th><th></th></tr></thead><tbody>' +
+      '<div class="table-wrap"><table><thead><tr><th>When</th><th>Result</th><th>Steps</th><th>Duration</th><th>Mode</th><th title="How the run started: by you, its schedule, your CI pipeline or the API">Started by</th><th></th></tr></thead><tbody>' +
       runs.map(function (r) {
         var res = RESULT[r.status] || [r.status, '']
         var steps = r.steps ? (r.passed + '/' + r.steps + ' passed' + (r.failed ? ' · <span style="color:var(--rose)">' + r.failed + ' failed</span>' : '') + (r.healed ? ' · ' + r.healed + ' fixed' : '')) : '<span class="muted">–</span>'
         var mode = r.aiCalls === 0 ? 'Script replay' : 'Replay + AI fixes (' + r.aiCalls + ')'
         return '<tr><td>' + esc(fmtWhen(r.startedAt)) + (r.current ? '' : '<div class="muted">previous recording</div>') + '</td>' +
           '<td><span class="asp-pill ' + res[1] + '">' + esc(res[0]) + '</span>' + (r.findings ? '<div class="muted">' + plural(r.findings, 'finding') + '</div>' : '') + '</td>' +
-          '<td>' + steps + '</td><td>' + esc(fmtDur(r.durationMs)) + '</td><td class="muted">' + esc(mode) + '</td><td class="muted">' + esc(r.trigger) + '</td>' +
+          '<td>' + steps + '</td><td>' + esc(fmtDur(r.durationMs)) + '</td><td class="muted">' + esc(mode) + '</td>' + triggerCell(r.trigger) +
           '<td><div class="actions"><button class="btn btn-ghost btn-sm" data-steps="' + esc(r.runId) + '" aria-expanded="' + !!openRuns[r.runId] + '">' + (openRuns[r.runId] ? 'Hide steps' : 'Steps') + '</button>' +
           // from= lets the report page offer "Back to test case" (it only accepts a /dashboard path).
           '<a class="btn btn-ghost btn-sm" href="/autosims/walk/' + esc(encodeURIComponent(r.runId)) + '?project=' + P + '&from=' + encodeURIComponent(urlFor({ asp: cur.project.id, tc: tc.id })) + '">Report</a>' +

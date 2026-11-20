@@ -10,7 +10,7 @@
 // deps.walk that calls walkTrail with a vision resolver.
 import { withWalkSlot, WalkBusyError, CHROMIUM_PROD_ARGS, setCurrentWalkRunId, getCurrentWalkAbortSignal } from "./trails-browser"
 import { ToolError } from "./mcp/tool-error"
-import { getTrail, startWalk, finishWalk, getWalk } from "./trails"
+import { getTrail, startWalk, finishWalk, getWalk, type WalkTrigger } from "./trails"
 import { walkTrail } from "./trails-runner"
 import type { Verdict } from "./trails-types"
 import { configuredVisionResolver } from "./trails-vision"
@@ -52,7 +52,7 @@ async function defaultPriorWalkCount(projectId: string): Promise<number> {
 export async function maybeEmitFirstAutosim(
   projectId: string,
   runId: string,
-  trigger: "manual" | "scheduled",
+  trigger: WalkTrigger,
   priorWalkCount: number,
 ): Promise<void> {
   if (priorWalkCount !== 0) return
@@ -94,7 +94,7 @@ export async function runWalkNow(
   trailId: string,
   deps?: {
     walk?: WalkFn
-    trigger?: "manual" | "scheduled"
+    trigger?: WalkTrigger
     environmentName?: string | null
     /** KLA-547 test seam: count PRIOR trail_runs rows for this project. Defaults to the shared DB. */
     priorWalkCount?: () => Promise<number>
