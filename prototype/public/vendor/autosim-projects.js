@@ -269,7 +269,7 @@
   function bindPager(key, fn) { document.querySelectorAll('[data-pg-' + key + ']').forEach(function (b) { b.onclick = function () { fn(Number(b.getAttribute('data-pg-' + key))) } }) }
 
   async function renderList() {
-    crumbs(['<span>Projects</span>'], { to: null, label: 'Back to AutoSims' })
+    crumbs(['<span>Projects</span>'])   // top level: the AUTOSIMS tab above already goes back, no back link
     var d = await api('GET', '/api/autosim-projects')
     role = d.role; listData = d.projects
     $('aspMain').innerHTML =

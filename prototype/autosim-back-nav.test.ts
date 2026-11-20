@@ -10,8 +10,9 @@ const walk = readFileSync(join(import.meta.dir, "public/autosims-walk.html"), "u
 test("each Projects & Test Cases level renders a back button to its parent", () => {
   expect(asp).toContain("function crumbs(items, back)")
   expect(asp).toContain('class="asp-back"')
-  // Project list → AutoSims sub-tab; project → project list; test case → that project's Test Cases tab.
-  expect(asp).toContain("{ to: null, label: 'Back to AutoSims' }")
+  // Project → project list; test case → that project's Test Cases tab.
+  // The Projects list is top level (the AUTOSIMS tab goes back), so it has no back link.
+  expect(asp).not.toContain("label: 'Back to AutoSims'")
   expect(asp).toContain("{ to: { asp: 'list' }, label: 'Back to Projects' }")
   expect(asp).toContain("{ to: { asp: p.id, tab: 'test-cases' }, label: 'Back to Test Cases' }")
 })
