@@ -86,6 +86,12 @@
     '#aspModalBg .radio span{display:grid;gap:2px;font-size:13.5px}',
     '#aspModalBg .err{color:var(--rose);font-size:13px;min-height:18px}',
     '#aspModalBg .acts{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}',
+    // KD-3106: loading state while a form submits (spinner in the primary button, form locked).
+    '#aspModalBg .asp-spin{display:inline-block;width:13px;height:13px;margin-right:7px;vertical-align:-2px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:asp-spin .7s linear infinite}',
+    '@keyframes asp-spin{to{transform:rotate(360deg)}}',
+    '#aspModalBg .modal[aria-busy=true] #aspModalBody{opacity:.6;pointer-events:none}',
+    '#aspModalBg .modal[aria-busy=true] #aspModalOk{cursor:progress;opacity:1}',
+    '@media (prefers-reduced-motion:reduce){#aspModalBg .asp-spin{animation-duration:2s}}',
     '@media (max-width:640px){#aspRoot .kv{grid-template-columns:1fr}.asp-switch{padding:14px 16px 0}}',
   ].join('\n')
   document.head.appendChild(css)
@@ -113,6 +119,7 @@
 
   // ── Modal form (dashboard .modal-bg/.modal) + confirm (dashboard klavConfirm) ──
   var modalSubmit = null
+  var modalBusy = false   // KD-3106: true while a form submit is in flight — the modal can't be closed mid-save
   function ensureModal() {
     if ($('aspModalBg')) return
     var bg = document.createElement('div')
@@ -122,13 +129,29 @@
       '<div class="acts"><button type="button" class="btn btn-ghost" id="aspModalCancel">Cancel</button><button type="submit" class="btn btn-indigo" id="aspModalOk">Save</button></div></form></div>'
     document.body.appendChild(bg)
     $('aspModalForm').addEventListener('submit', function (e) { e.preventDefault(); if (modalSubmit) modalSubmit() })
-    $('aspModalCancel').addEventListener('click', closeModal)
-    bg.addEventListener('click', function (e) { if (e.target === bg) closeModal() })
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && bg.classList.contains('show')) closeModal() })
+    $('aspModalCancel').addEventListener('click', function () { if (!modalBusy) closeModal() })
+    bg.addEventListener('click', function (e) { if (e.target === bg && !modalBusy) closeModal() })
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && bg.classList.contains('show') && !modalBusy) closeModal() })
+  }
+  // KD-3106: show/hide the submit loading state — spinner + busy label, fields and Cancel disabled.
+  function setModalBusy(on, busyLabel, idleLabel) {
+    modalBusy = !!on
+    var ok = $('aspModalOk'), modal = ok && ok.closest('.modal')
+    if (!ok) return
+    ok.disabled = !!on
+    $('aspModalCancel').disabled = !!on
+    if (modal) modal.setAttribute('aria-busy', on ? 'true' : 'false')
+    $('aspModalBody').querySelectorAll('input,textarea,select').forEach(function (el) {
+      if (on) { el.dataset.aspWasDisabled = el.disabled ? '1' : ''; el.disabled = true }
+      else { el.disabled = el.dataset.aspWasDisabled === '1'; delete el.dataset.aspWasDisabled }
+    })
+    if (on) ok.innerHTML = '<span class="asp-spin" aria-hidden="true"></span>' + esc(busyLabel || 'Saving…')
+    else ok.textContent = idleLabel || 'Save'
   }
   function closeModal() { var bg = $('aspModalBg'); if (bg) bg.classList.remove('show'); modalSubmit = null }
   function openForm(opts) {
     ensureModal()
+    setModalBusy(false, '', opts.okLabel)   // never open a new form in a stale loading state
     $('aspModalTitle').textContent = opts.title
     $('aspModalErr').textContent = ''
     $('aspModalOk').textContent = opts.okLabel || 'Save'
@@ -160,10 +183,10 @@
         if (f.pattern && v && !f.pattern.test(v)) { $('aspModalErr').textContent = f.patternMsg; el.focus(); return }
         vals[f.key] = v
       }
-      $('aspModalOk').disabled = true
-      try { await opts.submit(vals); closeModal() }
-      catch (e) { $('aspModalErr').textContent = e.message }
-      finally { $('aspModalOk').disabled = false }
+      $('aspModalErr').textContent = ''
+      setModalBusy(true, opts.busyLabel, opts.okLabel)
+      try { await opts.submit(vals); setModalBusy(false, '', opts.okLabel); closeModal() }
+      catch (e) { setModalBusy(false, '', opts.okLabel); $('aspModalErr').textContent = e.message }
     }
     $('aspModalBg').classList.add('show')
     var first = $('aspModalBody').querySelector('input:not([type=radio]),textarea,select'); if (first) first.focus()
@@ -460,7 +483,7 @@
   function testCaseForm(tc) {
     var apBase = '/api/autosim-projects/' + encodeURIComponent(cur.project.id)
     var accs = cur.accounts, curCred = credOf(tc)
-    openForm({ title: tc ? 'Edit test case' : 'New test case', okLabel: tc ? 'Save' : 'Create test case',
+    openForm({ title: tc ? 'Edit test case' : 'New test case', okLabel: tc ? 'Save' : 'Create test case', busyLabel: tc ? 'Saving…' : 'Creating test case…',
       fields: [
         { key: 'name', label: 'Test case name', required: true, max: 120, value: tc && tc.name, placeholder: 'e.g. Valid login' },
         { key: 'start_url', label: 'Start URL', required: true, type: 'url', max: 500, value: tc && tc.startUrl, placeholder: 'https://app.example.com/login',
@@ -483,7 +506,8 @@
         v.test_account_id = v.exec === 'creds' ? v.test_account_id : null
         delete v.exec
         if (tc) await api('PATCH', apBase + '/test-cases/' + encodeURIComponent(tc.id), v); else await api('POST', apBase + '/test-cases', v)
-        toast(tc ? 'Test case updated' : 'Test case created'); sync()
+        await sync()   // keep the spinner until the list shows the new/updated test case
+        toast(tc ? 'Test case updated' : 'Test case created')
       } })
   }
   function deleteTestCaseConfirm(tc, after) {
