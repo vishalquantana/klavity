@@ -1111,5 +1111,12 @@
     "excerpt": "The best LogRocket alternative depends on whether you need session replay, self-hosted error monitoring, or AI QA that catches bugs pre-launch.",
     "category": "Compare",
     "date": "2026-11-20"
+  },
+  {
+    "slug": "google-ai-studio-app-testing",
+    "title": "Google AI Studio App Testing: What to Check Before You Ship",
+    "excerpt": "Google AI Studio app testing means verifying the deployed app, not the preview: exposed API keys, missing model failure paths, state a refresh erases.",
+    "category": "Learn",
+    "date": "2026-11-21"
   }
 ]

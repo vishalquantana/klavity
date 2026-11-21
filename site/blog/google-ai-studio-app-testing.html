@@ -1,0 +1,200 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Google AI Studio App Testing: What to Check Before You Ship · Klavity</title>
+<meta name="description" content="Google AI Studio app testing means verifying the deployed app, not the preview: exposed API keys, missing model failure paths, state a refresh erases.">
+<link rel="canonical" href="https://klavity.in/blog/google-ai-studio-app-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Google AI Studio App Testing: What to Check Before You Ship"><meta property="og:description" content="Google AI Studio app testing means verifying the deployed app, not the preview: exposed API keys, missing model failure paths, state a refresh erases.">
+<meta property="og:url" content="https://klavity.in/blog/google-ai-studio-app-testing"><meta property="og:image" content="https://klavity.in/blog/google-ai-studio-app-testing.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Google AI Studio App Testing: What to Check Before You Ship"><meta name="twitter:description" content="Google AI Studio app testing means verifying the deployed app, not the preview: exposed API keys, missing model failure paths, state a refresh erases."><meta name="twitter:image" content="https://klavity.in/blog/google-ai-studio-app-testing.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Google AI Studio App Testing: What to Check Before You Ship","description":"Google AI Studio app testing means verifying the deployed app, not the preview: exposed API keys, missing model failure paths, state a refresh erases.","datePublished":"2026-11-21","dateModified":"2026-11-21","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/google-ai-studio-app-testing.svg"}},"mainEntityOfPage":"https://klavity.in/blog/google-ai-studio-app-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Google AI Studio App Testing: What to Check Before You Ship","item":"https://klavity.in/blog/google-ai-studio-app-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/google-ai-studio-app-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is my Gemini API key safe in an app built with Google AI Studio?","acceptedAnswer":{"@type":"Answer","text":"Only if the model call happens on a server. If the deployed page calls a Google API host directly from browser code, the key that signed the request was shipped to the browser and anyone can read it in DevTools. Move the call behind a server route, and set a spend cap and key restrictions on the project either way."}},{"@type":"Question","name":"Why does my app work in the AI Studio preview but break once deployed?","acceptedAnswer":{"@type":"Answer","text":"The preview is the most forgiving environment the app will ever see: your session, your key, your network, a desktop viewport and the prompts you typed while building. Deployment changes identity, credentials and input all at once, so test the deployed URL in a private window rather than trusting the preview."}},{"@type":"Question","name":"How do you test an app when the AI output is different every time?","acceptedAnswer":{"@type":"Answer","text":"Don't assert on the answer; test the envelope around it. Force a slow response, block the model request, trigger an empty or refused answer, feed back a wrong-shaped response, and submit twice quickly. The app should show a real loading and error state in every case."}},{"@type":"Question","name":"What should I check first in a Google AI Studio app?","acceptedAnswer":{"@type":"Answer","text":"API key exposure and spend limits, because that is the only failure that can cost money overnight. Then the primary flow completed by a logged-out stranger, model failure handling, refresh and deep-link behaviour, input validation, and phone layout for the main flow."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-11-21</div>
+    <h1>Google AI Studio App Testing: What to Check Before You Ship</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="An AI Studio preview passing while the deployed build leaks a key, fails its model call and loses state">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="48" y="58" width="300" height="176" rx="12" fill="#f5f0e8" opacity="0.05" stroke="#4ade80" stroke-width="1.5"/>
+  <line x1="48" y1="90" x2="348" y2="90" stroke="#4ade80" stroke-width="1.5" opacity="0.5"/>
+  <circle cx="68" cy="74" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="82" cy="74" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="104" y="69" width="150" height="10" rx="5" fill="#f5f0e8" opacity="0.12"/>
+  <rect x="70" y="108" width="110" height="12" rx="4" fill="#6366f1" opacity="0.85"/>
+  <rect x="70" y="134" width="256" height="9" rx="4" fill="#f5f0e8" opacity="0.14"/>
+  <rect x="70" y="151" width="210" height="9" rx="4" fill="#f5f0e8" opacity="0.14"/>
+  <rect x="70" y="176" width="92" height="26" rx="7" fill="#4ade80" opacity="0.22" stroke="#4ade80" stroke-width="1.2"/>
+  <polyline points="86,189 95,197 112,180" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="364" y1="146" x2="424" y2="146" stroke="#6366f1" stroke-width="2"/>
+  <polyline points="414,139 424,146 414,153" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+  <rect x="440" y="58" width="312" height="176" rx="12" fill="#f5f0e8" opacity="0.05" stroke="#f87171" stroke-width="1.5"/>
+  <line x1="440" y1="90" x2="752" y2="90" stroke="#f87171" stroke-width="1.5" opacity="0.5"/>
+  <circle cx="460" cy="74" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="474" cy="74" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="496" y="69" width="150" height="10" rx="5" fill="#f5f0e8" opacity="0.12"/>
+  <rect x="462" y="108" width="110" height="12" rx="4" fill="#6366f1" opacity="0.6"/>
+  <rect x="462" y="134" width="268" height="9" rx="4" fill="#f5f0e8" opacity="0.1"/>
+  <circle cx="596" cy="186" r="26" fill="none" stroke="#f87171" stroke-width="2" opacity="0.45"/>
+  <path d="M596 160 a26 26 0 0 1 22 13" fill="none" stroke="#f87171" stroke-width="3" stroke-linecap="round"/>
+  <line x1="586" y1="176" x2="606" y2="196" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="606" y1="176" x2="586" y2="196" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="48" y="276" width="224" height="104" rx="12" fill="#f5f0e8" opacity="0.04" stroke="#f5f0e8" stroke-opacity="0.12" stroke-width="1"/>
+  <rect x="288" y="276" width="224" height="104" rx="12" fill="#f5f0e8" opacity="0.04" stroke="#f5f0e8" stroke-opacity="0.12" stroke-width="1"/>
+  <rect x="528" y="276" width="224" height="104" rx="12" fill="#f5f0e8" opacity="0.04" stroke="#f5f0e8" stroke-opacity="0.12" stroke-width="1"/>
+  <circle cx="110" cy="318" r="13" fill="none" stroke="#f87171" stroke-width="2.6"/>
+  <line x1="122" y1="318" x2="176" y2="318" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+  <line x1="160" y1="318" x2="160" y2="330" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+  <rect x="80" y="350" width="132" height="8" rx="4" fill="#f5f0e8" opacity="0.14"/>
+  <circle cx="336" cy="318" r="9" fill="#6366f1" opacity="0.8"/>
+  <line x1="348" y1="318" x2="386" y2="318" stroke="#6366f1" stroke-width="2.4" stroke-dasharray="6 6" opacity="0.8"/>
+  <line x1="398" y1="306" x2="422" y2="330" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+  <line x1="422" y1="306" x2="398" y2="330" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+  <rect x="320" y="350" width="152" height="8" rx="4" fill="#f5f0e8" opacity="0.14"/>
+  <path d="M598 304 a18 18 0 1 1 -4 22" fill="none" stroke="#6366f1" stroke-width="2.6" stroke-linecap="round"/>
+  <polyline points="590,298 599,303 595,312" fill="none" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="560" y="350" width="118" height="8" rx="4" fill="#f5f0e8" opacity="0.14"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Google AI Studio's preview runs with your key, your session and one lucky prompt, so it hides the three bugs that matter most: an exposed Gemini API key, a model call with no failure path, and state that a refresh erases. Test the deployed URL in a private window with the model call deliberately broken.</div>
+    <div class="prose"><p><strong>Google AI Studio app testing</strong> means checking that the app Gemini generated actually works for a stranger on the deployed URL — not just that it renders in the preview pane. Three things break most often: the Gemini API key ends up readable in the browser bundle, the model call has no failure path so the interface spins forever when it errors, and every bit of state lives in the page so a refresh wipes the user's work. None of those show up in a happy-path preview, because the preview runs with your session, your key and one lucky prompt. The pass you need is small and specific: deploy it, open it in a private window, break the model call on purpose, and watch what the interface does.</p>
+
+<h2>What is Google AI Studio app testing, exactly?</h2>
+<p>Google AI Studio is Google's web workspace for Gemini — prompting, API keys, and a build flow that turns a plain-language description into a working web app. You describe what you want, it generates a front end (typically React and TypeScript), shows you a live preview, lets you keep editing by prompt or by hand, and lets you export the code or deploy it.</p>
+<p>That shape decides what your QA pass has to cover. A tool that scaffolds a database and auth leaves you permission rules to verify. AI Studio starts from a model call, so what it most often leaves behind is a <em>front end that assumes the model always answers, answers fast, and answers in the shape the code expects</em>. Testing it is less about clicking every button and more about attacking that one assumption from three directions: credentials, failure, and persistence.</p>
+<p>It also matters that the generated app usually has no server of its own — so no safe place for a key, no request log to read after a complaint, and no session store. All three surface only when someone who isn't you uses the app.</p>
+
+<h2>Why doesn't a working preview mean the app works?</h2>
+<p>The preview is the most optimistic environment the app will ever run in: your browser, already signed in, key already wired, your network, a desktop viewport, and whatever prompt you typed while building. Every one of those is a variable your real user changes.</p>
+<p>Four concrete differences worth testing deliberately:</p>
+<ul>
+<li><strong>Identity.</strong> You are signed into Google; your visitor is not. Open the deployed URL in a private window and confirm the app still loads and the first action still completes.</li>
+<li><strong>Credentials.</strong> The preview can supply a key that the deployed build has to get from somewhere else. If that wiring is missing, the app loads fine and fails only when the model is called.</li>
+<li><strong>Input.</strong> You typed sensible prompts. Try an empty submit, a huge paste, emoji and another script. Prompt-driven apps rarely validate input, because the model "handles it" — until the reply arrives in a shape the UI can't render.</li>
+<li><strong>Viewport.</strong> Generated layouts look balanced at desktop width. Check the narrowest phone you have for a text box that is unreachable behind the keyboard or a result pane you cannot scroll.</li>
+</ul>
+
+<h2>Is your Gemini API key exposed in the deployed app?</h2>
+<p>This is the first thing to check and the easiest to get wrong, because the app behaves identically whether the key is safe or public. If the model request is made by browser code, then the key that signs it was shipped to the browser, and anyone who opens the page can read it.</p>
+<p>Check it like this, on the deployed URL rather than the preview:</p>
+<ol>
+<li>Open DevTools, go to the <strong>Network</strong> tab, and perform the action that calls the model.</li>
+<li>Look at who made the request. If the request goes straight to a Google API host from the page, the call is client-side.</li>
+<li>Inspect that request's URL and headers for your key, then search the loaded sources for the first few characters of the key.</li>
+<li>If you find it, the fix is architectural, not cosmetic: move the model call behind a small server route or function that holds the key, and have the page call your route instead. Hiding the key in an environment variable that still gets bundled into client code changes nothing.</li>
+</ol>
+<p>And assume someone does find it: a leaked key on a project with no spend cap or key restrictions is a billing incident, not just a bug. This is the same class of problem as the other credential leaks we covered in <a href="/blog/vibe-coding-security-risks">vibe coding security risks</a> — AI-generated front ends are consistently generous with secrets because the fastest code that works is code that calls the API directly.</p>
+
+<h2>How do you test an app whose output changes every run?</h2>
+<p>You cannot assert on the model's answer, so stop trying. Test the <em>envelope</em> — the states the app must survive regardless of what comes back. Each of these can be forced in a few seconds from DevTools:</p>
+<ul>
+<li><strong>Slow response.</strong> Throttle the network to a slow profile. Is there a loading state, or does the page look frozen and invite a second click?</li>
+<li><strong>Hard failure.</strong> Block the model's request URL (DevTools lets you block a pattern) and retry. A real error message is a pass; an endless spinner or a silent no-op is a bug.</li>
+<li><strong>Empty or refused answer.</strong> Ask something the model will decline or answer with nothing. Does the UI render an empty card, or does it throw because it expected a field?</li>
+<li><strong>Wrong shape.</strong> If the code expects JSON from the model, the day it gets prose wrapped in a code fence is the day the app breaks. Confirm there is a parse failure path, not an optimistic <code>JSON.parse</code>.</li>
+<li><strong>Repeat submits.</strong> Hit the submit action five times fast. Two requests in flight with one result pane is a race; it is also your quota.</li>
+</ul>
+<p>Keep the browser console open for all of it. Generated code logs its failures far more often than it shows them to the user, so the console usually tells you about the bug before your client does.</p>
+
+<h2>What should you test first in a Google AI Studio app?</h2>
+<p>In priority order, on the deployed URL:</p>
+<ol>
+<li><strong>Key exposure and spend limits</strong> — the only item on this list that can cost you money overnight.</li>
+<li><strong>The one flow the app exists for</strong>, completed start to finish by a logged-out stranger in a private window.</li>
+<li><strong>Model failure handling</strong> — slow, blocked, empty, malformed.</li>
+<li><strong>Refresh and deep link</strong> — reload mid-flow and open the URL in a second tab. If the app is client-state only, say so in the UI instead of letting people lose work silently.</li>
+<li><strong>Input validation</strong> — empty, huge, pasted, non-Latin.</li>
+<li><strong>Phone layout</strong> for the primary flow only.</li>
+</ol>
+<p>Six checks, one sitting. That is the whole difference between a demo and something you can send to a client.</p>
+
+<h2>How is testing AI Studio output different from v0, Bolt or Lovable?</h2>
+<p>Different generators fail in different places, so the same checklist wastes your time. What each tool typically hands you decides what you have to verify:</p>
+<table>
+<thead><tr><th>Tool</th><th>What it typically gives you</th><th>What you most often have to verify</th></tr></thead>
+<tbody>
+<tr><td>Google AI Studio</td><td>A front end built around a Gemini model call</td><td>Key handling, model failure paths, output shape, state persistence</td></tr>
+<tr><td>v0</td><td>Polished React and Tailwind interface</td><td>Whether the UI is wired to real data and real permissions — see <a href="/blog/v0-app-testing">v0 app testing</a></td></tr>
+<tr><td>Bolt or Lovable</td><td>A fuller app scaffold, often with auth and a database</td><td>Per-user access rules, auth edge cases, data migrations</td></tr>
+<tr><td>Replit</td><td>An app plus a running environment</td><td>Secrets handling, environment parity, long-running behaviour</td></tr>
+</tbody>
+</table>
+
+<h2>How do you keep an AI Studio app tested after every prompt?</h2>
+<p>The hard part is not the first pass; it is that one more prompt can silently change code you already checked. Three habits that scale, and the matching tooling:</p>
+<ul>
+<li><strong>Re-run the six checks after every session</strong>, not every change. It takes minutes and catches the regression while you still remember what you asked for.</li>
+<li><strong>Make feedback cheap to capture.</strong> When a client or tester hits something, you want the console, network and page state attached to the report automatically — that is what <a href="/snap">Snap</a> does with a right-click, and it is why those reports stop arriving as "it's broken".</li>
+<li><strong>Let something else walk the flows.</strong> <a href="/sims">Sims</a> sends AI personas through the app the way an unfamiliar user would, and <a href="/autosim">AutoSim</a> turns the flows worth protecting into end-to-end tests that repair themselves when the generated markup shifts under them — which, with prompt-driven code, it will.</li>
+</ul>
+<p>For the wider picture of where automated checks fit alongside human review, our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a> walks through the full pipeline.</p>
+
+<h2>Try it on your next AI Studio build</h2>
+<p>Deploy the app, run the six checks, and let Klavity watch the flows you care about from then on. <a href="/onboarding"><strong>Try Klavity free</strong></a> — point it at your next Google AI Studio build and see what a stranger would have found first.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Check the deployed URL in a private window — never sign off from the preview pane.</li><li>Search the browser bundle and network requests for your Gemini API key, then set a spend cap.</li><li>Force slow, blocked, empty and malformed model responses and confirm each shows a real error state.</li><li>Re-run the same six checks after every prompting session, since one prompt can undo verified code.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Is my Gemini API key safe in an app built with Google AI Studio?</summary><p>Only if the model call happens on a server. If the deployed page calls a Google API host directly from browser code, the key that signed the request was shipped to the browser and anyone can read it in DevTools. Move the call behind a server route, and set a spend cap and key restrictions on the project either way.</p></details><details><summary>Why does my app work in the AI Studio preview but break once deployed?</summary><p>The preview is the most forgiving environment the app will ever see: your session, your key, your network, a desktop viewport and the prompts you typed while building. Deployment changes identity, credentials and input all at once, so test the deployed URL in a private window rather than trusting the preview.</p></details><details><summary>How do you test an app when the AI output is different every time?</summary><p>Don't assert on the answer; test the envelope around it. Force a slow response, block the model request, trigger an empty or refused answer, feed back a wrong-shaped response, and submit twice quickly. The app should show a real loading and error state in every case.</p></details><details><summary>What should I check first in a Google AI Studio app?</summary><p>API key exposure and spend limits, because that is the only failure that can cost money overnight. Then the primary flow completed by a logged-out stranger, model failure handling, refresh and deep-link behaviour, input validation, and phone layout for the main flow.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
