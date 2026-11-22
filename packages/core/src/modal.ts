@@ -1,5 +1,5 @@
 import type { ReportType, IssueKind, ReportFileAttachment, ReportRecording, Shape } from './types'
-import { Annotator, renderAnnotatedImage, extractAnnotationTexts } from './annotator'
+import { Annotator, renderAnnotatedImage, extractAnnotationTexts, cloneShape, translateShape, resizeShape, type Handle, type Box } from './annotator'
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
 import { VoiceInput, LiveDictation, StreamingDictation, pickDictationMode, joinSpeechSegments, formatSpeechFinal } from './voice-input'
@@ -117,6 +117,14 @@ export interface SplitIssueLike {
   // The reporter's own words for this issue (transcript lines in its span) — the text handed to Enhance.
   narration?: string
 }
+
+// The "Report Multiple Issues" review state, JSON-safe, so a host can keep it across minimize / navigation.
+// `items` are the reporter's current tickets (edits + selections), `original` the AI's untouched list (Back
+// restores it). Thumbnails are not stored (re-grabbed from the clip on restore); `pendingEnhance` marks an
+// item whose AI write-up was still in flight when the snapshot was taken (re-run on restore).
+export interface MultiIssueSnapshotItem extends SplitIssueLike { id: string; selected: boolean; edited?: boolean; pendingEnhance?: boolean }
+// `reviewOpen`: the "AI Analysis Complete" review was on screen — Resume reopens it there, not on the composer.
+export interface MultiIssuesSnapshot { recordingId: string; items: MultiIssueSnapshotItem[]; original: MultiIssueSnapshotItem[] | null; reviewOpen?: boolean }
 
 // KD-995 "Report Multiple Issues": the review screen speaks High/Medium/Low; tickets carry P1/P2/P3 + C1/C2/C3.
 const MULTI_PRIORITIES = [
@@ -646,6 +654,13 @@ export interface ModalCallbacks {
   // walkthrough but finished after the composer that started it was unloaded. The composer analyses it on open,
   // exactly as if the reporter had just stopped the recording here.
   initialMultiRecordingId?: string
+  // "Report Multiple Issues" results (the "N issues identified" review: tickets, selections, edits) seeded when
+  // the composer re-opens — e.g. Resume after Minimize — so the analysis is NOT lost or re-run. `recordingId`
+  // must match a recording in initialRecordings (the walkthrough clip).
+  initialMultiIssues?: MultiIssuesSnapshot
+  // Fired whenever those results change (analysed, edited, selection toggled, cleared → null) so the host can
+  // keep them across minimize / navigation.
+  onMultiIssuesChange?: (snapshot: MultiIssuesSnapshot | null) => void
   // KLA-505: server-side LIVE DICTATION for the Voice button. When provided AND MediaRecorder is available,
   // the composer PREFERS this over the flaky Web Speech backend: it records short mic segments and hands each
   // as an audio Blob to this callback, which POSTs it to the STT endpoint (POST /api/voice/transcribe) and
@@ -1138,8 +1153,12 @@ export function buildModal(
     compressed: screenshotCompressed[index],
     ann: cloneAnn(annotationsByIndex[index]),
   })
+  // Redo history (per image): every Undo moves the state it leaves into here, Redo moves it back. Any NEW
+  // op (pushUndo) starts a fresh branch, so the redo history is dropped — standard editor semantics.
+  const redoStacks: Record<number, Array<{ snap: UndoSnap; cropped: boolean }>> = {}
   // Capture the current image+markup as the pre-op state, so undo restores exactly what was there before.
-  const pushUndo = (index: number) => { (undoStacks[index] ??= []).push(snapshotShot(index)) }
+  const pushUndo = (index: number) => { pushUndoSnap(index, snapshotShot(index)) }
+  const pushUndoSnap = (index: number, snap: UndoSnap) => { (undoStacks[index] ??= []).push(snap); delete redoStacks[index] }
   const restoreShot = (index: number, snap: UndoSnap) => {
     // KD-3088: an undo snapshot may predate a Mask-numbers toggle — restore the variant matching the toggle
     // NOW, so an Undo of a pen stroke can never bring masked numbers back (or re-mask after toggling off).
@@ -1163,12 +1182,30 @@ export function buildModal(
     // If the op we just undid was (or sat above) a crop, drop the now-orphaned crop marker so the
     // "Revert crop" affordance reflects reality.
     const cs = cropStacks[index]
-    while (cs && cs.length && cs[cs.length - 1].mark >= st.length) cs.pop()
+    let cropped = false
+    while (cs && cs.length && cs[cs.length - 1].mark >= st.length) { cs.pop(); cropped = true }
+    // Keep what we're leaving so Redo can bring it back.
+    ;(redoStacks[index] ??= []).push({ snap: snapshotShot(index), cropped })
     restoreShot(index, snap)
     fireAnnChanged(index) // KLA-772: an undo changed the overlay → re-persist it
     updateStrip()
     return true
   }
+  // Redo: re-apply the most recently undone op (annotation or crop). Returns false when nothing to redo.
+  const redoShot = (index: number): boolean => {
+    const rs = redoStacks[index]
+    if (!rs || !rs.length) return false
+    const { snap, cropped } = rs.pop()!
+    const pre = snapshotShot(index)
+    ;(undoStacks[index] ??= []).push(pre)      // NOT pushUndoSnap — that would drop the rest of the redo branch
+    if (cropped) (cropStacks[index] ??= []).push({ snap: pre, mark: undoStacks[index].length - 1 })
+    restoreShot(index, snap)
+    fireAnnChanged(index)
+    updateStrip()
+    return true
+  }
+  const canUndo = (index: number) => !!undoStacks[index]?.length
+  const canRedo = (index: number) => !!redoStacks[index]?.length
   // Explicit "Revert crop": jump back to the most recent pre-crop image + its original markup (drops the
   // crop and anything drawn after it — the affordance reads "revert crop to original").
   const revertCrop = (index: number): boolean => {
@@ -1176,6 +1213,7 @@ export function buildModal(
     if (!cs || !cs.length) return false
     const { snap, mark } = cs.pop()!
     if (undoStacks[index]) undoStacks[index].length = Math.min(undoStacks[index].length, mark)
+    delete redoStacks[index]
     restoreShot(index, snap)
     fireAnnChanged(index) // KLA-772: revert changed the overlay → re-persist it
     updateStrip()
@@ -1214,6 +1252,14 @@ export function buildModal(
     /* Hero annotation toolbar — always-on tools over the image. Tap targets ≥36px for touch. */
     .kl-htool,.kl-htbtn{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:38px;height:38px;padding:0 8px;border:1px solid transparent;border-radius:9px;background:transparent;color:#cfd5ea;cursor:pointer;line-height:1;transition:transform .12s ease,background .12s ease;}
     .kl-htool .kl-hk{font-size:9px;font-weight:700;opacity:.5;}
+    /* Annotation tools are larger (20px glyph, 46px target) so they're easy to tell apart and select. */
+    .kl-htool{min-width:46px;height:46px;gap:2px;border-radius:10px;}
+    .kl-htool .kl-hk{font-size:9.5px;}
+    /* Undo / Redo (top-right): glyph + label; dimmed when there is nothing to undo / redo. */
+    .kl-hhist{gap:4px;}
+    .kl-htbtn.kl-hhistbtn{min-width:46px;height:42px;gap:2px;}
+    .kl-htbtn.kl-hhistbtn .kl-hk{font-size:9px;font-weight:700;opacity:.7;}
+    .kl-htbtn:disabled{opacity:.35;cursor:default;transform:none;background:transparent;}
     /* #449 "Revert crop" affordance — accent-tinted, with a small visible label under the glyph. */
     .kl-htbtn.kl-hrevert{color:var(--kl-accent);min-width:44px;}
     .kl-htbtn.kl-hrevert .kl-hrevert-lbl{font-size:8.5px;font-weight:700;opacity:.85;}
@@ -1231,6 +1277,8 @@ export function buildModal(
     .kl-hcolor-input{position:absolute;left:0;bottom:-2px;width:1px;height:1px;opacity:0;border:0;padding:0;margin:0;pointer-events:none;}
     .kl-hsep{width:1px;height:24px;background:rgba(255,255,255,.14);margin:0 3px;}
     .kl-hgrow{flex:1;}
+    /* Forces a new toolbar row: tools + Undo/Redo/Clear on top, colours / stroke / zoom below. */
+    .kl-hbreak{flex-basis:100%;height:0;}
     /* #626: keep the six preset swatches + custom picker on ONE line as a single unit (never split across
        two rows at the narrow widget width). Gap matches the toolbar's swatch spacing. */
     .kl-hcolors{display:inline-flex;align-items:center;flex-wrap:nowrap;gap:6px;flex:none;}
@@ -2525,9 +2573,12 @@ export function buildModal(
     // after the deleted one inherits the deleted shot's overlay (and the last shot's overlay is dropped).
     try { callbacks.onShotRemoved?.(i) } catch { /* host sync best-effort */ }
     // #449: keep the per-image undo + crop history index-aligned with the shifted screenshots.
-    delete undoStacks[i]; delete cropStacks[i]
+    delete undoStacks[i]; delete cropStacks[i]; delete redoStacks[i]
     for (const key of Object.keys(undoStacks).map(Number).filter(n => n > i).sort((a, b) => a - b)) {
       undoStacks[key - 1] = undoStacks[key]; delete undoStacks[key]
+    }
+    for (const key of Object.keys(redoStacks).map(Number).filter(n => n > i).sort((a, b) => a - b)) {
+      redoStacks[key - 1] = redoStacks[key]; delete redoStacks[key]
     }
     for (const key of Object.keys(cropStacks).map(Number).filter(n => n > i).sort((a, b) => a - b)) {
       cropStacks[key - 1] = cropStacks[key]; delete cropStacks[key]
@@ -2669,7 +2720,7 @@ export function buildModal(
           // followed by close+navigate (without a minimize) would restore the OLD overlay onto the new pixels.
           if (annotationsByIndex[index]) { delete annotationsByIndex[index]; retakeClearedNote.add(index); fireAnnChanged(index) }
           // #449: the shot was fully replaced — its old undo/crop history no longer matches these pixels.
-          delete undoStacks[index]; delete cropStacks[index]
+          delete undoStacks[index]; delete cropStacks[index]; delete redoStacks[index]
         }
       }
     } catch { /* user cancelled the share prompt, or capture failed — leave the original shot untouched */ }
@@ -2909,7 +2960,53 @@ export function buildModal(
   // The first selected ticket carries the video + the composer's evidence; every other ticket gets a frame
   // from its moment in the clip and points back to the video. No issues found → the clip is attached to the
   // composer as a normal recording so nothing is lost.
+  // ── Keep the analysis across Minimize → Resume ── Minimize closes this composer; the host stores this snapshot
+  // (onMultiIssuesChange) and hands it back as initialMultiIssues, so "N issues identified" + every edit and
+  // selection survive instead of vanishing (which forced a fresh, permission-prompting recording).
+  let multiSnapKey = ''
+  function multiSnapshot(): MultiIssuesSnapshot | null {
+    if (multiState !== 'done' || !multiItems || !multiItems.length || !multiRec || !multiRec.id || mrDone) return null
+    const strip = (i: MultiItem): MultiIssueSnapshotItem => {
+      const { thumb: _t, enhancing, ...rest } = i
+      return { ...rest, ...(enhancing ? { pendingEnhance: true } : {}) }
+    }
+    return JSON.parse(JSON.stringify({
+      recordingId: multiRec.id, items: multiItems.map(strip), original: multiOriginal ? multiOriginal.map(strip) : null,
+      ...(mrEl ? { reviewOpen: true } : {}),
+    }))
+  }
+  let multiRestoring = false
+  function notifyMulti() {
+    if (_closed || multiRestoring || !callbacks.onMultiIssuesChange) return
+    const snap = multiSnapshot()
+    const key = snap ? JSON.stringify(snap) : ''
+    if (key === multiSnapKey) return
+    multiSnapKey = key
+    try { callbacks.onMultiIssuesChange(snap) } catch { /* host persistence is best-effort */ }
+  }
+  // Restore a saved analysis onto the seeded walkthrough clip (no re-recording, no re-analysis).
+  function restoreMulti(snap: MultiIssuesSnapshot) {
+    const rec = recordings.find((r) => r.id === snap.recordingId)
+    if (!rec || !Array.isArray(snap.items) || !snap.items.length || multiState !== 'idle') return
+    const seq = ++multiSeq
+    const revive = (i: MultiIssueSnapshotItem): MultiItem => { const { pendingEnhance: _p, ...rest } = i; return { ...rest, thumb: null } }
+    multiRec = rec
+    multiItems = snap.items.map(revive)
+    multiOriginal = (snap.original && snap.original.length ? snap.original : snap.items).map(revive)
+    multiDirty = false
+    mrDone = null; mrError = ''
+    multiState = 'done'
+    // Restoring is not a change worth echoing back; reopen the review if that's where the reporter minimized.
+    multiRestoring = true
+    try { paintMultiCard(); if (snap.reviewOpen) openMultiReview() } finally { multiRestoring = false }
+    multiSnapKey = JSON.stringify(multiSnapshot())
+    // Thumbnails only — the AI write-ups are already in the saved tickets; just finish any that were mid-flight.
+    const pending = new Set(snap.items.filter((i) => i.pendingEnhance).map((i) => i.id))
+    void loadMultiThumbs(seq, (id) => pending.has(id))
+  }
+
   function paintMultiCard() {
+    notifyMulti()
     const btn = shadowRoot.getElementById('klavity-multi-start') as HTMLButtonElement | null
     const st = shadowRoot.getElementById('klavity-multi-status') as HTMLElement | null
     if (!btn || !st) return
@@ -3020,7 +3117,7 @@ export function buildModal(
 
   // Thumbnails: one frame per issue, ~1s into its span. Sequential (one decoder at a time), best-effort. Each
   // frame then feeds that issue's Enhance call (in parallel with the next frame grab).
-  async function loadMultiThumbs(seq: number) {
+  async function loadMultiThumbs(seq: number, shouldEnhance: (id: string) => boolean = () => true) {
     const rec = multiRec
     if (!rec || !multiItems) return
     let src = rec.dataUrl
@@ -3037,7 +3134,7 @@ export function buildModal(
           for (const list of [multiItems, multiOriginal]) { const m = list?.find((x) => x.id === it.id); if (m) m.thumb = thumb }
           renderMultiReview()
         }
-        void enhanceMultiItem(it.id, thumb, seq)
+        if (shouldEnhance(it.id)) void enhanceMultiItem(it.id, thumb, seq)
       }
     } finally { if (url) { try { URL.revokeObjectURL(url) } catch { /* ignore */ } } }
   }
@@ -3106,6 +3203,7 @@ export function buildModal(
     mrEl?.remove()
     mrEl = null
     shadowRoot.getElementById('klavity-side')?.classList.remove('kl-mr-open')
+    notifyMulti()   // the review closed → Resume should land on the composer, not reopen it
   }
 
   // The walkthrough clip lives in the gallery like a Record me clip; removing its tile drops the analysis.
@@ -3146,6 +3244,7 @@ export function buildModal(
   }
 
   function renderMultiReview() {
+    notifyMulti()   // every edit / selection / Enhance result re-renders the review → keep the saved copy current
     if (!mrEl || !multiItems) return
     if (mrDone) { renderMultiDone(); return }
     const items = multiItems
@@ -3908,10 +4007,16 @@ export function buildModal(
       const stage = shadowRoot.getElementById('klavity-hero-stage')
       const heroCanvas = stage?.querySelector('canvas') as HTMLCanvasElement | null
       if (heroCanvas && activeIndex === targetIdx && heroCanvas.width > 1 && heroCanvas.height > 1) {
+        // The Select tool draws a selection outline + handles on this canvas — hide it for the copy so it
+        // never ends up in the image sent with the report.
+        const ann = (heroCanvas as any)._klvAnnotator as Annotator | undefined
+        const sel = ann?.selected ?? null
+        if (ann && sel) { ann.selected = null; ann.redraw() }
         try {
           const url = heroCanvas.toDataURL('image/png')
           if (url && url.length > 64) return url
         } catch { /* fallback to offscreen renderer */ }
+        finally { if (ann && sel) { ann.selected = sel; ann.redraw() } }
       }
 
       return null
@@ -4542,7 +4647,7 @@ export function buildModal(
     screenshotQuality[index] = quality
     screenshotSuggestSharp[index] = !!suggestSharp && quality !== 'real-pixel'
     if (annotationsByIndex[index]) delete annotationsByIndex[index]
-    delete undoStacks[index]; delete cropStacks[index]
+    delete undoStacks[index]; delete cropStacks[index]; delete redoStacks[index]
     updateStrip()
     try { callbacks.onShotReplaced?.(index, dataUrl, quality) } catch { /* best-effort */ }
   }
@@ -4780,6 +4885,7 @@ export function buildModal(
     paintMultiCard()
     shadowRoot.getElementById('klavity-multi-start')?.addEventListener('click', () => { void startMulti() })
     if (callbacks.initialMultiRecordingId) resumeMulti(callbacks.initialMultiRecordingId)
+    else if (multiEnabled && callbacks.initialMultiIssues) restoreMulti(callbacks.initialMultiIssues)
   }
 
   // Region capture button — only rendered when the host provides onRegionCapture
@@ -4882,6 +4988,8 @@ export function buildModal(
   function heroGlyph(inner: string, size = 15): string {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.125em">${inner}</svg>`
   }
+  // Annotation tool icon size (was 15px) — larger so the tools are easy to tell apart and hit.
+  const TOOL_ICON = 20
   function heroToolbarHtml(showRevert: boolean): string {
     const t = (name: string, label: string, glyph: string, key: string) =>
       `<button type="button" class="kl-htool" data-tool="${name}" title="${label} (${key.toUpperCase()})" aria-label="${label}">${glyph}<span class="kl-hk">${key.toUpperCase()}</span></button>`
@@ -4904,21 +5012,34 @@ export function buildModal(
       // XSS guards. See heroLogoHref + the #kl-hero-logo wiring in mountHeroAnnotator.
       `<a class="kl-hlogo" id="kl-hero-logo" target="_blank" rel="noopener" title="Powered by Klavity — visit klavity.in" aria-label="Klavity homepage (opens in a new tab)">${klavityMark}<span class="kl-hlogo-word">Klavity</span></a>` +
       `<span class="kl-hsep"></span>` +
-      // Tool hierarchy: Rectangle (the default) → Circle → Arrow → Text, then Pen / Line / Numbers.
-      t('rect', 'Rectangle', icon('square', { size: 15 }), 'r') +
-      t('circle', 'Circle', heroGlyph('<circle cx="12" cy="12" r="9"/>'), 'o') +
-      t('arrow', 'Arrow', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>'), 'a') +
-      t('text', 'Text', heroGlyph('<path d="M5 6h14M12 6v13M9 19h6"/>'), 't') +
-      t('pen', 'Pen', icon('pencil', { size: 15 }), 'p') +
-      t('line', 'Line', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/>'), 'l') +
-      t('count', 'Numbers', heroGlyph('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>'), 'c') +
+      // Select: pick an added annotation to move / resize it, recolour it, change its stroke/size, edit a
+      // text's words (double-click) or delete it (Delete key).
+      t('select', 'Select & edit', heroGlyph('<path d="M5 3l14 8-6 1.5L9.5 19z"/>', TOOL_ICON), 'v') +
+      `<span class="kl-hsep"></span>` +
+      // Annotation tools, in the product-specified order: Rectangle (the default), Arrow, Text, Counter,
+      // Pencil, Line, Circle — larger glyphs (TOOL_ICON) so they're easy to tell apart and select.
+      t('rect', 'Rectangle', heroGlyph('<rect x="4" y="5" width="16" height="14" rx="1.5"/>', TOOL_ICON), 'r') +
+      t('arrow', 'Arrow', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>', TOOL_ICON), 'a') +
+      t('text', 'Text', heroGlyph('<path d="M5 6h14M12 6v13M9 19h6"/>', TOOL_ICON), 't') +
+      t('count', 'Counter', heroGlyph('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>', TOOL_ICON), 'c') +
+      t('pen', 'Pencil', icon('pencil', { size: TOOL_ICON }), 'p') +
+      t('line', 'Line', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/>', TOOL_ICON), 'l') +
+      t('circle', 'Circle', heroGlyph('<circle cx="12" cy="12" r="9"/>', TOOL_ICON), 'o') +
       `<span class="kl-hsep"></span>` +
       // Redaction group: the "Mask numbers" toggle (masks digits in fresh captures) now sits next to the
       // Pixelate brush + Crop — grouped with the other redact/edit tools so the logo owns the top-left.
       `<label class="kl-hmask" title="Black out numbers in your screenshots"><input type="checkbox" class="kl-hmask-cb"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>` +
-      t('pixelate', 'Redact (pixelate)', heroGlyph('<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>'), 'b') +
-      t('crop', 'Crop', heroGlyph('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), 'k') +
-      `<span class="kl-hsep"></span>` +
+      t('pixelate', 'Redact (pixelate)', heroGlyph('<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>', TOOL_ICON), 'b') +
+      t('crop', 'Crop', heroGlyph('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>', TOOL_ICON), 'k') +
+      // Undo / Redo / Clear — pushed to the TOP-RIGHT of the Screenshot tab (end of the tools row). They cover
+      // every annotation tool, edits, crop and clear. The break after them starts the colour/stroke/zoom row.
+      `<span class="kl-hgrow"></span>` +
+      `<span class="kl-hgroup kl-hhist">` +
+        `<button type="button" class="kl-htbtn kl-hhistbtn" id="kl-hero-undo" title="Undo (Cmd+Z / Ctrl+Z)" aria-label="Undo"${canUndo(activeIndex) ? '' : ' disabled'}>${heroGlyph('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>', 17)}<span class="kl-hk">Undo</span></button>` +
+        `<button type="button" class="kl-htbtn kl-hhistbtn" id="kl-hero-redo" title="Redo (Cmd+Shift+Z / Ctrl+Y)" aria-label="Redo"${canRedo(activeIndex) ? '' : ' disabled'}>${heroGlyph('<path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 15-6.7L21 13"/>', 17)}<span class="kl-hk">Redo</span></button>` +
+        `<button type="button" class="kl-htbtn kl-hhistbtn" id="kl-hero-clear" title="Clear all annotations" aria-label="Clear">${icon('trash-2', { size: 17 })}<span class="kl-hk">Clear</span></button>` +
+      `</span>` +
+      `<span class="kl-hbreak" aria-hidden="true"></span>` +
       // #626: the six preset swatches + the custom picker live in ONE non-wrapping group so the whole palette
       // stays on a single line and moves as a unit — never red/orange/green on one row and blue/white/black on
       // the next (matches the .kl-hgroup pattern used for the Stroke control).
@@ -4956,11 +5077,9 @@ export function buildModal(
         `<button type="button" class="kl-hopt" data-size="40" title="Large">L</button>` +
       `</span>` +
       `<span class="kl-hsep"></span>` +
-      `<button type="button" class="kl-htbtn" id="kl-hero-undo" title="Undo (Cmd+Z / Ctrl+Z)" aria-label="Undo">${heroGlyph('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>', 14)}</button>` +
       // #449: explicit "Revert crop" — shown only after a crop on this image (visibility driven by the
       // per-image crop stack). Reverts the most recent crop to its pre-crop image + original markup.
       (showRevert ? `<button type="button" class="kl-htbtn kl-hrevert" id="kl-hero-revert" title="Revert crop to original" aria-label="Revert crop">${heroGlyph('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v2"/>', 14)}<span class="kl-hk kl-hrevert-lbl">Revert</span></button>` : '') +
-      `<button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${icon('trash-2', { size: 14 })}</button>` +
       `<span class="kl-hgrow"></span>` +
       // #627: zoom controls — explicit − / + buttons (plus the Z shortcut) replace the old text hint. They
       // drive the SAME zoom machinery as scroll-wheel zoom (zoomToward + clampZoom + minimap sync), centred
@@ -5153,7 +5272,7 @@ export function buildModal(
       } else {
         delete annotationsByIndex[index]
       }
-      ;(undoStacks[index] ??= []).push(preSnap)
+      pushUndoSnap(index, preSnap)   // a new crop starts a fresh branch → clears the redo history
       ;(cropStacks[index] ??= []).push({ snap: preSnap, mark })
       fireAnnChanged(index) // KLA-772: a crop rebases the overlay coords → re-persist it
       updateStrip()
@@ -5232,23 +5351,59 @@ export function buildModal(
       // handler bails while this is set so letters land as text, not tool switches (KLA-593 BUG 0).
       let activeTextInput: HTMLInputElement | null = null
       const textOpts = tools.querySelector('#kl-hero-textopts') as HTMLElement | null
+      // The export path (getActiveAnnotatedShotSync) copies this canvas — let it hide the selection outline.
+      ;(canvas as any)._klvAnnotator = annotator
+      const undoBtn = tools.querySelector('#kl-hero-undo') as HTMLButtonElement | null
+      const redoBtn = tools.querySelector('#kl-hero-redo') as HTMLButtonElement | null
+      const refreshHist = () => {
+        if (undoBtn) undoBtn.disabled = !canUndo(index)
+        if (redoBtn) redoBtn.disabled = !canRedo(index)
+      }
       const persist = () => {
-        if (annotator.shapes.length) annotationsByIndex[index] = { w: canvas.width, h: canvas.height, shapes: annotator.shapes.map(s => ({ ...s })) }
+        // Deep-copy (pen points too) so later in-place edits never mutate what's already persisted.
+        if (annotator.shapes.length) annotationsByIndex[index] = { w: canvas.width, h: canvas.height, shapes: annotator.shapes.map(s => cloneShape(s)) }
         else delete annotationsByIndex[index]
         fireAnnChanged(index) // KLA-772: mirror the drawn overlay into the persisted evidence shot
+        refreshHist()
+      }
+      // ── Edit added annotations (Select tool) ──
+      const setSelected = (s: Shape | null) => {
+        annotator.selected = s
+        // Text options apply to a selected text even when the Select tool (not Text) is active.
+        if (textOpts) textOpts.hidden = !(activeTool === 'text' || (s && s.type === 'text'))
+        annotator.redraw()
+      }
+      // Change a property of the selected annotation as ONE undoable step.
+      const editSelected = (fn: (s: any) => void): boolean => {
+        const s = annotator.selected
+        if (!s || !annotator.shapes.includes(s)) return false
+        pushUndo(index)
+        fn(s)
+        annotator.redraw()
+        persist()
+        return true
       }
       const selectTool = (t: string) => {
         activeTool = t
         tools.querySelectorAll<HTMLElement>('[data-tool]').forEach(el => el.classList.toggle('kl-on', el.dataset.tool === t))
-        if (textOpts) textOpts.hidden = t !== 'text'
+        if (t !== 'select' && annotator.selected) setSelected(null)
+        if (textOpts) textOpts.hidden = !(t === 'text' || (annotator.selected && annotator.selected.type === 'text'))
+        // (zoom state is declared further down — don't read it here; applyZoomTransform owns the zoomed cursor)
+        canvas.style.cursor = t === 'select' ? 'default' : 'crosshair'
       }
       const customBtn = tools.querySelector('.kl-hcolor-custom') as HTMLElement | null
       const colorInput = tools.querySelector('.kl-hcolor-input') as HTMLInputElement | null
-      const selectColor = (col: string, btn?: HTMLElement) => {
-        activeColor = col
+      const markColor = (btn?: HTMLElement | null) => {
         tools.querySelectorAll<HTMLElement>('[data-color]').forEach(el => el.classList.toggle('kl-on', el === btn))
         // The custom swatch has no [data-color], so toggle its selected state explicitly.
         if (customBtn) customBtn.classList.toggle('kl-on', customBtn === btn)
+      }
+      const selectColor = (col: string, btn?: HTMLElement) => {
+        activeColor = col
+        markColor(btn)
+        // With an annotation selected, the colour applies to it too (text, counter badge, shapes).
+        const sel = annotator.selected
+        if (sel && sel.type !== 'pixelate' && (sel as any).color !== col) editSelected(s => { s.color = col })
       }
       tools.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => selectTool((b as HTMLElement).dataset.tool!)))
       tools.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => selectColor((b as HTMLElement).dataset.color!, b as HTMLElement)))
@@ -5268,19 +5423,26 @@ export function buildModal(
       tools.querySelectorAll('[data-outline]').forEach(b => b.addEventListener('click', () => {
         textOutline = (b as HTMLElement).dataset.outline as 'black' | 'white' | 'none'
         tools.querySelectorAll<HTMLElement>('[data-outline]').forEach(el => el.classList.toggle('kl-on', el === b))
+        if (annotator.selected?.type === 'text') editSelected(s => { s.outline = textOutline })
       }))
       tools.querySelectorAll('[data-size]').forEach(b => b.addEventListener('click', () => {
         textSize = Number((b as HTMLElement).dataset.size)
         tools.querySelectorAll<HTMLElement>('[data-size]').forEach(el => el.classList.toggle('kl-on', el === b))
+        if (annotator.selected?.type === 'text') editSelected(s => { s.size = textSize })
       }))
       tools.querySelectorAll('[data-stroke]').forEach(b => b.addEventListener('click', () => {
         annotator.strokeScale = Number((b as HTMLElement).dataset.stroke) || 1
         tools.querySelectorAll<HTMLElement>('[data-stroke]').forEach(el => el.classList.toggle('kl-on', el === b))
-        annotator.redraw()
+        // New shapes record their own stroke (sw); a selected stroke shape is re-weighted. Older shapes
+        // without sw still follow this setting, as before.
+        const sel = annotator.selected
+        if (sel && ['pen', 'line', 'rect', 'circle', 'arrow'].includes(sel.type)) editSelected(s => { s.sw = annotator.strokeScale })
+        else annotator.redraw()
       }))
       // #449: route the toolbar Undo through the unified per-image history so one click steps back one op
-      // (annotation OR crop), remounting to paint the restored state.
-      tools.querySelector('#kl-hero-undo')?.addEventListener('click', () => { undoShot(index) })
+      // (annotation OR crop), remounting to paint the restored state. Redo re-applies the last undone op.
+      undoBtn?.addEventListener('click', () => { undoShot(index) })
+      redoBtn?.addEventListener('click', () => { redoShot(index) })
       tools.querySelector('#kl-hero-revert')?.addEventListener('click', () => { revertCrop(index) })
       // Clear is itself undoable: snapshot the current markup before wiping it.
       tools.querySelector('#kl-hero-clear')?.addEventListener('click', () => { pushUndo(index); annotator.clearAll(); persist() })
@@ -5305,10 +5467,11 @@ export function buildModal(
       // KLAVITYKLA-507: build the shape for a rect/line/circle/arrow drag from origin→cursor. Kept in one
       // place so the live drag preview (pointermove) and the committed shape (pointerup) are byte-identical.
       const provisionalShape = (tool: string, sx: number, sy: number, ex: number, ey: number, color: string): Shape | null => {
-        if (tool === 'line') return { type: 'line', color, x1: sx, y1: sy, x2: ex, y2: ey }
-        if (tool === 'arrow') return { type: 'arrow', color, x1: sx, y1: sy, x2: ex, y2: ey }
-        if (tool === 'rect') return { type: 'rect', color, x: Math.min(sx, ex), y: Math.min(sy, ey), w: Math.abs(ex - sx), h: Math.abs(ey - sy) }
-        if (tool === 'circle') return { type: 'circle', color, x: (sx + ex) / 2, y: (sy + ey) / 2, rx: Math.abs(ex - sx) / 2, ry: Math.abs(ey - sy) / 2 }
+        const sw = annotator.strokeScale
+        if (tool === 'line') return { type: 'line', color, x1: sx, y1: sy, x2: ex, y2: ey, sw }
+        if (tool === 'arrow') return { type: 'arrow', color, x1: sx, y1: sy, x2: ex, y2: ey, sw }
+        if (tool === 'rect') return { type: 'rect', color, x: Math.min(sx, ex), y: Math.min(sy, ey), w: Math.abs(ex - sx), h: Math.abs(ey - sy), sw }
+        if (tool === 'circle') return { type: 'circle', color, x: (sx + ex) / 2, y: (sy + ey) / 2, rx: Math.abs(ex - sx) / 2, ry: Math.abs(ey - sy) / 2, sw }
         if (tool === 'pixelate') return { type: 'pixelate', x: Math.min(sx, ex), y: Math.min(sy, ey), w: Math.abs(ex - sx), h: Math.abs(ey - sy) }
         return null
       }
@@ -5456,6 +5619,34 @@ export function buildModal(
         }
         return null
       }
+      // Select-tool drag: move the selected annotation, or resize it from a handle. `orig` is the shape at
+      // drag start (each move re-applies from it, so there's no drift); the undo snapshot is pushed only once
+      // the pointer actually moves, so a plain click-to-select never adds an empty undo step.
+      let editDrag: { shape: Shape; orig: Shape; bounds: Box; mode: 'move' | 'resize'; handle: Handle | null; grabX: number; grabY: number; snap: ReturnType<typeof snapshotShot>; moved: boolean } | null = null
+      const handleCursor = (h: Handle) => (h === 'nw' || h === 'se' ? 'nwse-resize' : h === 'ne' || h === 'sw' ? 'nesw-resize' : 'move')
+      // Edit an existing text label's words in place (Select tool → double-click a text annotation).
+      const editTextContent = (shape: Extract<Shape, { type: 'text' }>, clientX: number, clientY: number) => {
+        const input = document.createElement('input')
+        const s = displayScale()
+        const size = shape.size ?? annotator.computeFontSize()
+        input.value = shape.text
+        input.style.cssText = `position:fixed;left:${clientX}px;top:${clientY}px;padding:0;margin:0;line-height:1;box-sizing:content-box;background:rgba(255,255,255,.92);border:0;color:${shape.color};font-size:${Math.max(6, size * s)}px;font-family:sans-serif;font-weight:700;outline:1px dashed ${shape.color};z-index:2147483647;min-width:120px;`
+        document.body.appendChild(input)
+        activeTextInput = input
+        requestAnimationFrame(() => { if (document.body.contains(input)) { input.focus(); input.select() } })
+        input.addEventListener('blur', () => {
+          activeTextInput = null
+          const v = input.value.trim()
+          if (v && v !== shape.text) { setSelected(shape); editSelected(t => { t.text = v }) }
+          safeRemove(input)
+        }, { once: true })
+        input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur(); if (ke.key === 'Escape') { input.value = shape.text; input.blur() } ke.stopPropagation() })
+      }
+      canvas.addEventListener('dblclick', (e) => {
+        if (activeTool !== 'select') return
+        const hit = annotator.hitShape(toImg(e as unknown as PointerEvent).x, toImg(e as unknown as PointerEvent).y)
+        if (hit && hit.type === 'text') { e.stopPropagation(); editTextContent(hit, e.clientX, e.clientY) }
+      })
       canvas.addEventListener('pointerdown', (e) => {
         // Shift+drag pans the zoomed image instead of drawing.
         if (e.shiftKey && zoom > 1) {
@@ -5465,6 +5656,22 @@ export function buildModal(
           e.preventDefault(); return
         }
         const pt = toImg(e); startX = pt.x; startY = pt.y
+        if (activeTool === 'select') {
+          annotator.uiScale = 1 / displayScale()
+          const handle = annotator.hitHandle(pt.x, pt.y)
+          const target = handle ? annotator.selected : annotator.hitShape(pt.x, pt.y)
+          if (!target) { setSelected(null); return }
+          if (target !== annotator.selected) setSelected(target)
+          const bounds = annotator.shapeBounds(target) || { x: pt.x, y: pt.y, w: 0, h: 0 }
+          editDrag = { shape: target, orig: cloneShape(target), bounds, mode: handle ? 'resize' : 'move', handle, grabX: pt.x, grabY: pt.y, snap: snapshotShot(index), moved: false }
+          // Sync the toolbar to the picked annotation's colour, so the swatch shows what it is.
+          const col = (target as any).color as string | undefined
+          if (col) { activeColor = col; markColor(tools.querySelector(`[data-color="${col}"]`) as HTMLElement | null) }
+          try { canvas.setPointerCapture(e.pointerId) } catch { /* noop */ }
+          canvas.style.cursor = handle ? handleCursor(handle) : 'move'
+          e.preventDefault()
+          return
+        }
         if (activeTool === 'crop') {
           drawing = true
           // KLAVITYKLA-507: capture the pointer so a release OUTSIDE the canvas still fires pointerup here.
@@ -5526,6 +5733,25 @@ export function buildModal(
       })
       canvas.addEventListener('pointermove', (e) => {
         if (panning) { canvas.style.transition = 'none'; panX = panBaseX + (e.clientX - panSX); panY = panBaseY + (e.clientY - panSY); applyZoomTransform(); canvas.style.cursor = 'grabbing'; return }
+        if (editDrag) {
+          const pt = toImg(e)
+          if (!editDrag.moved) {
+            if (Math.hypot(pt.x - editDrag.grabX, pt.y - editDrag.grabY) < 2) return   // ignore click jitter
+            editDrag.moved = true
+            pushUndoSnap(index, editDrag.snap)   // one undo step for the whole move/resize gesture
+          }
+          if (editDrag.mode === 'move') translateShape(editDrag.shape, editDrag.orig, pt.x - editDrag.grabX, pt.y - editDrag.grabY)
+          else if (editDrag.handle) resizeShape(editDrag.shape, editDrag.orig, editDrag.bounds, editDrag.handle, pt.x, pt.y)
+          annotator.redraw()
+          return
+        }
+        if (activeTool === 'select') {
+          const hp = toImg(e)
+          annotator.uiScale = 1 / displayScale()
+          const h = annotator.hitHandle(hp.x, hp.y)
+          canvas.style.cursor = h ? handleCursor(h) : annotator.hitShape(hp.x, hp.y) ? 'move' : 'default'
+          return
+        }
         // KLA-770: live text move/resize — mutate the grabbed shape and repaint (base + committed) each move.
         if (textDrag) {
           const pt = toImg(e)
@@ -5549,7 +5775,7 @@ export function buildModal(
         if (activeTool === 'pen') {
           penPoints.push(toImg(e))
           // KLAVITYKLA-507: live pen preview (base + committed + the in-progress stroke).
-          if (penPoints.length > 1) annotator.drawPreview({ type: 'pen', color: activeColor, points: penPoints })
+          if (penPoints.length > 1) annotator.drawPreview({ type: 'pen', color: activeColor, points: penPoints, sw: annotator.strokeScale })
           return
         }
         if (activeTool === 'crop' && cropBox) {
@@ -5571,6 +5797,15 @@ export function buildModal(
       })
       canvas.addEventListener('pointerup', (e) => {
         if (panning) { panning = false; canvas.style.cursor = zoom > 1 ? 'grab' : 'crosshair'; try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ } return }
+        if (editDrag) {
+          const moved = editDrag.moved
+          editDrag = null
+          try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ }
+          canvas.style.cursor = 'default'
+          annotator.redraw()
+          if (moved) persist()
+          return
+        }
         // KLA-770: finish a text move/resize — commit the shape's new position/size into the overlay.
         if (textDrag) {
           textDrag = null
@@ -5599,11 +5834,13 @@ export function buildModal(
         const isShape = (activeTool === 'line' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'arrow') && dragged
         const willAdd = (activeTool === 'pen' && penPoints.length > 1) || isShape || isPixel
         if (willAdd) pushUndo(index)
-        if (activeTool === 'pen' && penPoints.length > 1) annotator.addShape({ type: 'pen', color: activeColor, points: penPoints })
-        else if (isShape && activeTool === 'line') annotator.addShape({ type: 'line', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
-        else if (isShape && activeTool === 'rect') annotator.addShape({ type: 'rect', color: activeColor, x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
-        else if (isShape && activeTool === 'circle') annotator.addShape({ type: 'circle', color: activeColor, x: (startX + pt.x) / 2, y: (startY + pt.y) / 2, rx: Math.abs(pt.x - startX) / 2, ry: Math.abs(pt.y - startY) / 2 })
-        else if (isShape && activeTool === 'arrow') annotator.addShape({ type: 'arrow', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
+        // Each shape records the stroke it was drawn with (sw) so it keeps it in the editor AND the export.
+        const sw = annotator.strokeScale
+        if (activeTool === 'pen' && penPoints.length > 1) annotator.addShape({ type: 'pen', color: activeColor, points: penPoints, sw })
+        else if (isShape && activeTool === 'line') annotator.addShape({ type: 'line', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y, sw })
+        else if (isShape && activeTool === 'rect') annotator.addShape({ type: 'rect', color: activeColor, x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY), sw })
+        else if (isShape && activeTool === 'circle') annotator.addShape({ type: 'circle', color: activeColor, x: (startX + pt.x) / 2, y: (startY + pt.y) / 2, rx: Math.abs(pt.x - startX) / 2, ry: Math.abs(pt.y - startY) / 2, sw })
+        else if (isShape && activeTool === 'arrow') annotator.addShape({ type: 'arrow', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y, sw })
         else if (isPixel) annotator.addShape({ type: 'pixelate', x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
         persist()
       })
@@ -5616,10 +5853,11 @@ export function buildModal(
         // KLA-770: an interrupted text drag keeps its last position (already mutated); commit + clear state so
         // the gesture can't get stuck holding the shape.
         if (textDrag) { textDrag = null; canvas.style.cursor = 'crosshair'; annotator.redraw(); persist() }
+        if (editDrag) { const moved = editDrag.moved; editDrag = null; annotator.redraw(); if (moved) persist() }
         if (drawing) { drawing = false; annotator.redraw() } // discard the provisional shape, keep committed
       })
 
-      const TOOL_KEYS: Record<string, string> = { p: 'pen', l: 'line', r: 'rect', o: 'circle', a: 'arrow', t: 'text', c: 'count', b: 'pixelate', k: 'crop' }
+      const TOOL_KEYS: Record<string, string> = { v: 'select', p: 'pen', l: 'line', r: 'rect', o: 'circle', a: 'arrow', t: 'text', c: 'count', b: 'pixelate', k: 'crop' }
       heroKeyHandler = (e: KeyboardEvent) => {
         if (!document.body.contains(host)) { detachHeroKeys(); return }
         // KLA-593 BUG 0 (defense-in-depth): if a text-annotation input is open, NEVER treat keys as tool
@@ -5633,8 +5871,19 @@ export function buildModal(
         if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return
         // #449 addendum: BOTH Cmd+Z (metaKey, macOS) and Ctrl+Z (ctrlKey, Win/Linux) step back one op
         // through the unified draw+crop history — repeat to walk all the way to the clean image.
+        // Redo: Cmd/Ctrl+Shift+Z (macOS + most editors) or Ctrl+Y (Windows). Checked before plain undo.
+        if ((e.metaKey || e.ctrlKey) && ((e.shiftKey && e.key.toLowerCase() === 'z') || (!e.shiftKey && e.key.toLowerCase() === 'y'))) { e.preventDefault(); redoShot(index); return }
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undoShot(index); return }
         if (e.metaKey || e.ctrlKey || e.altKey) return
+        // Select tool: Delete/Backspace removes the selected annotation (undoable); Escape deselects.
+        if (annotator.selected && (e.key === 'Delete' || e.key === 'Backspace')) {
+          e.preventDefault()
+          const sel = annotator.selected
+          const i = annotator.shapes.indexOf(sel)
+          if (i >= 0) { pushUndo(index); annotator.shapes.splice(i, 1); setSelected(null); persist() }
+          return
+        }
+        if (annotator.selected && e.key === 'Escape') { e.preventDefault(); setSelected(null); return }
         const k = e.key.toLowerCase()
         // #627: bare Z toggles zoom — fit (1×) ⇄ 2× centred on the stage. No modifiers here (Cmd/Ctrl+Z is
         // handled above as undo; the text-input/textarea guard earlier means it never fires while typing).

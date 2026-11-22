@@ -10126,7 +10126,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     } catch (err: any) { return json(oops(err, "audit"), 500) }
   }
 
-  if (req.method === "GET" && path === "/app") return me ? file(PUB + "/index.html") : loginGate(path, url.search)
+  if (req.method === "GET" && path === "/app") {
+    if (!me) return loginGate(path, url.search)
+    // KD-3121: the Sims Studio is a Sims feature — a Snap-only project is bounced to the upgrade prompt, same as
+    // the Sims/AutoSims pages (snapLocked). Lookup failures fall through so the studio never breaks on a hiccup.
+    const studioProj = await resolveProject(me, url.searchParams.get("project")).catch(() => null)
+    const studioRow = studioProj ? await projectById(studioProj.id).catch(() => null) : null
+    const studioLock = studioRow ? snapLocked(studioRow) : null
+    if (studioLock) return new Response(null, { status: 302, headers: { location: studioLock.upgradeUrl } })
+    return file(PUB + "/index.html")
+  }
   // Sim Profile page — clicking a Sim row in the dashboard opens /sim/:id (read-only persona +
   // its triaged feedback + the calls that seeded it). The id is read client-side from the path.
   if (req.method === "GET" && /^\/sim\/[^/]+$/.test(path)) return me ? htmlPage(PUB + "/sim-profile.html") : loginGate(path, url.search)
@@ -10183,7 +10192,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "POST" && ciTriggerMatch) {
       const trailId = ciTriggerMatch[1]
       try {
-        const { runId } = await runWalkNow(ciProject, trailId)
+        const { runId } = await runWalkNow(ciProject, trailId, { trigger: "ci" })
         return json({ runId }, 202)
       } catch (e: any) {
         if (e instanceof WalkBusyError) return json({ error: "A walk is already running" }, 409)
@@ -10612,7 +10621,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
 
       try {
-        const { runId } = await runWalkNow(projectId, trailId)
+        const { runId } = await runWalkNow(projectId, trailId, { trigger: "api" })
         // Persist git + idempotency mapping best-effort. On an idempotency race (INSERT OR IGNORE)
         // re-read to converge on the winner so both retries report the same run_id.
         let finalRunId = runId
@@ -13977,6 +13986,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // projection so the standalone /t/:ref page renders reporter + page context without a second
           // fetch. Member-gated (fbRow already access-checked above) — never surfaced to non-members.
           reporterEmail: fbRow.contactEmail || fbRow.actorEmail || null,
+          // KD-3118: the host-supplied customer identity (sanitized to REPORTER_KEYS at ingest). It is already
+          // written into the exported Jira/connector body as "Customer details:"; the ticket detail shows the
+          // same block. Null on anonymous / older rows. Member-gated like reporterEmail above.
+          reporter: fbRow.reporter && typeof fbRow.reporter === "object" ? fbRow.reporter : null,
           pageUrl: fbRow.reportUrl || (fbRow.urlHost ? `https://${fbRow.urlHost}${fbRow.urlPath || ""}` : (fbRow.urlPath || null)),
           ref: String(fbRow.id).split("-")[0],
           sourceReferrer: fbRow.sourceReferrer,

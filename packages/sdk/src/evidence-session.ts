@@ -60,6 +60,9 @@ export interface EvidenceSession {
   recordings?: EvidenceRecording[]
   /** Files attached via Attach. Small ones keep their bytes (dataUrl); big ones only metadata (dataUrl ''), their bytes stay in page memory. */
   files?: EvidenceFile[]
+  /** "Report Multiple Issues" results (the AI's ticket list + the reporter's edits/selections) for the
+   *  walkthrough recording `recordingId`, so Minimize → Resume keeps "N issues identified" instead of losing it. */
+  multi?: { recordingId: string; items: unknown[]; original: unknown[] | null } | null
   isOpen?: boolean
 }
 
@@ -69,6 +72,9 @@ export interface EvidenceFile {
   type: string
   size: number
   dataUrl: string
+  /** The raw bytes of a file the composer keeps as a Blob (attached VIDEOS — never base64'd). IndexedDB stores
+   *  Blobs natively, so the video survives minimize → navigation/reload → resume like screenshots do. */
+  blob?: Blob
 }
 
 /** addShot outcome — carries a reason when the size/count cap rejected the shot so the UI can nudge. */
@@ -295,13 +301,34 @@ export async function setRecordings(sessionId: string, recordings: EvidenceRecor
   return cur
 }
 
+/** Store (or clear with null) the "Report Multiple Issues" analysis so it survives minimize / navigation. */
+export async function setMulti(sessionId: string, multi: EvidenceSession['multi']): Promise<EvidenceSession | null> {
+  const cur = await getById(sessionId)
+  if (!cur) return null
+  cur.multi = multi ? JSON.parse(JSON.stringify(multi)) : null
+  cur.updatedAt = Date.now()
+  await putSession(cur)
+  return cur
+}
+
 /** Replace the session's attached files with the composer's current list (empty array clears). */
 export async function setFiles(sessionId: string, files: EvidenceFile[]): Promise<EvidenceSession | null> {
   const cur = await getById(sessionId)
   if (!cur) return null
-  cur.files = files.map((f) => ({ id: f.id, name: f.name, type: f.type, size: f.size, dataUrl: f.dataUrl || '' }))
+  cur.files = files.map((f) => ({
+    id: f.id, name: f.name, type: f.type, size: f.size, dataUrl: f.dataUrl || '',
+    ...(f.blob && typeof f.blob.size === 'number' ? { blob: f.blob } : {}),
+  }))
   cur.updatedAt = Date.now()
-  await putSession(cur)
+  try {
+    await putSession(cur)
+  } catch (e) {
+    // Storage quota hit by a big video: keep the metadata (the bytes stay in page memory for this page) rather
+    // than failing the whole session write.
+    if (!cur.files.some((f) => f.blob)) throw e
+    cur.files = cur.files.map(({ blob: _b, ...rest }) => rest)
+    await putSession(cur)
+  }
   return cur
 }
 

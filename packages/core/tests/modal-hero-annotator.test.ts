@@ -30,13 +30,12 @@ describe('hero inline annotator', () => {
     c.close()
   })
 
-  it('orders the drawing tools by priority: Rectangle, Circle, Arrow, Text first', async () => {
+  it('orders the drawing tools: Rectangle, Arrow, Text, Counter, Pencil, Line, Circle (after Select)', async () => {
     const c = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
     c.addScreenshot(PNG)
     await new Promise(r => setTimeout(r, 0))
     const order = Array.from(c.shadowRoot.querySelectorAll<HTMLElement>('#klavity-hero-tools [data-tool]')).map(b => b.dataset.tool)
-    expect(order.slice(0, 4)).toEqual(['rect', 'circle', 'arrow', 'text'])
-    expect(order).toContain('pen')   // still available, just lower in the hierarchy
+    expect(order.slice(0, 8)).toEqual(['select', 'rect', 'arrow', 'text', 'count', 'pen', 'line', 'circle'])
     c.close()
   })
 

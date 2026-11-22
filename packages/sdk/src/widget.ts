@@ -35,6 +35,7 @@ import {
   makeShotId, pageCount, MAX_SHOTS, updateShotAnnotations, updateFields as updateEvidenceFields,
   setRecordings as setEvidenceRecordings,
   setFiles as setEvidenceFiles,
+  setMulti as setEvidenceMulti,
   type EvidenceSession, type EvidenceShot,
 } from "./evidence-session"
 import { SimsLive, type LiveObservation } from "./sims-live"  // side-effecting: auto-installs window.KlavitySims on load
@@ -476,6 +477,40 @@ function hideFixedSticky(out: Array<{ el: HTMLElement; v: string }>) {
 // "Stop sharing" bar (the track's 'ended' event drops our handle so the next capture re-prompts cleanly).
 let _sharedDisplayStream: MediaStream | null = null
 let _sharedDisplayVideo: HTMLVideoElement | null = null
+// KD-3088: resolves once Chrome's "Sharing this tab" bar has settled after a NEW share (see acquireDisplayStream).
+let _shareBarSettled: Promise<void> = Promise.resolve()
+
+// KD-3088: right after a share starts, Chrome adds its "Sharing this tab" bar, which shrinks the page's viewport a
+// moment LATER. A frame grabbed before that is the old size (the page at the top, a black band below) and no longer
+// matches the page's layout, so Mask numbers can't place its boxes and the shot gets a black strip. Resolves on the
+// first resize after the share starts (plus a short layout beat), or after `maxMs` when no bar shows up.
+export function watchShareBarSettle(maxMs = 1200): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    let done = false
+    const finish = () => { if (done) return; done = true; window.removeEventListener("resize", onResize); clearTimeout(timer); resolve() }
+    const onResize = () => { setTimeout(finish, 120) }
+    const timer = setTimeout(finish, maxMs)
+    window.addEventListener("resize", onResize)
+  })
+}
+
+// KD-3088: wait (bounded) until the stream's frame has the page viewport's shape and the viewport height has stopped
+// changing, so the grabbed frame and the page layout (which Mask numbers measures) agree. Best-effort: on timeout the
+// caller grabs anyway, exactly as before.
+export async function waitForFrameToMatchViewport(video: HTMLVideoElement, maxMs = 1000, stepMs = 50): Promise<boolean> {
+  const deadline = Date.now() + maxMs
+  let lastH = -1
+  for (;;) {
+    const vw = Math.max(1, window.innerWidth), vh = Math.max(1, window.innerHeight)
+    const fw = video.videoWidth, fh = video.videoHeight
+    const shapeOk = fw > 0 && fh > 0 && Math.abs(fw / fh - vw / vh) / (vw / vh) < 0.01
+    if (shapeOk && vh === lastH) return true
+    lastH = vh
+    if (Date.now() >= deadline) return false
+    await _sleep(stepMs)
+  }
+}
 
 // Return the live shared stream, or null if none / it has ended (user stopped sharing). Self-heals a dead one.
 export function activeSharedStream(): MediaStream | null {
@@ -505,6 +540,7 @@ export async function acquireDisplayStream(): Promise<MediaStream> {
     preferCurrentTab: true,
   })
   _sharedDisplayStream = stream
+  _shareBarSettled = watchShareBarSettle()   // KD-3088: the first grab waits for Chrome's sharing bar to settle
   // snap-share-hint: the reporter just granted a screen-share — remember it so the "click Allow" hover hint on
   // the FAB stops showing (they know the flow now). Best-effort; private mode / disabled storage is fine.
   try { localStorage.setItem("klavity_share_ok", "1") } catch { /* noop */ }
@@ -533,6 +569,9 @@ async function grabDisplayViewportFrame(stream: MediaStream): Promise<{ dataUrl:
     const deadline = Date.now() + 3000
     while ((video.videoWidth === 0 || video.videoHeight === 0) && Date.now() < deadline) await _sleep(50)
     if (!video.videoWidth || !video.videoHeight) throw new Error("sharp viewport capture: no video frame")
+    // KD-3088: never grab before the sharing bar has settled and the frame matches the page's current shape.
+    await _shareBarSettled
+    await waitForFrameToMatchViewport(video)
     const vw = Math.max(1, window.innerWidth)
     const vh = Math.max(1, window.innerHeight)
     const scale = video.videoWidth / vw
@@ -615,6 +654,9 @@ async function captureSharpFullPage(): Promise<string> {
     const deadline = Date.now() + 3000
     while ((video.videoWidth === 0 || video.videoHeight === 0) && Date.now() < deadline) await _sleep(50)
     if (!video.videoWidth || !video.videoHeight) throw new Error("sharp capture: no video frame")
+    // KD-3088: same as the viewport grab — wait for the sharing bar to settle before measuring/stitching.
+    await _shareBarSettled
+    await waitForFrameToMatchViewport(video)
 
     const vw = Math.max(1, window.innerWidth)
     const vh = Math.max(1, window.innerHeight)
@@ -1108,7 +1150,10 @@ async function mount() {
     const keep = new Set<string>()
     const rows = files.map((f) => {
       const id = evFileId(f); keep.add(id); evFilesMem.set(id, f)
-      return { id, name: f.name, type: f.type, size: f.size, dataUrl: f.dataUrl && f.dataUrl.length <= EV_FILE_STORE_MAX_CHARS ? f.dataUrl : "" }
+      const dataUrl = f.dataUrl && f.dataUrl.length <= EV_FILE_STORE_MAX_CHARS ? f.dataUrl : ""
+      // Attached videos are kept as a Blob (never base64'd) → persist the Blob itself (IndexedDB stores it natively),
+      // so the video survives minimize + a navigation/reload instead of being dropped.
+      return { id, name: f.name, type: f.type, size: f.size, dataUrl, ...(!dataUrl && f.blob ? { blob: f.blob } : {}) }
     })
     for (const id of [...evFilesMem.keys()]) if (!keep.has(id)) evFilesMem.delete(id)
     void queueEvWrite(async () => { evSession = await setEvidenceFiles(sessionId, rows) ?? evSession; updateEvDock() })
@@ -1119,8 +1164,9 @@ async function mount() {
     for (const row of session.files ?? []) {
       const mem = evFilesMem.get(row.id)
       if (mem) { out.push(mem); continue }
-      if (row.dataUrl) {
-        const f = { name: row.name, type: row.type, size: row.size, dataUrl: row.dataUrl }
+      if (row.dataUrl || row.blob) {
+        const f: any = { name: row.name, type: row.type, size: row.size, dataUrl: row.dataUrl || "" }
+        if (!row.dataUrl && row.blob) f.blob = row.blob   // a stored video: the composer previews + uploads the Blob
         evFileIds.set(f, row.id); evFilesMem.set(row.id, f); out.push(f)
         continue
       }
@@ -1541,13 +1587,22 @@ async function mount() {
       // so we skip the full-page auto-capture and let the zoomed-in region lead. KLA-412: also skip it when
       // resuming an evidence session that already holds shots (we seed those below); a BRAND-NEW session
       // (empty, no region shot) still auto-captures so the first shot lands + persists via onShotAdded.
-      autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0) && !opts?.initialRecordings?.length && !seedFiles.length,
+      // Resuming a report that already holds a recording (incl. a "Report Multiple Issues" walkthrough, whose
+      // default snap is dropped) must NOT auto-capture again — that re-prompted for screen-share permission on
+      // every Resume. Check the merged seed list (session recordings + arrived ones), not just opts.
+      autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0) && !seedRecordings.length && !seedFiles.length && !(ev && ev.multi),
       // Saved session recordings + a "Record me" video that finished after the reporter navigated (see above).
       initialRecordings: seedRecordings.length ? seedRecordings : undefined,
       // Files attached via Attach used to live ONLY in the open composer, so Minimize → Resume lost them.
       initialFiles: seedFiles.length ? seedFiles : undefined,
       onFilesChange: ev ? (files) => evPersistFiles(ev.id, files) : undefined,
       initialMultiRecordingId: multiRecordingId,
+      // "Report Multiple Issues": keep the analysed ticket list (+ edits/selections) across Minimize → Resume.
+      // Only restored when its walkthrough clip is among the seeded recordings (else it would point at nothing).
+      initialMultiIssues: !multiRecordingId && ev?.multi && seedRecordings.some((r) => r.id === ev.multi!.recordingId) ? (ev.multi as any) : undefined,
+      onMultiIssuesChange: ev ? (snap) => {
+        void queueEvWrite(async () => { evSession = await setEvidenceMulti(ev.id, snap as any) ?? evSession; if (evSession) ev.multi = evSession.multi; updateEvDock() })
+      } : undefined,
       // #638: render the "Attach console logs" toggle (default OFF) in the composer. When the reporter enables
       // it, the submit payload carries attachConsole:true and onSubmit includes the captured console logs.
       consoleAttachToggle: true,
