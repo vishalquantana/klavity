@@ -40,6 +40,17 @@ export function usableCheckpointFromJson(raw: unknown): AuthorCheckpoint | null 
 }
 
 /**
+ * R2: does a failed resume child hold progress the prior does not have? True only if the child's checkpoint is usable (the shared
+ * rule above) AND strictly further along: more trajectory steps, or the same steps with more model calls. A child starts from its
+ * prior's trajectory, so its checkpoint extends the prior's; an unusable or not-newer checkpoint never replaces the prior's.
+ */
+export function isNewerUsableCheckpoint(child: unknown, prior: unknown): boolean {
+  if (!isUsableCheckpoint(child)) return false
+  if (!isUsableCheckpoint(prior)) return true
+  return child.traj.length > prior.traj.length || (child.traj.length === prior.traj.length && child.llmCalls > prior.llmCalls)
+}
+
+/**
  * Wording the dashboard may show for an author session's stall reason. The persisted `stall_reason` keeps the technical
  * detail (raw browser/database error text, internal persistence notes) for diagnostics; this strips those notes and
  * replaces internal wording with plain language. It never invents a different cause: unknown reasons pass through

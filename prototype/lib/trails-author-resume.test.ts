@@ -281,6 +281,10 @@ test("runAuthorNow atomically marks a claimed prior session as resuming", async 
     lastUrl: FIXTURE_URL,
   }
   await updateAuthorSession(proj, priorId, { checkpoint: cp, status: "needs_auth", stallReason: "auth gate" })
+  // R2: the claim state is only observable WHILE the child is running (when the child ends, the claim is settled: restored on a
+  // retryable failure, consumed on success). Hold the drive open so this assertion is deterministic, not a race with the drive.
+  let release!: () => void
+  const held = new Promise<void>((r) => { release = r })
   const out = await runAuthorNow(
     proj,
     { name: "new", objective: "test", baseUrl: FIXTURE_URL },
@@ -289,6 +293,7 @@ test("runAuthorNow atomically marks a claimed prior session as resuming", async 
       resumeSessionId: priorId,
       author: async (_projectId, _req, opts) => {
         expect(opts.checkpoint?.lastUrl).toBe(FIXTURE_URL)
+        await held
         return {
           status: "stalled",
           trailId: null,
@@ -306,6 +311,8 @@ test("runAuthorNow atomically marks a claimed prior session as resuming", async 
   expect(prior!.status).toBe("resuming")
   expect(prior!.resumedBy).toBe(out.sessionId)
   expect((await getAuthorSession(proj, out.sessionId))!.resumedFrom).toBe(priorId)
+  release()
+  for (let i = 0; i < 100 && (await getAuthorSession(proj, out.sessionId))!.status === "running"; i++) await new Promise((r) => setTimeout(r, 30))
 })
 
 // ── KLA-270: surface resumable partial drafts — listStalledAuthorSessions persist→list round-trip ──

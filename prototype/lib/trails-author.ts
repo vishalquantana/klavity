@@ -27,7 +27,7 @@ import { makeFileResolver, type FileResolver, type AttachmentManifest } from "./
 import { normalizeTrailViewport } from "./trails-viewport"
 import { configuredVisionResolver, type VisionResolver } from "./trails-vision"
 import { notifyAutosimNeedsAuth } from "./autosim-auth-alert"
-import { isUsableCheckpoint, isUsableCheckpointUrl } from "./author-checkpoint"
+import { isUsableCheckpoint, isUsableCheckpointUrl, isNewerUsableCheckpoint } from "./author-checkpoint"
 export { isUsableCheckpoint } from "./author-checkpoint"
 import {
   loadAutosimAuthConfig,
@@ -1634,19 +1634,26 @@ export interface AuthorSession {
   redCause: RedCauseDiagnosis | null
 }
 
+const AUTHOR_SESSION_INSERT_COLS = "id,project_id,name,objective,base_url,test_account,status,created_by,resumed_from,created_at,updated_at,objective_verified,judge_persona_id,test_case_id"
+function authorSessionInsertValues(projectId: string, req: AuthorRequest, resumedFrom: string | null, id: string): { values: string; args: any[] } {
+  const now = Date.now()
+  return {
+    // KD-2255: test_case_id - explicit on a fresh drive; a resumed session inherits its parent's.
+    values: `?,?,?,?,?,?,'running',?,?,?,?,0,?,COALESCE(?, (SELECT test_case_id FROM author_sessions WHERE project_id=? AND id=?))`,
+    args: [id, projectId, req.name, req.objective, req.baseUrl, req.testAccountName ?? null, req.createdBy ?? null, resumedFrom, now, now, req.judgePersonaId ?? null, req.testCaseId ?? null, projectId, resumedFrom],
+  }
+}
+
 export async function createAuthorSession(projectId: string, req: AuthorRequest, resumedFrom?: string | null, idOverride?: string): Promise<string> {
   const id = idOverride ?? "auth_" + crypto.randomUUID()
-  const now = Date.now()
-  await db!.execute({
-    // KD-2255: test_case_id — explicit on a fresh drive; a resumed session inherits its parent's.
-    sql: `INSERT INTO author_sessions (id,project_id,name,objective,base_url,test_account,status,created_by,resumed_from,created_at,updated_at,objective_verified,judge_persona_id,test_case_id)
-          VALUES (?,?,?,?,?,?,'running',?,?,?,?,0,?,COALESCE(?, (SELECT test_case_id FROM author_sessions WHERE project_id=? AND id=?)))`,
-    args: [id, projectId, req.name, req.objective, req.baseUrl, req.testAccountName ?? null, req.createdBy ?? null, resumedFrom ?? null, now, now, req.judgePersonaId ?? null, req.testCaseId ?? null, projectId, resumedFrom ?? null],
-  })
+  const v = authorSessionInsertValues(projectId, req, resumedFrom ?? null, id)
+  await db!.execute({ sql: `INSERT INTO author_sessions (${AUTHOR_SESSION_INSERT_COLS}) VALUES (${v.values})`, args: v.args })
   return id
 }
 
-export async function updateAuthorSession(projectId: string, id: string, patch: Partial<Pick<AuthorSession, "status" | "steps" | "stallReason" | "trailId" | "verificationRunId" | "verificationVerdict" | "llmCalls" | "costUsd" | "checkpoint" | "objectiveVerified" | "redCause">>): Promise<void> {
+type AuthorSessionPatch = Partial<Pick<AuthorSession, "status" | "steps" | "stallReason" | "trailId" | "verificationRunId" | "verificationVerdict" | "llmCalls" | "costUsd" | "checkpoint" | "objectiveVerified" | "redCause">>
+
+function buildAuthorSessionUpdate(projectId: string, id: string, patch: AuthorSessionPatch, fenced: boolean): { sql: string; args: any[] } {
   const sets: string[] = ["updated_at=?"]; const args: any[] = [Date.now()]
   if (patch.status !== undefined) { sets.push("status=?"); args.push(patch.status) }
   if (patch.steps !== undefined) { sets.push("steps_json=?"); args.push(JSON.stringify(patch.steps)) }
@@ -1660,10 +1667,83 @@ export async function updateAuthorSession(projectId: string, id: string, patch: 
   if (patch.checkpoint !== undefined) { sets.push("checkpoint_json=?"); args.push(patch.checkpoint === null ? null : JSON.stringify(patch.checkpoint)) }
   if (patch.redCause !== undefined) { sets.push("red_cause_json=?"); args.push(patch.redCause === null ? null : JSON.stringify(patch.redCause)) }
   args.push(projectId, id)
-  await db!.execute({ sql: `UPDATE author_sessions SET ${sets.join(",")} WHERE project_id=? AND id=?`, args })
-  // KD-2255: a SUCCESSFULLY crystallized Trail is filed under the session's test case (replacing that
-  // test case's previous AutoSim). Stalled partial drafts are not filed — the working AutoSim stays.
+  // R2 fence: a session is only ever written by the worker that created it, and `running` is a one-way state (nothing sets a row
+  // back to 'running'). So `AND status='running'` means "nobody - reaper, sweep or a newer attempt - has taken this row over".
+  return { sql: `UPDATE author_sessions SET ${sets.join(",")} WHERE project_id=? AND id=?${fenced ? " AND status='running'" : ""}`, args }
+}
+
+// KD-2255: a SUCCESSFULLY crystallized Trail is filed under the session's test case (replacing that
+// test case's previous AutoSim). Stalled partial drafts are not filed - the working AutoSim stays.
+async function stampIfCrystallized(projectId: string, id: string, patch: AuthorSessionPatch): Promise<void> {
   if (patch.trailId && patch.status === "crystallized") await stampTrailFromAuthorSession(projectId, id, patch.trailId).catch((e) => console.warn("[author] test-case stamp skipped:", String(e)))
+}
+
+/** Unfenced write (fixtures, admin tooling). Production workers use updateOwnedAuthorSession / finishAuthorSession. */
+export async function updateAuthorSession(projectId: string, id: string, patch: AuthorSessionPatch): Promise<void> {
+  await db!.execute(buildAuthorSessionUpdate(projectId, id, patch, false))
+  await stampIfCrystallized(projectId, id, patch)
+}
+
+/**
+ * R2: fenced write by the worker that owns the session. Applies only while the row is still `running`; returns false (and
+ * writes nothing) when the session was recovered/ended by someone else, so a stale worker can never overwrite a recovered state,
+ * a recovered checkpoint, or a successfully completed session.
+ */
+export async function updateOwnedAuthorSession(projectId: string, id: string, patch: AuthorSessionPatch): Promise<boolean> {
+  const r = await db!.execute(buildAuthorSessionUpdate(projectId, id, patch, true))
+  const applied = Number(r.rowsAffected ?? 0) > 0
+  if (applied) await stampIfCrystallized(projectId, id, patch)
+  return applied
+}
+
+/** R2: the child's persisted checkpoint (as stored JSON) if it is usable and further along than the prior's; else null. */
+async function newerChildCheckpoint(projectId: string, childId: string, priorId: string): Promise<string | null> {
+  try {
+    const [child, prior] = await Promise.all([getAuthorSession(projectId, childId), getAuthorSession(projectId, priorId)])
+    if (!child || !prior) return null
+    return isNewerUsableCheckpoint(child.checkpoint, prior.checkpoint) ? JSON.stringify(child.checkpoint) : null
+  } catch { return null }
+}
+
+/** How a finished resume child settles the claim on its prior session. */
+export type ResumeOutcome = "consume" | "restore" | "cancelled"
+
+/**
+ * R2: the child's FINAL write and the prior's claim resolution in ONE transaction (db.batch), so a crash can never separate them.
+ *   consume   - child kept progress (crystallized / stalled / needs_auth): prior stays `resuming`, owned by the child (consumed)
+ *   restore   - retryable failure: prior -> `stalled`, claim cleared, checkpoint and updated_at untouched
+ *   cancelled - the USER cancelled: prior -> terminal `failed`; never made resumable again
+ * Both statements are fenced: the child write needs `status='running'`; the prior write needs `status='resuming' AND
+ * resumed_by=<this child>` AND the child still `running` - so a stale worker can neither restore a prior a newer attempt owns nor
+ * resolve a claim after its own session was recovered. Returns whether the child write applied.
+ */
+async function finishAuthorSession(projectId: string, sessionId: string, patch: AuthorSessionPatch, resume: { priorId: string; outcome: ResumeOutcome; transferCheckpoint?: string | null } | null): Promise<boolean> {
+  const stmts: Array<{ sql: string; args: any[] }> = []
+  // R2: a failed child may hold progress the prior lacks (it checkpoints after every step). Hand the child's latest USABLE checkpoint
+  // to the prior in the SAME transaction as the restore. Same fence as the restore (prior still `resuming` and owned by THIS child, child
+  // still `running`) plus a compare-and-set on the child's checkpoint: if it changed since it was read, nothing is transferred.
+  if (resume && resume.outcome === "restore" && resume.transferCheckpoint) {
+    stmts.push({
+      sql: `UPDATE author_sessions SET checkpoint_json=?
+            WHERE project_id=? AND id=? AND status='resuming' AND resumed_by=?
+              AND EXISTS (SELECT 1 FROM author_sessions WHERE project_id=? AND id=? AND status='running' AND checkpoint_json=?)`,
+      args: [resume.transferCheckpoint, projectId, resume.priorId, sessionId, projectId, sessionId, resume.transferCheckpoint],
+    })
+  }
+  if (resume && resume.outcome !== "consume") {
+    const set = resume.outcome === "restore" ? "status='stalled', resumed_by=NULL" : "status='failed', stall_reason='resume cancelled by user'"
+    stmts.push({
+      sql: `UPDATE author_sessions SET ${set}
+            WHERE project_id=? AND id=? AND status='resuming' AND resumed_by=?
+              AND EXISTS (SELECT 1 FROM author_sessions WHERE project_id=? AND id=? AND status='running')`,
+      args: [projectId, resume.priorId, sessionId, projectId, sessionId],
+    })
+  }
+  stmts.push(buildAuthorSessionUpdate(projectId, sessionId, patch, true))
+  const rs = await db!.batch(stmts, "write")
+  const applied = Number(rs[rs.length - 1].rowsAffected ?? 0) > 0
+  if (applied) await stampIfCrystallized(projectId, sessionId, patch)
+  return applied
 }
 
 function rowToAuthorSession(row: any): AuthorSession {
@@ -1739,8 +1819,9 @@ export async function listNeedsAuthSessionsForAutoResume(projectId: string, limi
               WHERE child.project_id=s.project_id AND child.resumed_from=s.id
                 AND child.status IN ('running','stalled','needs_auth','crystallized','resuming')
             )
+            AND COALESCE((SELECT CAST(m.value AS INTEGER) FROM schema_meta m WHERE m.key = 'autoresume:' || s.id), 0) < ?
           ORDER BY s.updated_at ASC LIMIT ?`,
-    args: [projectId, since, Math.max(limit * 5, 25)],
+    args: [projectId, since, MAX_AUTO_RESUME_ATTEMPTS, Math.max(limit * 5, 25)],
   })
   return r.rows.map(rowToAuthorSession).filter((s) => isUsableCheckpoint(s.checkpoint)).slice(0, limit)
 }
@@ -1763,38 +1844,62 @@ function resumeEligibilityError(prior: AuthorSession | null, now = Date.now()): 
   return null
 }
 
-async function claimAuthorResumeSession(projectId: string, priorId: string, childId: string, now = Date.now()): Promise<AuthorSession> {
-  const prior = await getAuthorSession(projectId, priorId)
-  const invalid = resumeEligibilityError(prior, now)
-  if (invalid) throw new Error(invalid)
-  const since = now - NEEDS_AUTH_RESUME_TTL_MS
-  const r = await db!.execute({
-    sql: `UPDATE author_sessions
-          SET status='resuming', resumed_by=?, updated_at=?
-          WHERE project_id=? AND id=?
-            AND status IN ('stalled','needs_auth')
-            AND updated_at >= ?
-            AND checkpoint_json IS NOT NULL
-            AND resumed_by IS NULL
-            AND NOT EXISTS (
-              SELECT 1 FROM author_sessions child
-              WHERE child.project_id=?
-                AND child.resumed_from=?
-                AND child.status IN ('running','stalled','needs_auth','crystallized','resuming')
-            )`,
-    args: [childId, now, projectId, priorId, since, projectId, priorId],
-  })
-  if (Number(r.rowsAffected || 0) <= 0) throw new Error("resume session is already claimed")
-  return prior!
+/** R2: a resume that cannot proceed because of the prior's CURRENT state (already claimed, not paused, too old, no usable checkpoint). */
+export class ResumeConflictError extends Error {
+  constructor(msg: string) { super(msg); this.name = "ResumeConflictError" }
 }
 
-async function releaseAuthorResumeClaim(projectId: string, priorId: string, childId: string, status: AuthorSession["status"]): Promise<void> {
-  if (status !== "stalled" && status !== "needs_auth") return
-  await db!.execute({
-    sql: `UPDATE author_sessions SET status=?, resumed_by=NULL, updated_at=?
-          WHERE project_id=? AND id=? AND status='resuming' AND resumed_by=?`,
-    args: [status, Date.now(), projectId, priorId, childId],
-  }).catch(() => {})
+/** R2: AUTOMATIC attempts beyond which a prior is no longer picked up automatically. Manual resume is never limited and never counted. */
+export const MAX_AUTO_RESUME_ATTEMPTS = 3
+/** Where a prior's automatic-attempt count lives: the existing runtime key-value table `schema_meta` (no schema change). */
+export const autoResumeAttemptKey = (priorId: string) => "autoresume:" + priorId
+
+/**
+ * R2: claim the prior AND create the child session in ONE transaction. Either both exist or neither does, so a crash can never leave
+ * a claim without a child. The claim is a conditional UPDATE (only one concurrent claimer can match `resumed_by IS NULL`); the
+ * child INSERT only produces a row if this very transaction holds the claim. `updated_at` is deliberately NOT touched: claiming
+ * and restoring must not reset the prior's seven-day retention window.
+ */
+async function claimResumeAndCreateChild(projectId: string, priorId: string, childId: string, req: AuthorRequest, autoAttempt = false, now = Date.now()): Promise<AuthorSession> {
+  const prior = await getAuthorSession(projectId, priorId)
+  const invalid = resumeEligibilityError(prior, now)
+  if (invalid) throw invalid === "resume session not found" ? new Error(invalid) : new ResumeConflictError(invalid)
+  const since = now - NEEDS_AUTH_RESUME_TTL_MS
+  const v = authorSessionInsertValues(projectId, req, priorId, childId)
+  const rs = await db!.batch([
+    {
+      sql: `UPDATE author_sessions
+            SET status='resuming', resumed_by=?
+            WHERE project_id=? AND id=?
+              AND status IN ('stalled','needs_auth')
+              AND updated_at >= ?
+              AND checkpoint_json IS NOT NULL
+              AND resumed_by IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM author_sessions child
+                WHERE child.project_id=?
+                  AND child.resumed_from=?
+                  AND child.status IN ('running','stalled','needs_auth','crystallized','resuming')
+              )`,
+      args: [childId, projectId, priorId, since, projectId, priorId],
+    },
+    {
+      sql: `INSERT INTO author_sessions (${AUTHOR_SESSION_INSERT_COLS})
+            SELECT ${v.values}
+            WHERE EXISTS (SELECT 1 FROM author_sessions WHERE project_id=? AND id=? AND status='resuming' AND resumed_by=?)`,
+      args: [...v.args, projectId, priorId, childId],
+    },
+    // R2: an AUTOMATIC attempt counts toward the allowance, atomically with the claim it belongs to (the row is only written if this
+    // transaction really holds the claim). Manual resumes never reach this statement. Stored in the existing runtime key-value table.
+    ...(autoAttempt ? [{
+      sql: `INSERT INTO schema_meta (key, value)
+            SELECT ?, '1' WHERE EXISTS (SELECT 1 FROM author_sessions WHERE project_id=? AND id=? AND status='resuming' AND resumed_by=?)
+            ON CONFLICT(key) DO UPDATE SET value = CAST(schema_meta.value AS INTEGER) + 1`,
+      args: [autoResumeAttemptKey(priorId), projectId, priorId, childId],
+    }] : []),
+  ], "write")
+  if (Number(rs[0].rowsAffected || 0) !== 1 || Number(rs[1].rowsAffected || 0) !== 1) throw new ResumeConflictError("resume session is already claimed")
+  return prior!
 }
 
 /**
@@ -1818,6 +1923,8 @@ export async function runAuthorNow(
     checkpointGraceMs?: number
     /** R1 test seam: the needs_auth "give it a key and resume" alert. Defaults to the real notifier. */
     notifyNeedsAuth?: typeof notifyAutosimNeedsAuth
+    /** R2: set ONLY by autoResumeNeedsAuthSessions. Counts this attempt toward the automatic-attempt allowance; manual resumes never do. */
+    autoAttempt?: boolean
   },
 ): Promise<{ sessionId: string }> {
   // Snap-only project gating: a locked project must never launch an authoring drive - covers the
@@ -1847,16 +1954,15 @@ export async function runAuthorNow(
   const slotHeld = withAuthorSlot(() => withWalkSlot(async () => {
     let sessionId: string = childSessionId
     let resumeCheckpoint: AuthorCheckpoint | undefined
-    let claimedPrior: { id: string; status: AuthorSession["status"] } | null = null
     try {
       if (resumeSessionId) {
-        const prior = await claimAuthorResumeSession(projectId, resumeSessionId, childSessionId)
+        // R2: claim + child row in one transaction (nothing to release if this throws: nothing was written).
+        const prior = await claimResumeAndCreateChild(projectId, resumeSessionId, childSessionId, req, deps?.autoAttempt === true)
         resumeCheckpoint = prior.checkpoint!
-        claimedPrior = { id: prior.id, status: prior.status }
+      } else {
+        sessionId = await createAuthorSession(projectId, req, null, childSessionId)
       }
-      sessionId = await createAuthorSession(projectId, req, resumeSessionId ?? null, childSessionId)
     } catch (e) {
-      if (claimedPrior) await releaseAuthorResumeClaim(projectId, claimedPrior.id, childSessionId, claimedPrior.status)
       rejectStart(e)
       return
     }
@@ -1874,11 +1980,21 @@ export async function runAuthorNow(
     // R1: a checkpoint write that fails must not be silent - a session is only "resumable" if its checkpoint really
     // reached the DB. Track the most recent save result; the final status below reflects it.
     // Each write is tracked so a timed-out (uncertain) write can be judged from the real row, not assumed failed.
-    const persistCheckpoint = deps?.persistCheckpoint ?? ((p: string, s: string, cp: AuthorCheckpoint) => updateAuthorSession(p, s, { checkpoint: cp }))
+    // R2: every worker write goes through the ownership fence; a write that is fenced out is an error for the checkpoint verdict.
+    const persistCheckpoint = deps?.persistCheckpoint ?? (async (p: string, s: string, cp: AuthorCheckpoint) => {
+      if (!(await updateOwnedAuthorSession(p, s, { checkpoint: cp }))) throw new Error("session is no longer running (write fenced)")
+    })
+    const driveAbort = getCurrentAuthorAbortSignal() ?? undefined
     let latestAttempt: AuthorCheckpoint | null = null
     let latestOutcome: "none" | "pending" | "ok" | "error" = "none"
     let checkpointSaveError: string | null = null
     const inflightWrites = new Set<Promise<void>>()
+    const settleInflight = async () => {
+      if (!inflightWrites.size) return
+      let timer: ReturnType<typeof setTimeout> | undefined
+      await Promise.race([Promise.allSettled([...inflightWrites]), new Promise((r) => { timer = setTimeout(r, deps?.checkpointGraceMs ?? 5_000) })])
+      if (timer) clearTimeout(timer)
+    }
     // R1: the needs_auth alert tells the user to add credentials and RESUME, so it may only go out once the final
     // checkpoint verdict confirms the session really is resumable. The driver reports the gate here; runAuthorNow sends
     // it (at most once) after the verdict.
@@ -1889,7 +2005,7 @@ export async function runAuthorNow(
       const out = await author(projectId, req, {
         model, launchArgs: CHROMIUM_PROD_ARGS,
         ...(fileFixtures ? { fileResolver: fileFixtures.resolve, uploadNames: Object.keys(req.attachments!) } : {}),
-        onStep: (log) => updateAuthorSession(projectId, sessionId, { steps: log }).catch(() => {}),
+        onStep: (log) => updateOwnedAuthorSession(projectId, sessionId, { steps: log }).catch(() => {}),
         // KLA-55: update heartbeat each iteration so the reaper knows this session is alive.
         onHeartbeat: () => touchAuthorHeartbeat(sessionId).catch(() => {}),
         // KLA-57: persist checkpoint after each step and on stall so the run is resumable.
@@ -1907,7 +2023,7 @@ export async function runAuthorNow(
         },
         checkpoint: resumeCheckpoint,
         // KLA-151: abort signal wired to the author slot's AbortController.
-        abortSignal: getCurrentAuthorAbortSignal() ?? undefined,
+        abortSignal: driveAbort,
         // KLA-150: publish each step screenshot as a live screencast frame.
         onLiveFrame: (dataUrl) => { try { publishLiveWatchFrame(projectId, sessionId, dataUrl) } catch {} },
         onVerifying: () => { try { publishLiveWatchStatus(projectId, sessionId, "verifying") } catch {} },
@@ -1923,11 +2039,7 @@ export async function runAuthorNow(
       let finalStatus = out.status
       let finalReason = out.stallReason
       if (out.status === "stalled" || out.status === "needs_auth") {
-        if (inflightWrites.size) {
-          let timer: ReturnType<typeof setTimeout> | undefined
-          await Promise.race([Promise.allSettled([...inflightWrites]), new Promise((r) => { timer = setTimeout(r, deps?.checkpointGraceMs ?? 5_000) })])
-          if (timer) clearTimeout(timer)
-        }
+        await settleInflight()
         const saved = await getAuthorSession(projectId, sessionId).catch(() => null)
         const persisted = saved?.checkpoint ?? null
         const detail = latestOutcome === "error" ? `save error: ${checkpointSaveError}`
@@ -1948,16 +2060,26 @@ export async function runAuthorNow(
         if (verdictDiagnostic) console.warn(`[trails-author] session ${sessionId}: ${verdictDiagnostic}`)
         // else: the persisted checkpoint IS the latest one (including a slow write that landed): status stays as reported.
       }
-      await updateAuthorSession(projectId, sessionId, {
+      // R2: settle the claim on the prior in the same transaction as the child's final write (and only if this worker still owns the
+      // child): progress kept -> consumed; retryable failure -> prior restored to stalled; user cancel -> prior terminal.
+      let resolution: { priorId: string; outcome: ResumeOutcome; transferCheckpoint?: string | null } | null = null
+      if (resumeSessionId) {
+        const outcome = (finalStatus !== "failed" ? "consume" : driveAbort?.aborted ? "cancelled" : "restore") as ResumeOutcome
+        let transferCheckpoint: string | null = null
+        if (outcome === "restore") { await settleInflight(); transferCheckpoint = await newerChildCheckpoint(projectId, sessionId, resumeSessionId) }
+        resolution = { priorId: resumeSessionId, outcome, transferCheckpoint }
+      }
+      const applied = await finishAuthorSession(projectId, sessionId, {
         status: finalStatus, steps: out.steps, stallReason: finalReason, trailId: out.trailId,
         verificationRunId: out.verificationRunId, verificationVerdict: out.verificationVerdict,
         llmCalls: out.llmCalls, costUsd: out.costUsd,
         objectiveVerified: out.objectiveVerified,
         redCause: out.redCause ?? null,
-      })
-      // R1: deferred needs_auth alert - only for a session that is genuinely resumable, and only once.
+      }, resolution)
+      if (!applied) console.warn(`[trails-author] session ${sessionId}: final write fenced - the session is no longer running (recovered by a sweep or reaper); this worker's result was discarded`)
+      // R1: deferred needs_auth alert - only for a session that is genuinely resumable, and only once. R2: never for a fenced-out worker.
       if (pendingAuthGate) {
-        if (finalStatus === "needs_auth" && !authAlertSent) {
+        if (applied && finalStatus === "needs_auth" && !authAlertSent) {
           authAlertSent = true
           try {
             const proj = await projectById(projectId)
@@ -1974,12 +2096,20 @@ export async function runAuthorNow(
           } catch (e: any) {
             console.error("autosim needs_auth alert (non-fatal):", e?.message || e)
           }
-        } else if (finalStatus !== "needs_auth") {
-          console.warn(`[trails-author] session ${sessionId}: needs_auth alert suppressed - session ended ${finalStatus} (${verdictDiagnostic ?? "not resumable"})`)
+        } else if (!applied || finalStatus !== "needs_auth") {
+          console.warn(`[trails-author] session ${sessionId}: needs_auth alert suppressed - ${applied ? `session ended ${finalStatus}` : "write fenced"} (${verdictDiagnostic ?? "not resumable"})`)
         }
       }
     } catch (e: any) {
-      await updateAuthorSession(projectId, sessionId, { status: "failed", stallReason: String(e?.message || e) }).catch(() => {})
+      // Unexpected exception: a retryable failure (or a cancel, if the user had cancelled). Fenced, so if the final write above had
+      // already succeeded this is a no-op and cannot mark a completed session failed.
+      try {
+        const cancelled = !!driveAbort?.aborted
+        let transferCheckpoint: string | null = null
+        if (resumeSessionId && !cancelled) { await settleInflight(); transferCheckpoint = await newerChildCheckpoint(projectId, sessionId, resumeSessionId) }
+        await finishAuthorSession(projectId, sessionId, { status: "failed", stallReason: String(e?.message || e) },
+          resumeSessionId ? { priorId: resumeSessionId, outcome: cancelled ? "cancelled" : "restore", transferCheckpoint } : null)
+      } catch { /* best effort: the sweeps recover whatever this could not settle */ }
     } finally {
       endLiveWatchRun(projectId, sessionId)
       if (fileFixtures) await fileFixtures.cleanup().catch(() => {})
@@ -2027,9 +2157,10 @@ export async function autoResumeNeedsAuthSessions(
         testAccountName: prior.testAccount ?? undefined,
         createdBy: prior.createdBy ?? undefined,
         judgePersonaId: prior.judgePersonaId ?? null,
-      }, { resumeSessionId: prior.id })
+      }, { resumeSessionId: prior.id, autoAttempt: true })
       result.resumed.push({ fromSessionId: prior.id, sessionId })
     } catch (e: any) {
+      if (e instanceof ResumeConflictError) { result.skipped.push({ sessionId: prior.id, reason: e.message }); continue }   // another worker owns it: expected race
       result.errors.push({ sessionId: prior.id, error: String(e?.message || e) })
       if (e instanceof WalkBusyError) break
     }

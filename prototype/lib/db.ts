@@ -1,6 +1,6 @@
 // Turso / libSQL access: users, email-OTP login, sessions, accounts, projects, memberships.
 import { createClient, type Client } from "@libsql/client"
-import { usableCheckpointFromJson } from "./author-checkpoint"
+import { usableCheckpointFromJson, isNewerUsableCheckpoint } from "./author-checkpoint"
 import { insightsFromTraits, type Trait, type TraitKind, type TraitStatus, type TraitEventRow } from "./provenance"
 import { encryptSecret, sha256hex } from "./crypto"
 import type { SanitizedAttr } from "./attr"
@@ -2210,12 +2210,71 @@ async function endRunningAuthorSessions(
   return swept
 }
 
+// R2: a prior session sits in `resuming` while a resume child owns it. If that child is gone, or ended in failure, nothing else would
+// ever move the prior again - its checkpoint would be unreachable. Runs after the child sweep, from BOTH the boot sweep and the
+// stale reaper, so it also sees the children those sweeps just ended. Idempotent: a crash part-way is simply redone next tick.
+//   - child row missing AND the claim older than the grace window   -> prior restored to 'stalled'
+//   - child 'failed' (retryable failure / process died)             -> prior restored to 'stalled', carrying the child's latest USABLE
+//                                                                      checkpoint if it is further along than the prior's (one transaction)
+//   - child 'failed' because the USER cancelled                     -> prior terminal 'failed' (never made resumable again; no transfer)
+//   - child running / crystallized / stalled / needs_auth           -> untouched (live, or the prior was consumed by progress)
+// Every UPDATE re-asserts `status='resuming' AND resumed_by=<that child>` (and the child's state), so it can never act on a claim a
+// newer attempt has since taken. Restoring never touches updated_at, so it cannot extend the seven-day retention window.
+//
+// BLUE/GREEN: an OLD (pre-R2) process claims with two statements (UPDATE prior, then INSERT child) and stamps updated_at=now when it
+// claims. A claim with no child row is therefore only provably orphaned once it is older than RESUME_CLAIM_GHOST_GRACE_MS; inside the
+// window the old process is (at most milliseconds) from inserting its child. New-code claims are one transaction and can never be
+// ghosts, so the window never delays recovery of anything R2 itself created. Needs clocks of the two slots to agree to within seconds.
+export const RESUME_CLAIM_GHOST_GRACE_MS = 5 * 60 * 1000
+export async function recoverOrphanedResumeClaims(c: Client, ghostGraceMs = RESUME_CLAIM_GHOST_GRACE_MS): Promise<number> {
+  const ghostCutoff = Date.now() - ghostGraceMs
+  const rows = await c.execute(`SELECT p.id AS pid, p.project_id AS proj, p.resumed_by AS rby, p.updated_at AS pupd, p.checkpoint_json AS pcp,
+                                       ch.id AS cid, ch.status AS cstatus, ch.stall_reason AS creason, ch.checkpoint_json AS ccp
+                                FROM author_sessions p LEFT JOIN author_sessions ch ON ch.id = p.resumed_by AND ch.project_id = p.project_id
+                                WHERE p.status='resuming'`)
+  let recovered = 0
+  for (const r of rows.rows as any[]) {
+    if (r.cid == null) {                                                         // ghost: claim without a child row
+      if (Number(r.pupd) >= ghostCutoff) continue                                // too fresh: an old process may be about to insert the child
+      const res = await c.execute({
+        sql: `UPDATE author_sessions SET status='stalled', resumed_by=NULL
+              WHERE id=? AND project_id=? AND status='resuming' AND resumed_by IS ? AND updated_at < ?
+                AND NOT EXISTS (SELECT 1 FROM author_sessions x WHERE x.id IS ?)`,
+        args: [r.pid, r.proj, r.rby ?? null, ghostCutoff, r.rby ?? null],
+      })
+      recovered += Number(res.rowsAffected ?? 0)
+      continue
+    }
+    if (String(r.cstatus) !== "failed") continue
+    const cancelled = String(r.creason) === "cancelled by user"
+    const stmts: Array<{ sql: string; args: any[] }> = []
+    if (!cancelled && r.ccp != null && isNewerUsableCheckpoint(usableCheckpointFromJson(r.ccp), usableCheckpointFromJson(r.pcp))) {
+      stmts.push({
+        sql: `UPDATE author_sessions SET checkpoint_json=?
+              WHERE id=? AND project_id=? AND status='resuming' AND resumed_by=?
+                AND EXISTS (SELECT 1 FROM author_sessions x WHERE x.id=? AND x.status='failed' AND x.checkpoint_json=?)`,
+        args: [String(r.ccp), r.pid, r.proj, r.rby, r.rby, String(r.ccp)],
+      })
+    }
+    stmts.push({
+      sql: `UPDATE author_sessions SET ${cancelled ? "status='failed', stall_reason='resume cancelled by user'" : "status='stalled', resumed_by=NULL"}
+            WHERE id=? AND project_id=? AND status='resuming' AND resumed_by=? AND EXISTS (SELECT 1 FROM author_sessions x WHERE x.id=? AND x.status='failed')`,
+      args: [r.pid, r.proj, r.rby, r.rby],
+    })
+    const rs = await c.batch(stmts, "write")
+    recovered += Number(rs[rs.length - 1].rowsAffected ?? 0)
+  }
+  if (recovered) console.log(`[author-sessions] recovered ${recovered} orphaned resume claim(s)`)
+  return recovered
+}
+
 export async function sweepOrphanedAuthorSessions(c: Client, freshMs = DEFAULT_STALE_MS): Promise<{ swept: number }> {
   const swept = await endRunningAuthorSessions(c, "(last_beat_at IS NULL OR last_beat_at < ?)", [Date.now() - freshMs], {
     resumable: "interrupted by a server restart - Resume to continue from the last checkpoint",
     failed: "interrupted by a server restart - please retry",
   })
   if (swept) console.log(`[author-sessions] swept ${swept} orphaned running session(s) → stalled/failed`)
+  await recoverOrphanedResumeClaims(c)
   return { swept }
 }
 
@@ -2242,7 +2301,8 @@ export async function touchWalkHeartbeat(runId: string, c?: Client): Promise<voi
 }
 
 export async function touchAuthorHeartbeat(sessionId: string, c?: Client): Promise<void> {
-  await (c ?? db!).execute({ sql: `UPDATE author_sessions SET last_beat_at=? WHERE id=?`, args: [Date.now(), sessionId] })
+  // R2 fence: only a still-running session takes heartbeats (a recovered / ended row is never touched by its stale worker).
+  await (c ?? db!).execute({ sql: `UPDATE author_sessions SET last_beat_at=? WHERE id=? AND status='running'`, args: [Date.now(), sessionId] })
 }
 
 // KLA-55: Stale-heartbeat reaper — sweeps rows whose heartbeat is older than thresholdMs.
@@ -2271,6 +2331,7 @@ export async function sweepStaleAuthorSessions(c: Client, thresholdMs = DEFAULT_
     failed: "stale heartbeat — process may have crashed, please retry",
   })
   if (swept) console.log(`[author-sessions] stale reaper swept ${swept} session(s) → stalled/failed`)
+  await recoverOrphanedResumeClaims(c)
   return { swept }
 }
 
