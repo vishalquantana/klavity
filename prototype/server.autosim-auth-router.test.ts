@@ -249,7 +249,7 @@ test("GET autosim-auth returns paused sessions count after needs_auth sessions i
     [
       sessId, PROJ, "Paused Walk", "walk authenticated pages", "https://app.example.com",
       "needs_auth", "[]", "login wall",
-      OWNER, JSON.stringify({ traj: [], history: [], stepIdx: 0, llmCalls: 0, costUsd: 0, lastUrl: "https://app.example.com" }),
+      OWNER, JSON.stringify({ traj: [{ action: "navigate", actionValue: "https://app.example.com", url: "https://app.example.com", domHash: "h" }], history: ["navigate"], stepIdx: 0, llmCalls: 0, costUsd: 0, lastUrl: "https://app.example.com" }),  // R1: a real (usable) checkpoint; an empty trajectory is not resumable
       NOW, NOW,
     ],
   )
