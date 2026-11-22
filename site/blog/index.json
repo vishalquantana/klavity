@@ -1118,5 +1118,12 @@
     "excerpt": "Google AI Studio app testing means verifying the deployed app, not the preview: exposed API keys, missing model failure paths, state a refresh erases.",
     "category": "Learn",
     "date": "2026-11-21"
+  },
+  {
+    "slug": "ai-localization-testing",
+    "title": "AI Localization Testing: Catch Multilingual UI Bugs",
+    "excerpt": "AI localization testing runs your flows in every language you ship, catching text overflow, broken RTL layouts and untranslated strings before clients do.",
+    "category": "Guides",
+    "date": "2026-11-22"
   }
 ]

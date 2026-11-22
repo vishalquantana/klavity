@@ -1,0 +1,180 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Localization Testing: Catch Multilingual UI Bugs · Klavity</title>
+<meta name="description" content="AI localization testing runs your flows in every language you ship, catching text overflow, broken RTL layouts and untranslated strings before clients do.">
+<link rel="canonical" href="https://klavity.in/blog/ai-localization-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI Localization Testing: Catch Multilingual UI Bugs"><meta property="og:description" content="AI localization testing runs your flows in every language you ship, catching text overflow, broken RTL layouts and untranslated strings before clients do.">
+<meta property="og:url" content="https://klavity.in/blog/ai-localization-testing"><meta property="og:image" content="https://klavity.in/blog/ai-localization-testing.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI Localization Testing: Catch Multilingual UI Bugs"><meta name="twitter:description" content="AI localization testing runs your flows in every language you ship, catching text overflow, broken RTL layouts and untranslated strings before clients do."><meta name="twitter:image" content="https://klavity.in/blog/ai-localization-testing.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI Localization Testing: Catch Multilingual UI Bugs","description":"AI localization testing runs your flows in every language you ship, catching text overflow, broken RTL layouts and untranslated strings before clients do.","datePublished":"2026-11-22","dateModified":"2026-11-22","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-localization-testing.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-localization-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI Localization Testing: Catch Multilingual UI Bugs","item":"https://klavity.in/blog/ai-localization-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-localization-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is AI localization testing?","acceptedAnswer":{"@type":"Answer","text":"It is functional and visual QA run once per locale instead of once per site. AI agents walk the same flows in every language and compare the rendered result to the source-language baseline, flagging layout drift, clipped text, broken forms and untranslated strings. It answers 'does the product still work with this translation in it?' rather than 'is this translation accurate?'"}},{"@type":"Question","name":"Does AI localization testing replace a native-speaker review?","acceptedAnswer":{"@type":"Answer","text":"No. Only a human who speaks the language can judge whether wording, tone and legal phrasing are right. AI testing covers the other half: layout breakage, untranslated leaks, format bugs and regressions, repeated on every deploy rather than once at launch."}},{"@type":"Question","name":"Which locales break layouts most often?","acceptedAnswer":{"@type":"Answer","text":"German, Finnish, Russian and Portuguese commonly produce longer strings than English, and the shorter the English source the larger the proportional growth, so one-word button labels are the highest-risk elements. Arabic, Hebrew, Farsi and Urdu break differently: they need the entire interface mirrored, not just the text direction switched."}},{"@type":"Question","name":"Where does untranslated text usually hide?","acceptedAnswer":{"@type":"Answer","text":"In error states, empty states and validation messages, because QA scripts rarely trigger them. You have to submit an invalid form, empty a cart or break a search deliberately to surface them, which is exactly the kind of repetitive per-locale work worth automating."}},{"@type":"Question","name":"What is pseudo-localization and do I still need it?","acceptedAnswer":{"@type":"Answer","text":"Pseudo-localization replaces source strings with accented, lengthened placeholders before any real translation exists. It is the cheapest way to find text expansion problems and hardcoded strings during development, and it complements AI localization testing rather than replacing it."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-11-22</div>
+    <h1>AI Localization Testing: Catch Multilingual UI Bugs</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI agent testing a site in three locales: source language passes, German text overflows a button, right-to-left layout mirrored">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="320" y="34" width="160" height="38" rx="11" fill="#6366f1"/>
+  <line x1="400" y1="72" x2="170" y2="112" stroke="#6366f1" stroke-width="1.6" opacity="0.55"/>
+  <line x1="400" y1="72" x2="400" y2="112" stroke="#6366f1" stroke-width="1.6" opacity="0.55"/>
+  <line x1="400" y1="72" x2="630" y2="112" stroke="#6366f1" stroke-width="1.6" opacity="0.55"/>
+  <rect x="60" y="118" width="220" height="252" rx="10" fill="#f5f0e8" fill-opacity="0.05" stroke="#f5f0e8" stroke-opacity="0.16"/>
+  <rect x="290" y="118" width="220" height="252" rx="10" fill="#f5f0e8" fill-opacity="0.05" stroke="#f5f0e8" stroke-opacity="0.16"/>
+  <rect x="520" y="118" width="220" height="252" rx="10" fill="#f5f0e8" fill-opacity="0.05" stroke="#f5f0e8" stroke-opacity="0.16"/>
+  <rect x="60" y="118" width="220" height="24" rx="10" fill="#6366f1" fill-opacity="0.20"/>
+  <rect x="290" y="118" width="220" height="24" rx="10" fill="#6366f1" fill-opacity="0.20"/>
+  <rect x="520" y="118" width="220" height="24" rx="10" fill="#6366f1" fill-opacity="0.20"/>
+  <circle cx="76" cy="130" r="4" fill="#f5f0e8" fill-opacity="0.38"/>
+  <circle cx="306" cy="130" r="4" fill="#f5f0e8" fill-opacity="0.38"/>
+  <circle cx="536" cy="130" r="4" fill="#f5f0e8" fill-opacity="0.38"/>
+  <rect x="80" y="168" width="150" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.18"/>
+  <rect x="80" y="188" width="112" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.12"/>
+  <rect x="80" y="216" width="78" height="30" rx="7" fill="#6366f1"/>
+  <path d="M196 234 l10 11 l18 -24" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="310" y="168" width="180" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.18"/>
+  <rect x="310" y="188" width="162" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.12"/>
+  <rect x="310" y="216" width="214" height="30" rx="7" fill="#6366f1"/>
+  <rect x="504" y="210" width="26" height="42" rx="5" fill="#f87171" fill-opacity="0.38"/>
+  <rect x="310" y="266" width="206" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.12"/>
+  <path d="M388 300 l24 24 M412 300 l-24 24" fill="none" stroke="#f87171" stroke-width="3.5" stroke-linecap="round"/>
+  <rect x="590" y="168" width="150" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.18"/>
+  <rect x="628" y="188" width="112" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.12"/>
+  <rect x="662" y="216" width="78" height="30" rx="7" fill="#6366f1"/>
+  <path d="M640 231 H600 M608 223 L600 231 L608 239" fill="none" stroke="#6366f1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M540 234 l10 11 l18 -24" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="60" y="392" width="220" height="8" rx="4" fill="#4ade80" fill-opacity="0.75"/>
+  <rect x="290" y="392" width="220" height="8" rx="4" fill="#f87171" fill-opacity="0.75"/>
+  <rect x="520" y="392" width="220" height="8" rx="4" fill="#4ade80" fill-opacity="0.75"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI localization testing drives your site in every language you ship and compares what renders against the source-language baseline, so translation bugs surface before a client's in-country reviewer finds them. It catches what language-agnostic QA cannot see: German text overflowing fixed-width buttons, right-to-left pages that flipped text but never mirrored the layout, and untranslated English leaking into error and empty states. If you ship in five languages, an English-only QA pass covers one fifth of what users see.</div>
+    <div class="prose"><p><strong>AI localization testing</strong> uses AI agents to drive your site in every language you ship — filling forms, walking key flows, and checking what actually renders against what the design intends — so translation bugs surface before a client's local team finds them. It catches the class of failure that language-agnostic QA never sees: German text overflowing a fixed-width button, an Arabic page that flipped text direction but never mirrored its layout, a date field that one locale reads as April 3rd and another as March 4th. If you ship a site in five languages, your English QA pass covers one fifth of what users will see.</p>
+
+<h2>What is AI localization testing?</h2>
+<p>It is functional and visual QA run once per locale instead of once per site. A traditional localization review asks a native speaker, "is this translation correct?" AI localization testing asks a different question: "does the product still work and still look right once this translation is in it?" Those are separate failure modes. A perfectly accurate German translation can still break your navigation bar.</p>
+<p>In practice an AI pass does three things a human reviewer does not do cheaply. It loads the same flow in every locale rather than spot-checking two. It compares rendered output to the source-language baseline to flag layout drift, clipping and overlap. And it re-runs on every deploy, so a copy change shipped on Friday does not silently break Finnish until someone complains.</p>
+
+<h2>Why do translated sites break in ways English QA never catches?</h2>
+<p>Because almost every layout is quietly tuned to the length and shape of its source language. Change the strings and the assumptions fail:</p>
+<ul>
+  <li><strong>Text expansion.</strong> Translations of the same string are rarely the same width. German, Finnish, Russian and Portuguese commonly run longer than English; the shorter the English source, the larger the proportional growth. A one-word button label such as "Save" or "Next" is the single highest-risk element on a page, because a fixed-width button designed around four characters has nowhere to put twelve.</li>
+  <li><strong>Right-to-left is a layout change, not a text change.</strong> Arabic, Hebrew, Farsi and Urdu need the whole interface mirrored: navigation order, sidebar position, icon direction, progress indicators, and the side that padding sits on. Sites that set <em>dir="rtl"</em> and stop there end up with reversed sentences inside a left-to-right shell, with back arrows pointing the wrong way.</li>
+  <li><strong>Hardcoded strings and string concatenation.</strong> Any copy assembled in code — "You have " + n + " items" — breaks in languages with different word order or plural rules, and produces "1 items" in English too. These slip through because they are invisible in the translation file; the translator never sees them.</li>
+  <li><strong>Font glyph coverage.</strong> A webfont subset to Latin characters has no glyphs for Cyrillic, Greek, Arabic or CJK text. The browser silently falls back to a system font with different metrics, so the locale renders in the wrong typeface at the wrong size, and line heights shift.</li>
+  <li><strong>Format and validation assumptions.</strong> Decimal commas, currency symbol position, 24-hour clocks, surname-first name order, postal codes that are not five digits, and phone numbers that are not ten. Validation regexes written against one country's formats reject valid input from every other.</li>
+</ul>
+
+<h2>What should an AI localization testing pass check?</h2>
+<p>Run these per locale, not once:</p>
+<table>
+  <thead><tr><th>Check</th><th>How it fails in production</th><th>Who finds it first today</th></tr></thead>
+  <tbody>
+    <tr><td>Text fits its container</td><td>Clipped button labels, wrapped nav items, overlapping cards</td><td>The client's in-country reviewer</td></tr>
+    <tr><td>RTL mirroring</td><td>Reversed text inside an unmirrored layout; arrows point backwards</td><td>A real user, after launch</td></tr>
+    <tr><td>Untranslated strings</td><td>English leaks into an otherwise localised page, often in errors and empty states</td><td>Nobody, for months</td></tr>
+    <tr><td>Forms and validation</td><td>Valid local addresses and phone numbers rejected at checkout</td><td>Support tickets, or silent drop-off</td></tr>
+    <tr><td>Dates, numbers, currency</td><td>Ambiguous or wrong values shown with the right-looking formatting</td><td>Finance, late</td></tr>
+    <tr><td>Font rendering</td><td>Fallback typeface, broken diacritics, inconsistent line height</td><td>The designer, on a screenshot</td></tr>
+    <tr><td>hreflang and canonicals</td><td>Google serves the wrong language version, or dedupes them together</td><td>An SEO audit, a quarter later</td></tr>
+  </tbody>
+</table>
+<p>Two of these deserve a note. <strong>Error states and empty states are where untranslated English hides</strong>, because QA scripts rarely trigger them — you have to submit a bad form, empty a cart, or break a search deliberately. And <strong>hreflang needs to be reciprocal</strong>: each language version should list every alternate including itself, and a language-selector page should carry <em>x-default</em>. One-directional hreflang tags are ignored.</p>
+
+<h2>How does AI localization testing compare to the alternatives?</h2>
+<table>
+  <thead><tr><th>Approach</th><th>Catches</th><th>Misses</th><th>Cost per deploy</th></tr></thead>
+  <tbody>
+    <tr><td>Native-speaker review</td><td>Wording, tone, cultural fit, legal phrasing</td><td>Layout breakage; regressions after the review</td><td>High — rarely repeated</td></tr>
+    <tr><td>Pseudo-localization</td><td>Text expansion and hardcoded strings, before any translation exists</td><td>Real-language rendering, RTL nuance, validation</td><td>Low, but build-time only</td></tr>
+    <tr><td>AI localization testing</td><td>Layout drift, untranslated leaks, broken flows, format bugs — every locale, every deploy</td><td>Whether the translation is <em>good</em>; that still needs a human</td><td>Low and repeatable</td></tr>
+  </tbody>
+</table>
+<p>The honest answer is that these are complementary. Pseudo-localization is the cheapest way to find expansion problems before translation starts. A native speaker is the only way to know whether your copy is right. AI testing is what keeps both from decaying on the next deploy — the same argument as <a href="/blog/continuous-qa">continuous QA</a> generally.</p>
+
+<h2>How do you add AI localization testing to a client project?</h2>
+<ol>
+  <li><strong>Enumerate locales as test fixtures.</strong> List every locale you ship, with its URL pattern or locale switch. If this list does not exist in writing, that is the first bug.</li>
+  <li><strong>Pseudo-localize in development.</strong> Replace source strings with accented, lengthened placeholders. Anything that renders as plain English is hardcoded; anything clipped will clip in German.</li>
+  <li><strong>Pick the flows that cost money.</strong> Signup, search, add-to-cart, checkout, contact form. Script them once, then run the same script across all locales rather than writing one suite per language.</li>
+  <li><strong>Baseline the source language, diff the rest.</strong> Visual comparison against the source-language render is what surfaces overflow and overlap without anyone reading the copy.</li>
+  <li><strong>Deliberately trigger the ugly states.</strong> Submit an invalid email, an empty search, an out-of-stock item. Collect the untranslated strings.</li>
+  <li><strong>Re-run on every deploy.</strong> Localization regressions arrive with ordinary copy edits, not with translation work.</li>
+</ol>
+
+<h2>Where does Klavity fit?</h2>
+<p><a href="/sims">Sims</a> runs AI personas through your flows, so you can define one persona per locale and have each walk signup or checkout in its own language, reporting what broke rather than what it expected. <a href="/autosim">AutoSim</a> turns those flows into self-healing end-to-end tests, which matters here because localized pages change selectors and copy constantly and brittle locale suites get deleted rather than fixed. And <a href="/snap">Snap</a> gives the client's in-country reviewer a right-click bug report that carries the URL, locale, viewport and a screenshot — instead of an email saying "the German page looks wrong."</p>
+<p>For the wider picture of how these pieces fit together, see the <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>. If your localized pages also need to hold up across browsers and screen sizes, <a href="/blog/ai-cross-browser-testing">AI cross-browser testing</a> and <a href="/blog/ai-responsive-design-testing">AI responsive design testing</a> cover the same approach applied to those axes — and a long German string inside a narrow mobile viewport is where the two problems meet.</p>
+
+<h2>Try it on your next multilingual build</h2>
+<p>Localization bugs are the clearest example of the pattern every agency knows: the person who finds the bug is the person who speaks the language, and that person is usually the client. Running every locale on every deploy is the only way to get there first.</p>
+<p><a href="/onboarding"><strong>Scan your next client site free</strong></a> — point Klavity at one localized flow and see what the non-English versions are hiding.</p>
+</div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Run QA once per locale, not once per site</li><li>Pseudo-localize in development to find hardcoded strings early</li><li>Mirror RTL layouts, don't just flip text direction</li><li>Trigger error and empty states to find untranslated copy</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is AI localization testing?</summary><p>It is functional and visual QA run once per locale instead of once per site. AI agents walk the same flows in every language and compare the rendered result to the source-language baseline, flagging layout drift, clipped text, broken forms and untranslated strings. It answers 'does the product still work with this translation in it?' rather than 'is this translation accurate?'</p></details><details><summary>Does AI localization testing replace a native-speaker review?</summary><p>No. Only a human who speaks the language can judge whether wording, tone and legal phrasing are right. AI testing covers the other half: layout breakage, untranslated leaks, format bugs and regressions, repeated on every deploy rather than once at launch.</p></details><details><summary>Which locales break layouts most often?</summary><p>German, Finnish, Russian and Portuguese commonly produce longer strings than English, and the shorter the English source the larger the proportional growth, so one-word button labels are the highest-risk elements. Arabic, Hebrew, Farsi and Urdu break differently: they need the entire interface mirrored, not just the text direction switched.</p></details><details><summary>Where does untranslated text usually hide?</summary><p>In error states, empty states and validation messages, because QA scripts rarely trigger them. You have to submit an invalid form, empty a cart or break a search deliberately to surface them, which is exactly the kind of repetitive per-locale work worth automating.</p></details><details><summary>What is pseudo-localization and do I still need it?</summary><p>Pseudo-localization replaces source strings with accented, lengthened placeholders before any real translation exists. It is the cheapest way to find text expansion problems and hardcoded strings during development, and it complements AI localization testing rather than replacing it.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
