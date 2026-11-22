@@ -145,6 +145,7 @@ import { listRecentWalks } from "./lib/trails"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { startCrashReaper } from "./lib/trails-reaper"
 import { runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuthorSessions, listNeedsAuthSessionsForAutoResume, AUTOSIM_DEADLINE_MS_DEFAULT } from "./lib/trails-author"
+import { isUsableCheckpoint, userFacingStallReason } from "./lib/author-checkpoint"
 import { WalkBusyError, cancelCurrentWalk, cancelCurrentAuthor, PdfBusyError, walkPoolStats } from "./lib/trails-browser"
 import { mintShareToken, resolveShareToken, renderWalkPdf, revokeShareToken, listShareTokens, extendShareToken, recordShareView, checkSharePasscode } from "./lib/trails-share"
 import { gatherWalkReport } from "./lib/trails-report"
@@ -11987,9 +11988,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         ? json({ ...s, active: true, limitMs: AUTOSIM_DEADLINE_MS_DEFAULT })
         : json({ active: null })
     }
-    // GET /api/trails/author/stalled — KLA-152: list recent stalled sessions with a checkpoint or partial draft.
+    // GET /api/trails/author/stalled — KLA-152: list recent resumable sessions. R1: a session is listed only if it has a
+    // USABLE persisted checkpoint (the same rule as the resume gate, sweeps and runAuthorNow's verdict); a partial draft
+    // alone is not enough because Resume needs the checkpoint. stallReason is rewritten for display: the persisted
+    // reason keeps the technical detail (raw browser/DB errors) for diagnostics and server logs, the Resume banner never sees it.
     if (req.method === "GET" && path === "/api/trails/author/stalled") {
-      const sessions = await listStalledAuthorSessions(projectId)
+      const sessions = (await listStalledAuthorSessions(projectId)).map((s) => ({ ...s, stallReason: userFacingStallReason(s.stallReason, s) }))
       return json({ sessions })
     }
     // POST /api/trails/author/:sessionId/cancel — KLA-151: abort the in-flight author drive at the next step boundary.
@@ -12012,7 +12016,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const prior = await getAuthorSession(projectId, priorId)
         if (!prior) return json({ error: "Session not found" }, 404)
         if (prior.status !== "stalled") return json({ error: `Session is ${prior.status}, not stalled` }, 409)
-        if (!prior.checkpoint) return json({ error: "Session has no checkpoint to resume from" }, 409)
+        if (!isUsableCheckpoint(prior.checkpoint)) return json({ error: "Session has no usable checkpoint to resume from" }, 409)
         try {
           const { sessionId } = await runAuthorNow(projectId, {
             name: prior.name, objective: prior.objective, baseUrl: prior.baseUrl,
@@ -12066,7 +12070,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
     if (req.method === "GET" && path.startsWith("/api/trails/author/")) {
       const s = await getAuthorSession(projectId, path.slice("/api/trails/author/".length))
-      return s ? json({ ...s, limitMs: AUTOSIM_DEADLINE_MS_DEFAULT }) : json({ error: "Not found" }, 404)
+      return s ? json({ ...s, stallReason: userFacingStallReason(s.stallReason, s), limitMs: AUTOSIM_DEADLINE_MS_DEFAULT }) : json({ error: "Not found" }, 404)
     }
 
     // GET /api/trails/:id/steps — return a draft trail's steps so the UI can show a review before Activate.

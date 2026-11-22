@@ -1447,3 +1447,446 @@ test("(N2) retryTransient retries a dropped connection but not a real error", as
   expect(isTransientNetworkError(new Error("ECONNRESET"))).toBe(true)
   expect(isTransientNetworkError(new Error("element not found"))).toBe(false)
 })
+
+// ── R1 (A2): exits that have progress must stall (resumable), not fail ───────────────────────────
+// The first snapshot (initial navigate) succeeds so traj has a step; every later snapshot throws `err`.
+async function r1Run(err: string, extra: Record<string, unknown> = {}) {
+  const page: any = makeStuckPage({ submitSelector: 'button[type="submit"]' })
+  const realSnap = page.krefSnapshot
+  let n = 0
+  page.krefSnapshot = async () => { n++; if (n === 1) return realSnap(); throw new Error(err) }
+  const { handle } = makeBrowserHandle(page)
+  const model: AuthorModel = async () => ({ action: { op: "click", selector: 'button[type="submit"]', value: null, url: null, checkpoint: null, rationale: "go", }, costUsd: 0 })
+  const checkpoints: any[] = []
+  const out = await authorTrail("proj_r1", { name: "R1", objective: "do it", baseUrl: "https://example.com/login" }, {
+    model, verifier: async () => ({ achieved: true, reason: "", costUsd: 0 }),
+    browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts,
+    verificationVision: false as const, headless: true,
+    onCheckpoint: async (c: any) => { checkpoints.push(c) },
+    ...extra,
+  } as any)
+  return { out, checkpoints }
+}
+
+test("R1: browser closed mid-run (progress exists) -> stalled + checkpoint, not failed", async () => {
+  const { out, checkpoints } = await r1Run("page.evaluate: Target page, context or browser has been closed")
+  expect(out.status).toBe("stalled")
+  expect(out.stallReason).toBeTruthy()
+  expect(checkpoints.length).toBeGreaterThan(0)
+}, 30000)
+
+test("R1: snapshot retries exhausted (progress exists) -> stalled + checkpoint, not failed", async () => {
+  const { out, checkpoints } = await r1Run("krefSnapshot timed out")
+  expect(out.status).toBe("stalled")
+  expect(checkpoints.length).toBeGreaterThan(0)
+}, 30000)
+
+test("R1: an ordinary non-recoverable error with progress still fails", async () => {
+  const { out } = await r1Run("some logic bug")
+  expect(out.status).toBe("failed")
+}, 30000)
+
+// ── R1 persisted-state tests (real DB via runAuthorNow; asserts the session row, not mocked callbacks) ─────────
+const R1P = await import("./trails-author")
+const R1B = await import("./trails-browser")
+
+async function r1RunPersisted(
+  proj: string,
+  pageMut: (page: any, ctx: { sessionId: () => string }) => void,
+  authorOverrides: Record<string, unknown> = {},
+  model?: AuthorModel,
+  resumeSessionId?: string,
+  deps: Record<string, unknown> = {},
+) {
+  R1B._resetWalkPoolForTest(1, 0)
+  R1B._resetAuthorAdmissionForTest()
+  const page: any = makeStuckPage({ submitSelector: 'button[type="submit"]' })
+  let sid = ""
+  pageMut(page, { sessionId: () => sid })
+  const handle: any = { newPage: async () => page, close: async () => { (page as any).__closed?.() }, kind: "local" }
+  const clickModel: AuthorModel = model ?? (async () => ({ action: { op: "click", selector: 'button[type="submit"]', value: null, url: null, checkpoint: null, rationale: "go" }, costUsd: 0 }))
+  const author = (p: string, r: any, o: any) => R1P.authorTrail(p, r, {
+    ...o, model: clickModel, verifier: async () => ({ achieved: true, reason: "", costUsd: 0 }),
+    browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts,
+    verificationVision: false as const, headless: true, ...authorOverrides,
+  })
+  const { sessionId } = await R1P.runAuthorNow(proj, { name: "R1", objective: "do the thing", baseUrl: "https://example.com/login" }, { author: author as any, model: clickModel, ...(resumeSessionId ? { resumeSessionId } : {}), ...deps })
+  sid = sessionId
+  for (let i = 0; i < 200; i++) {
+    const s = await R1P.getAuthorSession(proj, sessionId)
+    if (s && s.status !== "running") return s
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  throw new Error("session never left 'running'")
+}
+
+test("R1-P1 watchdog trip surfacing as a thrown error, with a checkpoint, persists a stalled+resumable session", async () => {
+  const priorCp = { traj: [{ action: "navigate", actionValue: "https://example.com/login", url: "https://example.com/login", domHash: "h0" }], history: ["navigate"], stepIdx: 0, llmCalls: 1, costUsd: 0.01, lastUrl: "https://example.com/login" }
+  let release: () => void = () => {}
+  const hung = new Promise<void>((_, rej) => { release = () => rej(new Error("Target closed")) })
+  hung.catch(() => {})
+  const s = await r1RunPersisted("proj_r1p1", (page) => {
+    page.goto = async () => hung              // resume re-navigation hangs: unbounded in the loop, freed only by closing the browser
+    page.__closed = () => release()
+  }, { checkpoint: priorCp, watchdog: { tickMs: 100, abortMs: 600 } })
+  expect(s.status).toBe("stalled")
+  expect(s.stallReason).toMatch(/step watchdog/)
+  expect(s.checkpoint).not.toBeNull()
+  expect(s.checkpoint!.traj.length).toBe(1)               // authored progress preserved in the persisted row
+  expect(s.checkpoint!.traj[0].action).toBe("navigate")
+  expect(s.checkpoint!.stepIdx).toBe(0)               // engine records log.length (navigate is not a logged step)
+  // resumable per the engine's own eligibility list
+  expect((await R1P.listStalledAuthorSessions("proj_r1p1")).map((x) => x.id)).toContain(s.id)
+}, 30_000)
+
+test("R1-P2 a user-aborted run whose browser dies is NOT turned into a resumable session", async () => {
+  const s = await r1RunPersisted("proj_r1p2", (page, ctx) => {
+    const realSnap = page.krefSnapshot
+    let n = 0
+    page.krefSnapshot = async () => {
+      n++
+      if (n === 1) return realSnap()
+      R1B.cancelCurrentAuthor(ctx.sessionId())   // user presses Cancel...
+      throw new Error("page.evaluate: Target page, context or browser has been closed") // ...and the browser dies with it
+    }
+  })
+  expect(s.status).toBe("failed")
+  expect(s.stallReason).toBe("cancelled by user")
+  expect((await R1P.listStalledAuthorSessions("proj_r1p2")).map((x) => x.id)).not.toContain(s.id)
+  await expect(R1P.runAuthorNow("proj_r1p2", { name: "again", objective: "do the thing", baseUrl: "https://example.com/login" }, { author: (async () => { throw new Error("must not run") }) as any, resumeSessionId: s.id }))
+    .rejects.toThrow(/not paused/)
+}, 30_000)
+
+test("R1-P3 browser dies before any progress (no checkpoint) keeps the terminal failure", async () => {
+  const s = await r1RunPersisted("proj_r1p3", (page) => {
+    page.goto = async () => { throw new Error("page.goto: Target page, context or browser has been closed") }
+  })
+  expect(s.status).toBe("failed")
+  expect(s.checkpoint).toBeNull()
+  expect((await R1P.listStalledAuthorSessions("proj_r1p3")).map((x) => x.id)).not.toContain(s.id)
+}, 30_000)
+
+test("R1-P4 browser dies mid-run persists status=stalled AND the checkpoint (written before the status transition)", async () => {
+  const s = await r1RunPersisted("proj_r1p4", (page) => {
+    const realSnap = page.krefSnapshot
+    let n = 0
+    page.krefSnapshot = async () => { n++; if (n === 1) return realSnap(); throw new Error("page.evaluate: Target page, context or browser has been closed") }
+  })
+  expect(s.status).toBe("stalled")
+  expect(s.stallReason).toMatch(/Resume/)
+  expect(s.checkpoint).not.toBeNull()
+  expect(s.checkpoint!.traj.length).toBeGreaterThanOrEqual(1)
+  expect(s.checkpoint!.lastUrl).toBeTruthy()
+  expect((await R1P.listStalledAuthorSessions("proj_r1p4")).map((x) => x.id)).toContain(s.id)
+}, 30_000)
+
+test("R1-P5 normal successful authoring is unaffected (crystallized, no stall reason)", async () => {
+  let calls = 0
+  const model: AuthorModel = async () => {
+    calls++
+    if (calls <= 1) return { action: { op: "type", selector: 'input[aria-label="Email"]', value: "test@test.com", url: null, checkpoint: null, rationale: "filling email" }, costUsd: 0 }
+    return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "objective achieved" }, costUsd: 0 }
+  }
+  const s = await r1RunPersisted("proj_r1p5", () => {}, {}, model)
+  expect(s.status).toBe("crystallized")
+  expect(s.stallReason).toBeNull()
+  expect(s.trailId).toBeTruthy()
+}, 30_000)
+
+// ── R1 final fixes: resume URL consistency ────────────────────────────────────────────────────────────────────
+const R1DB = await import("./db")
+const OTP_URL = "https://example.com/otp"
+const clickAction = { action: { op: "click" as const, selector: 'button[type="submit"]', value: null, url: null, checkpoint: null, rationale: "go" }, costUsd: 0 }
+
+// Two successful steps (the first navigates to /otp), then the browser dies during the third model turn.
+function diesAfterNavigation(): { mut: (page: any) => void; model: AuthorModel } {
+  let calls = 0
+  let dead = false
+  return {
+    mut: (page) => {
+      const realSnap = page.krefSnapshot
+      page.krefSnapshot = async () => { if (dead) throw new Error("page.evaluate: Target page, context or browser has been closed"); return realSnap() }
+    },
+    model: async () => { calls++; if (calls >= 2) dead = true; return clickAction },
+  }
+}
+
+test("R1-U1 successful navigation then browser closure: checkpoint holds the last observed URL, consistent with the trajectory", async () => {
+  const d = diesAfterNavigation()
+  const s = await r1RunPersisted("proj_r1u1", d.mut, {}, d.model)
+  expect(s.status).toBe("stalled")
+  expect(s.checkpoint).not.toBeNull()
+  expect(s.checkpoint!.lastUrl).toBe(OTP_URL)                       // NOT the base URL (/login)
+  const trajUrls = s.checkpoint!.traj.map((t: any) => t.url)
+  expect(trajUrls[trajUrls.length - 1]).toBe(OTP_URL)               // last recorded step happened on the page we resume to
+  expect(s.checkpoint!.traj.length).toBeGreaterThanOrEqual(2)
+}, 30_000)
+
+test("R1-U2 resume navigates to the last observed URL, not the original base URL", async () => {
+  const d = diesAfterNavigation()
+  const first = await r1RunPersisted("proj_r1u2", d.mut, {}, d.model)
+  expect(first.status).toBe("stalled")
+  const gotos: string[] = []
+  const second = await r1RunPersisted("proj_r1u2", (page) => {
+    const realGoto = page.goto
+    page.goto = async (u: string, ...r: any[]) => { gotos.push(u); return realGoto(u, ...r) }
+    page.krefSnapshot = async () => { throw new Error("page.evaluate: Target page, context or browser has been closed") }
+  }, {}, undefined, first.id)
+  expect(gotos[0]).toBe(OTP_URL)
+  expect(second.status).toBe("stalled")
+  expect(second.checkpoint!.lastUrl).toBe(OTP_URL)                  // the resumed run did not regress the position
+}, 30_000)
+
+test("R1-U3 a failed navigation (browser error page) does not overwrite the last valid URL", async () => {
+  let calls = 0
+  let dead = false
+  const s = await r1RunPersisted("proj_r1u3", (page) => {
+    const realSnap = page.krefSnapshot
+    const realClick = page.click
+    let clicks = 0
+    page.krefSnapshot = async () => { if (dead) throw new Error("page.evaluate: Target page, context or browser has been closed"); return realSnap() }
+    // 1st click: real navigation to /otp. 2nd click: the navigation FAILS and Chromium lands on its error page.
+    page.click = async (sel: string, ...r: any[]) => { clicks++; if (clicks === 2) { page.url = () => "chrome-error://chromewebdata/"; return }; return realClick(sel, ...r) }
+  }, {}, async () => { calls++; if (calls >= 3) dead = true; return clickAction })
+  expect(s.status).toBe("stalled")
+  expect(s.checkpoint!.lastUrl).toBe(OTP_URL)
+  expect(s.checkpoint!.lastUrl).not.toMatch(/chrome-error/)
+}, 30_000)
+
+test("R1-U4 older checkpoints resume unchanged: goto(cp.lastUrl), and the resumed run keeps that URL", async () => {
+  const older = { traj: [{ action: "navigate", actionValue: "https://example.com/login", url: "https://example.com/login", domHash: "h0" }, { action: "click", url: "https://example.com/older-page", domHash: "h1" }], history: ["navigate", "click"], stepIdx: 1, llmCalls: 1, costUsd: 0.01, lastUrl: "https://example.com/older-page" }
+  const gotos: string[] = []
+  const s = await r1RunPersisted("proj_r1u4", (page) => {
+    const realGoto = page.goto
+    page.goto = async (u: string, ...r: any[]) => { gotos.push(u); return realGoto(u, ...r) }
+    page.krefSnapshot = async () => { throw new Error("page.evaluate: Target page, context or browser has been closed") }
+  }, { checkpoint: older })
+  expect(gotos[0]).toBe("https://example.com/older-page")
+  expect(s.status).toBe("stalled")
+  expect(s.checkpoint!.lastUrl).toBe("https://example.com/older-page")
+  expect(s.checkpoint!.traj.length).toBe(2)
+}, 30_000)
+
+test("R1-U5 an unavailable page after resume (about:blank) never replaces a valid checkpoint URL with blank or the base URL", async () => {
+  const older = { traj: [{ action: "navigate", actionValue: "https://example.com/login", url: "https://example.com/login", domHash: "h0" }], history: ["navigate"], stepIdx: 0, llmCalls: 1, costUsd: 0.01, lastUrl: "https://example.com/deep/page" }
+  const s = await r1RunPersisted("proj_r1u5", (page) => {
+    page.url = () => "about:blank"
+    page.krefSnapshot = async () => { throw new Error("page.evaluate: Target page, context or browser has been closed") }
+  }, { checkpoint: older })
+  expect(s.status).toBe("stalled")
+  expect(s.checkpoint!.lastUrl).toBe("https://example.com/deep/page")
+}, 30_000)
+
+// ── R1 final fixes: cancellation is always terminal ───────────────────────────────────────────────────────────
+async function activeSid(proj: string): Promise<string> {
+  const a = await R1P.getActiveAuthorSession(proj)
+  if (!a) throw new Error("no running session")
+  return a.id
+}
+async function expectTerminalCancel(proj: string, s: any) {
+  expect(s.status).toBe("failed")
+  expect(s.stallReason).toBe("cancelled by user")
+  expect((await R1P.listStalledAuthorSessions(proj)).map((x) => x.id)).not.toContain(s.id)
+  await expect(R1P.runAuthorNow(proj, { name: "again", objective: "do the thing", baseUrl: "https://example.com/login" }, { author: (async () => { throw new Error("must not run") }) as any, resumeSessionId: s.id }))
+    .rejects.toThrow(/not paused/)
+}
+
+test("R1-C1 cancel before an action (noticed at the loop boundary) is terminal, not resumable", async () => {
+  const proj = "proj_r1c1"
+  const s = await r1RunPersisted(proj, () => {}, {}, async () => { R1B.cancelCurrentAuthor(await activeSid(proj)); return clickAction })
+  await expectTerminalCancel(proj, s)
+}, 30_000)
+
+test("R1-C2 cancel during a browser action is terminal, not resumable", async () => {
+  const proj = "proj_r1c2"
+  const s = await r1RunPersisted(proj, (page) => {
+    const realClick = page.click
+    page.click = async (sel: string, ...r: any[]) => { R1B.cancelCurrentAuthor(await activeSid(proj)); return realClick(sel, ...r) }
+  })
+  await expectTerminalCancel(proj, s)
+}, 30_000)
+
+test("R1-C3 cancel while the browser is closing/dead is terminal (not rewritten as a recoverable browser failure)", async () => {
+  const proj = "proj_r1c3"
+  const s = await r1RunPersisted(proj, (page) => {
+    const realSnap = page.krefSnapshot
+    let n = 0
+    page.krefSnapshot = async () => { n++; if (n === 1) return realSnap(); R1B.cancelCurrentAuthor(await activeSid(proj)); throw new Error("page.evaluate: Target page, context or browser has been closed") }
+  })
+  await expectTerminalCancel(proj, s)
+}, 30_000)
+
+test("R1-C4 cancel during a resumed run is terminal; the resumed child cannot itself be resumed", async () => {
+  const proj = "proj_r1c4"
+  const d = diesAfterNavigation()
+  const first = await r1RunPersisted(proj, d.mut, {}, d.model)
+  expect(first.status).toBe("stalled")
+  const child = await r1RunPersisted(proj, (page) => {
+    const realGoto = page.goto
+    page.goto = async (u: string, ...r: any[]) => { R1B.cancelCurrentAuthor(await activeSid(proj)); return realGoto(u, ...r) }
+  }, {}, undefined, first.id)
+  expect(child.id).not.toBe(first.id)
+  await expectTerminalCancel(proj, child)
+}, 30_000)
+
+test("R1-C5 non-user recoverable failures are still stalled (browser closure, watchdog) - cancellation did not swallow them", async () => {
+  const proj = "proj_r1c5"
+  const s = await r1RunPersisted(proj, (page) => {
+    const realSnap = page.krefSnapshot
+    let n = 0
+    page.krefSnapshot = async () => { n++; if (n === 1) return realSnap(); throw new Error("page.evaluate: Target page, context or browser has been closed") }
+  })
+  expect(s.status).toBe("stalled")
+  expect(s.stallReason).not.toBe("cancelled by user")
+  expect((await R1P.listStalledAuthorSessions(proj)).map((x) => x.id)).toContain(s.id)
+}, 30_000)
+
+// ── R1 final fixes: checkpoint persistence failures are observable ────────────────────────────────────────────
+async function withCheckpointWriteFailure<T>(proj: string, whenSql: string, fn: () => Promise<T>): Promise<T> {
+  const c = R1DB.db!
+  await c.execute(`CREATE TRIGGER r1_cp_fail BEFORE UPDATE ON author_sessions WHEN NEW.project_id='${proj}' AND NEW.checkpoint_json IS NOT OLD.checkpoint_json AND ${whenSql} BEGIN SELECT RAISE(ABORT, 'disk full'); END`)
+  try { return await fn() } finally { await c.execute("DROP TRIGGER IF EXISTS r1_cp_fail") }
+}
+
+test("R1-K1 checkpoint cannot be persisted: not reported as resumable; original reason kept; save failure recorded separately", async () => {
+  const proj = "proj_r1k1"
+  const s = await withCheckpointWriteFailure(proj, "1=1", () => r1RunPersisted(proj, (page) => {
+    const realSnap = page.krefSnapshot
+    let n = 0
+    page.krefSnapshot = async () => { n++; if (n === 1) return realSnap(); throw new Error("page.evaluate: Target page, context or browser has been closed") }
+  }))
+  expect(s.checkpoint).toBeNull()                                   // nothing was persisted
+  expect(s.status).toBe("failed")                                   // so the session must not claim to be resumable
+  expect(s.stallReason).toMatch(/Target page, context or browser has been closed/) // original failure preserved
+  expect(s.stallReason).toMatch(/checkpoint not saved \(.*disk full.*\); Resume is unavailable/) // persistence failure recorded
+  expect((await R1P.listStalledAuthorSessions(proj)).map((x) => x.id)).not.toContain(s.id)
+}, 30_000)
+
+test("R1-K2 only the LATEST checkpoint fails (an earlier one exists): stays stalled but says Resume continues from an earlier step", async () => {
+  const proj = "proj_r1k2"
+  const d = diesAfterNavigation()
+  // step-0 checkpoint (llmCalls=1) persists; the stall-time checkpoint (llmCalls>=2) fails.
+  const s = await withCheckpointWriteFailure(proj, "json_extract(NEW.checkpoint_json,'$.llmCalls') >= 2", () => r1RunPersisted(proj, d.mut, {}, d.model))
+  expect(s.checkpoint).not.toBeNull()
+  expect(s.status).toBe("stalled")
+  expect(s.stallReason).toMatch(/Target page, context or browser has been closed/)
+  expect(s.stallReason).toMatch(/latest checkpoint not saved \(.*disk full.*\); Resume continues from an earlier step/)
+}, 30_000)
+
+// ── R1 checkpoint timeout / missing-checkpoint handling (real DB; controlled write path) ──────────────────────
+const r1Sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+const r1RealWrite = (p: string, s: string, cp: any) => R1P.updateAuthorSession(p, s, { checkpoint: cp })
+async function r1Wait(proj: string, sessionId: string) {
+  for (let i = 0; i < 200; i++) {
+    const s = await R1P.getAuthorSession(proj, sessionId)
+    if (s && s.status !== "running") return s
+    await r1Sleep(100)
+  }
+  throw new Error("session never left 'running'")
+}
+const listedIds = async (proj: string) => (await R1P.listStalledAuthorSessions(proj)).map((x) => x.id)
+
+test("R1-T1 checkpoint save TIMES OUT but the write lands: stays stalled, no false failure note, row holds the latest checkpoint", async () => {
+  const proj = "proj_r1t1"
+  const d = diesAfterNavigation()
+  const s = await r1RunPersisted(proj, d.mut, { saveTimeoutMs: 100 }, d.model, undefined, {
+    persistCheckpoint: async (p: string, sid: string, cp: any) => { await r1Sleep(400); await r1RealWrite(p, sid, cp) },
+    checkpointGraceMs: 3000,
+  })
+  expect(s.status).toBe("stalled")
+  expect(s.stallReason).toMatch(/browser\/page problem/)            // original reason preserved
+  expect(s.stallReason).not.toMatch(/not saved/)                    // a slow write is not reported as a failure
+  expect(s.checkpoint!.lastUrl).toBe(OTP_URL)
+  expect(s.checkpoint!.llmCalls).toBeGreaterThanOrEqual(2)          // the LATEST (stall-time) checkpoint is the persisted one
+  expect(await listedIds(proj)).toContain(s.id)
+}, 30_000)
+
+test("R1-T2 checkpoint save times out and the write never persists: failed, Resume unavailable, original reason kept", async () => {
+  const proj = "proj_r1t2"
+  const d = diesAfterNavigation()
+  const s = await r1RunPersisted(proj, d.mut, { saveTimeoutMs: 100 }, d.model, undefined, {
+    persistCheckpoint: () => new Promise<void>(() => {}),           // hangs forever
+    checkpointGraceMs: 300,
+  })
+  expect(s.checkpoint).toBeNull()
+  expect(s.status).toBe("failed")
+  expect(s.stallReason).toMatch(/browser\/page problem/)
+  expect(s.stallReason).toMatch(/checkpoint not saved \(save did not complete in time\); Resume is unavailable/)
+  expect(await listedIds(proj)).not.toContain(s.id)
+}, 30_000)
+
+test("R1-T3 latest save times out but an OLDER usable checkpoint exists: stalled, and says Resume continues from an earlier step", async () => {
+  const proj = "proj_r1t3"
+  const d = diesAfterNavigation()
+  const s = await r1RunPersisted(proj, d.mut, { saveTimeoutMs: 100 }, d.model, undefined, {
+    persistCheckpoint: (p: string, sid: string, cp: any) => cp.llmCalls >= 2 ? new Promise<void>(() => {}) : r1RealWrite(p, sid, cp),
+    checkpointGraceMs: 300,
+  })
+  expect(s.status).toBe("stalled")
+  expect(s.checkpoint).not.toBeNull()
+  expect(s.checkpoint!.llmCalls).toBe(1)                            // the older checkpoint
+  expect(s.stallReason).toMatch(/browser\/page problem/)
+  expect(s.stallReason).toMatch(/latest checkpoint not saved \(save did not complete in time\); Resume continues from an earlier step/)
+  expect(await listedIds(proj)).toContain(s.id)
+}, 30_000)
+
+test("R1-T3b the older checkpoint is NOT usable (empty trajectory): failed rather than stalled", async () => {
+  const proj = "proj_r1t3b"
+  const d = diesAfterNavigation()
+  const s = await r1RunPersisted(proj, d.mut, { saveTimeoutMs: 100 }, d.model, undefined, {
+    persistCheckpoint: (p: string, sid: string, cp: any) => cp.llmCalls >= 2 ? new Promise<void>(() => {}) : r1RealWrite(p, sid, { ...cp, traj: [] }),
+    checkpointGraceMs: 300,
+  })
+  expect(s.status).toBe("failed")
+  expect(s.stallReason).toMatch(/Resume is unavailable/)
+  expect(await listedIds(proj)).not.toContain(s.id)
+}, 30_000)
+
+test("R1-T4 stalled / needs_auth outcome with NO checkpoint callback is made non-resumable (never stalled with a null checkpoint)", async () => {
+  for (const st of ["stalled", "needs_auth"] as const) {
+    R1B._resetWalkPoolForTest(1, 0); R1B._resetAuthorAdmissionForTest()
+    const proj = `proj_r1t4_${st}`
+    const noCheckpointAuthor = (async () => ({ status: st, trailId: null, verificationRunId: null, verificationVerdict: null, steps: [], stallReason: "model gave up", llmCalls: 0, costUsd: 0, objectiveVerified: false })) as any
+    const { sessionId } = await R1P.runAuthorNow(proj, { name: "R1", objective: "do the thing", baseUrl: "https://example.com/login" }, { author: noCheckpointAuthor })
+    const s = await r1Wait(proj, sessionId)
+    expect(s.status).toBe("failed")
+    expect(s.checkpoint).toBeNull()
+    expect(s.stallReason).toMatch(/^model gave up/)
+    expect(s.stallReason).toMatch(/no checkpoint was written/)
+    expect(await listedIds(proj)).not.toContain(s.id)
+  }
+}, 30_000)
+
+test("R1-T5 a checkpoint write error followed by a successful later write: stalled, latest persisted, no failure note", async () => {
+  const proj = "proj_r1t5"
+  const d = diesAfterNavigation()
+  let n = 0
+  const s = await r1RunPersisted(proj, d.mut, {}, d.model, undefined, {
+    persistCheckpoint: async (p: string, sid: string, cp: any) => { n++; if (n === 1) throw new Error("transient db error"); await r1RealWrite(p, sid, cp) },
+  })
+  expect(n).toBeGreaterThanOrEqual(2)
+  expect(s.status).toBe("stalled")
+  expect(s.stallReason).not.toMatch(/not saved/)
+  expect(s.checkpoint!.lastUrl).toBe(OTP_URL)
+  expect(await listedIds(proj)).toContain(s.id)
+}, 30_000)
+
+test("R1-T6 ordinary successful recovery is unchanged (stalled, checkpoint persisted, no persistence note)", async () => {
+  const proj = "proj_r1t6"
+  const d = diesAfterNavigation()
+  const s = await r1RunPersisted(proj, d.mut, {}, d.model)
+  expect(s.status).toBe("stalled")
+  expect(s.stallReason).toMatch(/Resume to continue from the last checkpoint/)
+  expect(s.stallReason).not.toMatch(/not saved/)
+  expect(s.checkpoint!.lastUrl).toBe(OTP_URL)
+  expect(await listedIds(proj)).toContain(s.id)
+}, 30_000)
+
+test("R1-T7 resumable list agrees with status+checkpoint: a stalled session with only a partial-draft trail is NOT listed", async () => {
+  const proj = "proj_r1t7"
+  const id = await R1P.createAuthorSession(proj, { name: "p", objective: "o", baseUrl: "https://example.com/x" })
+  await R1P.updateAuthorSession(proj, id, { status: "stalled", stallReason: "stopped early", trailId: "trail_partial" })
+  expect(await listedIds(proj)).not.toContain(id)
+  await expect(R1P.runAuthorNow(proj, { name: "again", objective: "o", baseUrl: "https://example.com/x" }, { author: (async () => { throw new Error("must not run") }) as any, resumeSessionId: id }))
+    .rejects.toThrow(/no usable checkpoint/)                                // the list and the resume gate now agree
+}, 30_000)

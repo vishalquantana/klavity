@@ -1,5 +1,6 @@
 // Turso / libSQL access: users, email-OTP login, sessions, accounts, projects, memberships.
 import { createClient, type Client } from "@libsql/client"
+import { usableCheckpointFromJson } from "./author-checkpoint"
 import { insightsFromTraits, type Trait, type TraitKind, type TraitStatus, type TraitEventRow } from "./provenance"
 import { encryptSecret, sha256hex } from "./crypto"
 import type { SanitizedAttr } from "./attr"
@@ -2186,17 +2187,35 @@ export async function backfillTrailStatus(c: Client): Promise<{ activated: numbe
 
 // Authoring runs in-process holding the walk slot; a service restart (the merge-train restarts on
 // every deploy) kills it mid-flight and leaves its author_sessions row 'running' forever — the UI
-// polls a zombie. At boot no authoring can legitimately be in flight (single-process design), so
-// mark every 'running' session failed with an honest reason. Observed live 2026-07-04.
-export async function sweepOrphanedAuthorSessions(c: Client): Promise<{ swept: number }> {
-  const r = await c.execute({
-    sql: `UPDATE author_sessions SET status='failed',
-            stall_reason='interrupted by a server restart - please retry', updated_at=?
-          WHERE status='running'`,
-    args: [Date.now()],
+// polls a zombie. Boot sweep: every 'running' session that is not demonstrably alive is ended. Observed live 2026-07-04.
+// R1 (A4): blue/green deploys run two processes against one DB, so a row with a FRESH heartbeat may belong to the other
+// slot - leave it to the stale reaper. Rows with no heartbeat (pre-KLA-55) are swept.
+// R1 (A1): a row with a USABLE checkpoint (the single shared rule in lib/author-checkpoint.ts) is resumable -> 'stalled';
+// anything else has nothing to resume -> 'failed'.
+async function endRunningAuthorSessions(
+  c: Client, beatSql: string, beatArgs: any[],
+  reasons: { resumable: string; failed: string },
+): Promise<number> {
+  const rows = await c.execute({ sql: `SELECT id, checkpoint_json FROM author_sessions WHERE status='running' AND ${beatSql}`, args: beatArgs })
+  let swept = 0
+  for (const row of rows.rows as any[]) {
+    const resumable = usableCheckpointFromJson(row.checkpoint_json) !== null
+    // Re-assert the 'running' + heartbeat predicate so a session that beats between the SELECT and this UPDATE is left alone.
+    const r = await c.execute({
+      sql: `UPDATE author_sessions SET status=?, stall_reason=?, updated_at=? WHERE id=? AND status='running' AND ${beatSql}`,
+      args: [resumable ? "stalled" : "failed", resumable ? reasons.resumable : reasons.failed, Date.now(), row.id, ...beatArgs],
+    })
+    swept += Number(r.rowsAffected ?? 0)
+  }
+  return swept
+}
+
+export async function sweepOrphanedAuthorSessions(c: Client, freshMs = DEFAULT_STALE_MS): Promise<{ swept: number }> {
+  const swept = await endRunningAuthorSessions(c, "(last_beat_at IS NULL OR last_beat_at < ?)", [Date.now() - freshMs], {
+    resumable: "interrupted by a server restart - Resume to continue from the last checkpoint",
+    failed: "interrupted by a server restart - please retry",
   })
-  const swept = Number(r.rowsAffected ?? 0)
-  if (swept) console.log(`[author-sessions] swept ${swept} orphaned running session(s) → failed`)
+  if (swept) console.log(`[author-sessions] swept ${swept} orphaned running session(s) → stalled/failed`)
   return { swept }
 }
 
@@ -2246,16 +2265,12 @@ export async function sweepStaleWalks(c: Client, thresholdMs = DEFAULT_STALE_MS)
 }
 
 export async function sweepStaleAuthorSessions(c: Client, thresholdMs = DEFAULT_STALE_MS): Promise<{ swept: number }> {
-  const cutoff = Date.now() - thresholdMs
-  const now = Date.now()
-  const r = await c.execute({
-    sql: `UPDATE author_sessions SET status='failed', updated_at=?,
-            stall_reason='stale heartbeat — process may have crashed, please retry'
-          WHERE status='running' AND last_beat_at IS NOT NULL AND last_beat_at < ?`,
-    args: [now, cutoff],
+  // R1 (A1): usable checkpoint (shared rule) -> 'stalled' (resumable); otherwise 'failed'.
+  const swept = await endRunningAuthorSessions(c, "(last_beat_at IS NOT NULL AND last_beat_at < ?)", [Date.now() - thresholdMs], {
+    resumable: "stale heartbeat - process may have crashed. Resume to continue from the last checkpoint",
+    failed: "stale heartbeat — process may have crashed, please retry",
   })
-  const swept = Number(r.rowsAffected ?? 0)
-  if (swept) console.log(`[author-sessions] stale reaper swept ${swept} session(s) → failed`)
+  if (swept) console.log(`[author-sessions] stale reaper swept ${swept} session(s) → stalled/failed`)
   return { swept }
 }
 

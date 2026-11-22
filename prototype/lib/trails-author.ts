@@ -27,6 +27,8 @@ import { makeFileResolver, type FileResolver, type AttachmentManifest } from "./
 import { normalizeTrailViewport } from "./trails-viewport"
 import { configuredVisionResolver, type VisionResolver } from "./trails-vision"
 import { notifyAutosimNeedsAuth } from "./autosim-auth-alert"
+import { isUsableCheckpoint, isUsableCheckpointUrl } from "./author-checkpoint"
+export { isUsableCheckpoint } from "./author-checkpoint"
 import {
   loadAutosimAuthConfig,
   autosimAuthCredFields,
@@ -103,6 +105,11 @@ export function resumeLostSession(expectedUrl: string, actualUrl: string): boole
     if (a.origin === e.origin && a.pathname === e.pathname) return false
     return AUTH.test(a.pathname) && !AUTH.test(e.pathname)
   } catch { return false }
+}
+
+/** R1: the browser/page/context was closed or crashed under a call - recoverable by Resume (fresh browser). */
+export function isBrowserGoneError(msg: string): boolean {
+  return /target (page, context or browser|closed)|browser has been closed|page has been closed|context (was )?closed|browser (has )?disconnected|session closed|page crashed/i.test(msg)
 }
 
 /**
@@ -379,6 +386,8 @@ export async function authorTrail(
     onHeartbeat?: () => void | Promise<void>
     /** Step-watchdog tuning (tests only). tickMs: check interval; abortMs: max silence between progress marks before the run is failed. */
     watchdog?: { tickMs?: number; abortMs?: number }
+    /** R1 (tests only): override the 15s bound on persistence hooks (onStep / onCheckpoint). */
+    saveTimeoutMs?: number
     /**
      * KLA-57: prior checkpoint to resume from. Browser navigates to checkpoint.lastUrl and the
      * drive loop continues from checkpoint.stepIdx with accumulated traj/history/cost.
@@ -539,10 +548,18 @@ export async function authorTrail(
   const MAX_PROACTIVE_VERIFY_FAILS = 3
   const startIdx = cp ? cp.stepIdx : 0
 
-  const snapshotCheckpoint = (url: string): AuthorCheckpoint => ({
-    traj: [...traj], history: [...history], stepIdx: log.length,
-    llmCalls, costUsd, lastUrl: url, autoAdvanceClicks, unconfirmedCommitPending, commitNudgeCount, proactiveVerifyFails,
-  })
+  // R1: the last VALID page URL seen during the drive. A checkpoint's lastUrl is where Resume navigates, so it must be a
+  // real page the drive was on (consistent with traj), never an empty / about:blank / browser error-page URL and never
+  // the base URL by default. Seeded from the checkpoint we resume from; updated at the loop top and at each checkpoint.
+  let lastObservedUrl: string | null = cp && isUsableCheckpointUrl(cp.lastUrl) ? cp.lastUrl : null
+  const observeUrl = (u: unknown) => { if (isUsableCheckpointUrl(u)) lastObservedUrl = u }
+  const snapshotCheckpoint = (url?: string | null): AuthorCheckpoint => {
+    observeUrl(url)
+    return {
+      traj: [...traj], history: [...history], stepIdx: log.length,
+      llmCalls, costUsd, lastUrl: lastObservedUrl ?? req.baseUrl, autoAdvanceClicks, unconfirmedCommitPending, commitNudgeCount, proactiveVerifyFails,
+    }
+  }
   let objectiveVerified = false
   // Overall drive deadline. Without it a single hung page op (a crashed Chromium can make
   // page.content()/screenshot never settle) held the shared walk slot INDEFINITELY - observed
@@ -600,7 +617,7 @@ export async function authorTrail(
   }
   // Persistence hooks (DB writes) used to be awaited with no limit. A timeout is logged and skipped (best effort, the next
   // step saves again); a real error still propagates exactly as before.
-  const SAVE_TIMEOUT_MS = 15_000
+  const SAVE_TIMEOUT_MS = opts.saveTimeoutMs ?? 15_000
   const saveStep = async (l: any) => {
     try { await bounded(Promise.resolve(opts.onStep?.(l)), SAVE_TIMEOUT_MS, "save step") }
     catch (e) {
@@ -677,12 +694,13 @@ export async function authorTrail(
       void closeHandle() // unblocks any hung browser call; the loop then stalls with this reason at its next check
     }
   }, WD_TICK_MS) // cleared by closeHandle(), which every exit path of this function reaches
-  const stall = async (why: string, currentUrl?: string, finalStatus: "stalled" | "needs_auth" = "stalled"): Promise<AuthorOutcome> => {
+  const stall = async (why: string, currentUrl?: string, finalStatus: "stalled" | "needs_auth" | "failed" = "stalled"): Promise<AuthorOutcome> => {
     // A user cancel can surface as any step error (bounded() rejects everywhere); report it as what it is.
-    if (opts.abortSignal?.aborted) { why = "cancelled by user"; finalStatus = "stalled" }
+    // R1: a user cancellation is terminal - it must never leave a resumable (stalled / needs_auth) session.
+    if (opts.abortSignal?.aborted) { why = "cancelled by user"; finalStatus = "failed" }
     // KLA-57: persist checkpoint before closing so the session is resumable.
     if (opts.onCheckpoint) {
-      try { await saveCheckpoint(snapshotCheckpoint(currentUrl ?? req.baseUrl)) } catch {}
+      try { await saveCheckpoint(snapshotCheckpoint(currentUrl)) } catch {}
     }
     // KLA-57: crystallize whatever we have when we stall with > 1 step (skip pure-navigate-only runs).
     // This gives the user a reviewable partial draft trail even when the drive didn't finish.
@@ -731,6 +749,7 @@ export async function authorTrail(
       // with a navigate action pointing at the baseUrl (gives the runner a concrete starting point).
       const initSnap = await snapshotPatiently(page, "snapshot capture")
       traj.push({ action: "navigate", actionValue: req.baseUrl, url: page.url(), domHash: sha256hex(initSnap) })
+      observeUrl(page.url())
     }
     let stepLimit = AUTHOR_MAX_STEPS
     // KLA-786 (round-10b, opencode C3): one reserved max-step slot per arming (the two arming sites — top
@@ -740,8 +759,9 @@ export async function authorTrail(
     for (let idx = startIdx; idx < stepLimit; idx++) {
       // KLA-55: heartbeat - signals the crash-reaper that this session is still alive. Best-effort.
       opts.onHeartbeat?.()
+      try { observeUrl(page.url()) } catch { /* page gone: keep the last valid URL */ }
       wd.idx = idx; progress("step start", false)
-      if (wd.tripped) { let u = req.baseUrl; try { u = page.url() } catch {} ; return await stall(wd.tripped, u) }
+      if (wd.tripped) { let u: string | undefined; try { u = page.url() } catch {} ; return await stall(wd.tripped, u) }
       if (costUsd >= AUTHOR_MAX_COST_USD) return await stall(`authoring budget cap $${AUTHOR_MAX_COST_USD} reached after ${llmCalls} model calls`, page.url())
       if (opts.abortSignal?.aborted) return await stall("cancelled by user", page.url())
       if (Date.now() > deadlineAt) {
@@ -1559,7 +1579,7 @@ export async function authorTrail(
     }
     // Cancelled during the verification replay: keep the recorded draft (reviewable), report the cancel.
     if (opts.abortSignal?.aborted) {
-      return { status: "stalled", trailId, verificationRunId: v.runId, verificationVerdict: null, steps: log, stallReason: "cancelled by user", llmCalls, costUsd, objectiveVerified }
+      return { status: "failed", trailId, verificationRunId: v.runId, verificationVerdict: null, steps: log, stallReason: "cancelled by user", llmCalls, costUsd, objectiveVerified }
     }
     // I1: skip means "inconclusive / no steps ran" - map to amber, not red, so an empty
     // Verification Walk never looks like a regression to the reviewer.
@@ -1578,8 +1598,18 @@ export async function authorTrail(
     if (isTransientNetworkError(e) && traj.length > 0 && !opts.abortSignal?.aborted) {
       return await stall(`network error, run paused: ${String(e?.message || e).slice(0, 200)}. Resume to continue from the last checkpoint.`, undefined)
     }
+    // R1 (A2): other exits that leave a resumable checkpoint (watchdog trip that surfaced as a thrown error because
+    // closeHandle() killed the browser under a pending call, browser/page closed, snapshot retries exhausted) are
+    // stalls, not failures - the authored steps must survive and the user can Resume.
+    if (traj.length > 0 && !opts.abortSignal?.aborted) {
+      const emsg = String(e?.message || e)
+      if (wd.tripped) return await stall(wd.tripped, undefined)
+      if (isBrowserGoneError(emsg) || isTransientSnapshotError(emsg)) {
+        return await stall(`browser/page problem, run paused: ${emsg.slice(0, 200).replace(/\s+/g, " ")}. Resume to continue from the last checkpoint.`, undefined)
+      }
+    }
     await closeHandle()
-    return { status: "failed", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: String(e?.message || e), llmCalls, costUsd, objectiveVerified }
+    return { status: "failed", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: opts.abortSignal?.aborted ? "cancelled by user" : String(e?.message || e), llmCalls, costUsd, objectiveVerified }
   }
 }
 
@@ -1670,7 +1700,8 @@ export async function getAuthorSession(projectId: string, id: string): Promise<A
 }
 
 /**
- * KLA-152: List recent resumable sessions that have a checkpoint or a partial draft trail.
+ * KLA-152: List recent resumable sessions. R1: a session is only listed when it has a persisted checkpoint - the same
+ * precondition resume enforces (resumeEligibilityError) - so the list never offers a Resume the engine would reject.
  * KLA-179: `needs_auth` (paused at an auth gate) is resumable too — surface it alongside `stalled`
  * so the AT2 router (/autosims) can offer "give it a key and resume".
  *
@@ -1688,11 +1719,12 @@ export async function listStalledAuthorSessions(projectId: string, limit = 10): 
     sql: `SELECT * FROM author_sessions
           WHERE project_id=? AND status IN ('stalled','needs_auth')
             AND updated_at >= ?
-            AND (checkpoint_json IS NOT NULL OR trail_id IS NOT NULL)
+            AND checkpoint_json IS NOT NULL
           ORDER BY updated_at DESC LIMIT ?`,
-    args: [projectId, since, limit],
+    args: [projectId, since, Math.max(limit * 5, 50)],   // over-fetch: unusable checkpoints are dropped below
   })
-  return r.rows.map(rowToAuthorSession)
+  // R1: same rule as the sweeps, the resume gate and runAuthorNow's verdict (lib/author-checkpoint.ts).
+  return r.rows.map(rowToAuthorSession).filter((s) => isUsableCheckpoint(s.checkpoint)).slice(0, limit)
 }
 
 export async function listNeedsAuthSessionsForAutoResume(projectId: string, limit = 5, nowMs = Date.now()): Promise<AuthorSession[]> {
@@ -1708,9 +1740,9 @@ export async function listNeedsAuthSessionsForAutoResume(projectId: string, limi
                 AND child.status IN ('running','stalled','needs_auth','crystallized','resuming')
             )
           ORDER BY s.updated_at ASC LIMIT ?`,
-    args: [projectId, since, limit],
+    args: [projectId, since, Math.max(limit * 5, 25)],
   })
-  return r.rows.map(rowToAuthorSession)
+  return r.rows.map(rowToAuthorSession).filter((s) => isUsableCheckpoint(s.checkpoint)).slice(0, limit)
 }
 
 export async function getActiveAuthorSession(projectId: string): Promise<AuthorSession | null> {
@@ -1726,7 +1758,7 @@ function resumeEligibilityError(prior: AuthorSession | null, now = Date.now()): 
   if (!prior) return "resume session not found"
   if (prior.status !== "stalled" && prior.status !== "needs_auth") return "resume session is not paused"
   if (now - prior.updatedAt > NEEDS_AUTH_RESUME_TTL_MS) return "resume session is too old"
-  if (!prior.checkpoint) return "resume session has no checkpoint"
+  if (!isUsableCheckpoint(prior.checkpoint)) return "resume session has no usable checkpoint"
   if (prior.resumedBy) return "resume session is already being resumed"
   return null
 }
@@ -1779,7 +1811,14 @@ async function releaseAuthorResumeClaim(projectId: string, priorId: string, chil
 export async function runAuthorNow(
   projectId: string,
   req: AuthorRequest,
-  deps?: { model?: AuthorModel; author?: typeof authorTrail; resumeSessionId?: string },
+  deps?: {
+    model?: AuthorModel; author?: typeof authorTrail; resumeSessionId?: string
+    /** R1 test seams: how a checkpoint is written, and how long to wait for an in-flight write before judging resumability. */
+    persistCheckpoint?: (projectId: string, sessionId: string, cp: AuthorCheckpoint) => Promise<void>
+    checkpointGraceMs?: number
+    /** R1 test seam: the needs_auth "give it a key and resume" alert. Defaults to the real notifier. */
+    notifyNeedsAuth?: typeof notifyAutosimNeedsAuth
+  },
 ): Promise<{ sessionId: string }> {
   // Snap-only project gating: a locked project must never launch an authoring drive - covers the
   // MCP start_authored_run tool, the REST authored-runs route, and any future non-HTTP caller. This
@@ -1832,6 +1871,20 @@ export async function runAuthorNow(
     const fileFixtures = (req.attachments && Object.keys(req.attachments).length)
       ? makeFileResolver(req.attachments)
       : null
+    // R1: a checkpoint write that fails must not be silent - a session is only "resumable" if its checkpoint really
+    // reached the DB. Track the most recent save result; the final status below reflects it.
+    // Each write is tracked so a timed-out (uncertain) write can be judged from the real row, not assumed failed.
+    const persistCheckpoint = deps?.persistCheckpoint ?? ((p: string, s: string, cp: AuthorCheckpoint) => updateAuthorSession(p, s, { checkpoint: cp }))
+    let latestAttempt: AuthorCheckpoint | null = null
+    let latestOutcome: "none" | "pending" | "ok" | "error" = "none"
+    let checkpointSaveError: string | null = null
+    const inflightWrites = new Set<Promise<void>>()
+    // R1: the needs_auth alert tells the user to add credentials and RESUME, so it may only go out once the final
+    // checkpoint verdict confirms the session really is resumable. The driver reports the gate here; runAuthorNow sends
+    // it (at most once) after the verdict.
+    let pendingAuthGate: { url: string; rationale: string } | null = null
+    let authAlertSent = false
+    let verdictDiagnostic: string | null = null
     try {
       const out = await author(projectId, req, {
         model, launchArgs: CHROMIUM_PROD_ARGS,
@@ -1840,7 +1893,18 @@ export async function runAuthorNow(
         // KLA-55: update heartbeat each iteration so the reaper knows this session is alive.
         onHeartbeat: () => touchAuthorHeartbeat(sessionId).catch(() => {}),
         // KLA-57: persist checkpoint after each step and on stall so the run is resumable.
-        onCheckpoint: (cp) => updateAuthorSession(projectId, sessionId, { checkpoint: cp }).catch(() => {}),
+        onCheckpoint: (cp) => {
+          latestAttempt = cp; latestOutcome = "pending"; checkpointSaveError = null
+          const write = (async () => {
+            try { await persistCheckpoint(projectId, sessionId, cp); if (latestAttempt === cp) latestOutcome = "ok" }
+            catch (e: any) {
+              if (latestAttempt === cp) { latestOutcome = "error"; checkpointSaveError = String(e?.message || e).slice(0, 200) }
+              console.error(`[trails-author] checkpoint save failed for session ${sessionId}: ${String(e?.message || e).slice(0, 200)}`)
+            }
+          })()
+          inflightWrites.add(write); void write.finally(() => inflightWrites.delete(write))
+          return write   // authorTrail bounds this wait (15s); a timeout there leaves the write running, outcome "pending"
+        },
         checkpoint: resumeCheckpoint,
         // KLA-151: abort signal wired to the author slot's AbortController.
         abortSignal: getCurrentAuthorAbortSignal() ?? undefined,
@@ -1848,33 +1912,72 @@ export async function runAuthorNow(
         onLiveFrame: (dataUrl) => { try { publishLiveWatchFrame(projectId, sessionId, dataUrl) } catch {} },
         onVerifying: () => { try { publishLiveWatchStatus(projectId, sessionId, "verifying") } catch {} },
         // KLA-179: the driver hit an auth gate with no verified auth method - the outcome will be
-        // `needs_auth` (paused, resumable). Fire the throttled founder-style "give it a key" alert.
-        // Best-effort: a notification failure must never affect the run or its persisted status.
-        onNeedsAuth: async (url, rationale) => {
+        // `needs_auth` (paused, resumable). R1: the throttled founder-style "give it a key" alert is NOT sent from here any
+        // more; it is sent after the final checkpoint verdict (below) so we never tell the user to resume a session that
+        // cannot be resumed. Best-effort: a notification failure must never affect the run or its persisted status.
+        onNeedsAuth: async (url, rationale) => { pendingAuthGate = { url, rationale } },
+      })
+      // R1: a session may only be left stalled / needs_auth if a USABLE checkpoint is really persisted. Judge from the actual
+      // row, never from a callback's outcome alone: a timed-out write is uncertain (it may still land), so wait briefly for
+      // in-flight writes, then read the row. The original reason is kept verbatim; the persistence verdict is appended.
+      let finalStatus = out.status
+      let finalReason = out.stallReason
+      if (out.status === "stalled" || out.status === "needs_auth") {
+        if (inflightWrites.size) {
+          let timer: ReturnType<typeof setTimeout> | undefined
+          await Promise.race([Promise.allSettled([...inflightWrites]), new Promise((r) => { timer = setTimeout(r, deps?.checkpointGraceMs ?? 5_000) })])
+          if (timer) clearTimeout(timer)
+        }
+        const saved = await getAuthorSession(projectId, sessionId).catch(() => null)
+        const persisted = saved?.checkpoint ?? null
+        const detail = latestOutcome === "error" ? `save error: ${checkpointSaveError}`
+          : latestOutcome === "pending" ? "save did not complete in time"
+          : latestOutcome === "none" ? "no checkpoint was written"
+          : "checkpoint not found after save"
+        const base = out.stallReason ?? ""
+        const safeDetail = detail.replace(/[\[\]]/g, " ")
+        if (!isUsableCheckpoint(persisted)) {
+          finalStatus = "failed"
+          finalReason = `${base} [checkpoint not saved (${safeDetail}); Resume is unavailable]`.trim()
+          verdictDiagnostic = `no usable checkpoint persisted (${detail}); session ended failed instead of ${out.status}`
+        } else if (latestAttempt && JSON.stringify(persisted) !== JSON.stringify(latestAttempt)) {
+          // The newest checkpoint is not what the DB holds; an older usable one is.
+          finalReason = `${base} [latest checkpoint not saved (${safeDetail}); Resume continues from an earlier step]`.trim()
+          verdictDiagnostic = `latest checkpoint not persisted (${detail}); resumable from an older checkpoint`
+        }
+        if (verdictDiagnostic) console.warn(`[trails-author] session ${sessionId}: ${verdictDiagnostic}`)
+        // else: the persisted checkpoint IS the latest one (including a slow write that landed): status stays as reported.
+      }
+      await updateAuthorSession(projectId, sessionId, {
+        status: finalStatus, steps: out.steps, stallReason: finalReason, trailId: out.trailId,
+        verificationRunId: out.verificationRunId, verificationVerdict: out.verificationVerdict,
+        llmCalls: out.llmCalls, costUsd: out.costUsd,
+        objectiveVerified: out.objectiveVerified,
+        redCause: out.redCause ?? null,
+      })
+      // R1: deferred needs_auth alert - only for a session that is genuinely resumable, and only once.
+      if (pendingAuthGate) {
+        if (finalStatus === "needs_auth" && !authAlertSent) {
+          authAlertSent = true
           try {
             const proj = await projectById(projectId)
-            await notifyAutosimNeedsAuth({
+            await (deps?.notifyNeedsAuth ?? notifyAutosimNeedsAuth)({
               projectId,
               projectName: proj?.name ?? req.name,
               accountId: proj?.accountId ?? "",
               sessionId,
-              pageUrl: url,
-              rationale,
+              pageUrl: pendingAuthGate.url,
+              rationale: pendingAuthGate.rationale,
               baseUrl: (process.env.KLAV_BASE_URL || "").replace("klavity.quantana.top", "klavity.in"),
               at: Date.now(),
             })
           } catch (e: any) {
             console.error("autosim needs_auth alert (non-fatal):", e?.message || e)
           }
-        },
-      })
-      await updateAuthorSession(projectId, sessionId, {
-        status: out.status, steps: out.steps, stallReason: out.stallReason, trailId: out.trailId,
-        verificationRunId: out.verificationRunId, verificationVerdict: out.verificationVerdict,
-        llmCalls: out.llmCalls, costUsd: out.costUsd,
-        objectiveVerified: out.objectiveVerified,
-        redCause: out.redCause ?? null,
-      })
+        } else if (finalStatus !== "needs_auth") {
+          console.warn(`[trails-author] session ${sessionId}: needs_auth alert suppressed - session ended ${finalStatus} (${verdictDiagnostic ?? "not resumable"})`)
+        }
+      }
     } catch (e: any) {
       await updateAuthorSession(projectId, sessionId, { status: "failed", stallReason: String(e?.message || e) }).catch(() => {})
     } finally {
@@ -1912,10 +2015,9 @@ export async function autoResumeNeedsAuthSessions(
   const runner = opts.runner ?? runAuthorNow
   const result: AutoResumeNeedsAuthResult = { eligible: sessions.length, resumed: [], skipped: [], errors: [] }
   for (const prior of sessions) {
-    if (!prior.checkpoint) {
-      result.skipped.push({ sessionId: prior.id, reason: "missing checkpoint" })
-      continue
-    }
+    // R1: `sessions` comes from listNeedsAuthSessionsForAutoResume, which only returns sessions whose checkpoint passes the
+    // shared usability rule (lib/author-checkpoint.ts), and runAuthorNow's resume gate enforces the same rule again - so a
+    // separate presence-only check here was redundant (and a weaker, divergent definition).
     try {
       const { sessionId } = await runner(projectId, {
         name: prior.name,
