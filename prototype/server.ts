@@ -144,7 +144,7 @@ import { buildAuthoredRunStatus } from "./lib/v1-authored"
 import { listRecentWalks } from "./lib/trails"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { startCrashReaper } from "./lib/trails-reaper"
-import { runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuthorSessions, listNeedsAuthSessionsForAutoResume, AUTOSIM_DEADLINE_MS_DEFAULT } from "./lib/trails-author"
+import { ResumeConflictError, runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuthorSessions, listNeedsAuthSessionsForAutoResume, AUTOSIM_DEADLINE_MS_DEFAULT } from "./lib/trails-author"
 import { isUsableCheckpoint, userFacingStallReason } from "./lib/author-checkpoint"
 import { WalkBusyError, cancelCurrentWalk, cancelCurrentAuthor, PdfBusyError, walkPoolStats } from "./lib/trails-browser"
 import { mintShareToken, resolveShareToken, renderWalkPdf, revokeShareToken, listShareTokens, extendShareToken, recordShareView, checkSharePasscode } from "./lib/trails-share"
@@ -12035,6 +12035,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ sessionId }, 202)
         } catch (e) {
           if (e instanceof WalkBusyError) return json({ error: "An AutoSim is already running — try again shortly." }, 409)
+          // R2: an actual claim conflict (another attempt owns it, or its state changed since the pre-check) is a 409, not a server error.
+          if (e instanceof ResumeConflictError) return json({ error: e.message }, 409)
           return json(oops(e, "trails-author-resume"), 500)
         }
       }

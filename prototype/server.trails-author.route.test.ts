@@ -277,6 +277,25 @@ test("approve: draft→active once; second approve 409; cross-project 404; unaut
   expect((await fetch(`${base}/api/trails/${trailId}/approve?project=${pid}`, { method: "POST" })).status).toBe(401)
 })
 
+// R2: an actual resume claim conflict is a 409 (not a 500). The pre-check passes (the prior is `stalled` with a usable checkpoint),
+// but another attempt already owns it -> the engine refuses the claim -> the route must answer 409.
+// NOTE: kept BEFORE the "GET session is project-scoped (IDOR)" test: that test starts a real author drive in the server and holds
+// the in-memory author slot, which would answer 409 "already running" before the claim is ever attempted.
+test("POST /api/trails/author/:id/resume returns 409 when another resume attempt already owns the prior (claim conflict)", async () => {
+  const now = Date.now()
+  const URL1 = "https://example.com/start"
+  const cp = JSON.stringify({ traj: [{ action: "navigate", actionValue: URL1, url: URL1, domHash: "h" }], history: ["navigate"], stepIdx: 0, llmCalls: 1, costUsd: 0, lastUrl: URL1 })
+  const priorId = `auth_r2_conflict_prior_${ts}`
+  await rawExec(`INSERT INTO author_sessions (id,project_id,name,objective,base_url,status,stall_reason,checkpoint_json,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    [priorId, PROJECT_ID, priorId, "some long enough objective", URL1, "stalled", "paused", cp, ADMIN_EMAIL, now, now])
+  // another resume attempt is already live for this prior
+  await rawExec(`INSERT INTO author_sessions (id,project_id,name,objective,base_url,status,created_by,resumed_from,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [`auth_r2_conflict_child_${ts}`, PROJECT_ID, "child", "some long enough objective", URL1, "running", ADMIN_EMAIL, priorId, now, now])
+  const r = await fetch(`${base}/api/trails/author/${priorId}/resume?project=${pid}`, { method: "POST", headers: { cookie: adminCookie } })
+  expect(r.status).toBe(409)
+  expect((await r.json()).error).toMatch(/already claimed/)
+})
+
 test("GET session is project-scoped (IDOR)", async () => {
   const r = await fetch(`${base}/api/trails/author?project=${pid}`, {
     method: "POST", headers: { cookie: adminCookie, "content-type": "application/json" },
