@@ -29978,6 +29978,10 @@
                 else document.body.setAttribute("data-view", "tickets")
               }
             }
+            // KD-3147: a RE-render of the ticket already on screen (the cache→fresh second render, a merge re-open)
+            // must keep the reader where they are. Before, every render ended with scroll-to-top, so a user who had
+            // scrolled down (often to the bottom) while the fresh /api/feedback/:id was loading got thrown back up.
+            const _keepY = tktScrollToKeep(single, id, panel)
             single.innerHTML = ""
             if (panel) {
               // Panel mode: board/list/toolbar STAY visible behind a fixed right-side panel + scrim.
@@ -30297,9 +30301,42 @@
             } catch (e) { }
             // Move focus into the surface for keyboard users (a11y §10). Panel = Close; page = Back.
             try { if (single.__focusTarget) single.__focusTarget.focus({ preventScroll: true }) } catch (e) { }
-            // Panel scrolls itself to top; the dedicated page scrolls the window.
-            if (panel) { try { single.scrollTop = 0 } catch (e) { } }
+            single.setAttribute("data-tkt-id", String(id))
+            single.setAttribute("data-tkt-mode", panel ? "panel" : "full")
+            // A NEW ticket (or panel → full page) starts at the top; a re-render of the same one keeps the scroll.
+            // Panel scrolls itself; the dedicated page scrolls the window.
+            if (_keepY > 0) restoreTktScroll(single, panel, _keepY)
+            else if (panel) { try { single.scrollTop = 0 } catch (e) { } }
             else { try { window.scrollTo(0, 0) } catch (e) { } }
+          }
+          // KD-3147: scroll offset to restore when this render replaces the SAME ticket in the SAME mode (0 otherwise).
+          function tktScrollToKeep(single, id, panel) {
+            try {
+              if (!single || single.classList.contains("hide") || !single.children.length) return 0
+              if (single.getAttribute("data-tkt-id") !== String(id)) return 0
+              if (single.getAttribute("data-tkt-mode") !== (panel ? "panel" : "full")) return 0
+              return panel ? (single.scrollTop || 0) : (window.scrollY || window.pageYOffset || 0)
+            } catch (e) { return 0 }
+          }
+          // Put the reader back at y. Sections below (timeline, evidence) fill in asynchronously, so until they do
+          // the page may be too short to reach y; re-apply for a short while as it grows — but stop the moment the
+          // user scrolls themselves, so we never fight them.
+          function restoreTktScroll(single, panel, y) {
+            const apply = () => { try { if (panel) single.scrollTop = y; else window.scrollTo({ top: y, behavior: "instant" }) } catch (e) { try { window.scrollTo(0, y) } catch (e2) { } } }
+            const cur = () => panel ? single.scrollTop : (window.scrollY || window.pageYOffset || 0)
+            let userMoved = false
+            const stop = () => { userMoved = true }
+            const target = panel ? single : window
+            const evs = ["wheel", "touchmove", "keydown", "mousedown"]
+            evs.forEach(ev => target.addEventListener(ev, stop, { passive: true, once: true }))
+            apply()
+            const started = Date.now()
+            const tick = () => {
+              if (userMoved || Date.now() - started > 2000) { evs.forEach(ev => target.removeEventListener(ev, stop)); return }
+              if (Math.abs(cur() - y) > 2) apply()
+              requestAnimationFrame(tick)
+            }
+            requestAnimationFrame(tick)
           }
           // KLA-562 Stage 2: lazily create the panel scrim (click-to-close) once, and a single Esc handler.
           function ensurePanelScrim() {
