@@ -86,6 +86,9 @@ import { evaluateLabelRules, hostConventionEnv } from "./lib/label-rules"
 import { encryptSecret, decryptSecret, userCacheUid } from "./lib/crypto"
 import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, getTestAccountRefs, rotateTestAccountSecret, updateTestAccount } from "./lib/test-accounts"
 import * as asp from "./lib/autosim-projects"
+import * as reqExtract from "./lib/requirements-extract"
+import * as reqStore from "./lib/requirements-store"
+import * as reqRuns from "./lib/requirement-runs"
 import { assertSafeUrl } from "./lib/url-guard"
 import { genCode, isValidSlug, stampUtm, isBotRequest, hashIp } from "./lib/shortlinks"
 import { createShortLink, getShortLinkByCodeOrSlug, listShortLinks, getShortLinkDetail, updateShortLink, recordLinkClick, linkClickStats, ShortLinkConflictError, type ShortLinkRow } from "./lib/db"
@@ -2095,6 +2098,19 @@ function snapLocked(project: { id: string; planOverride?: string | null }): { er
   }
   return null
 }
+// F-01: the requirement-run queue records NEW AutoSims without going through POST /api/trails/author,
+// so it applies the same plan gates here (snap lock + configured-flow quota) before each recording.
+reqRuns.setRecordPreflight(async (pid) => {
+  const proj = await projectById(pid)
+  const lock = proj ? snapLocked(proj) : null
+  if (lock) return lock.error
+  const acctId = await accountIdForProject(pid)
+  if (acctId) {
+    const q = await quotaExceeded(acctId, "autosimFlows", () => countAccountAutosimFlows(acctId))
+    if (q) return q.error
+  }
+  return null
+})
 
 // ── /api/sim/review dedupe cache (§5: promote the klav_dev_react_* hash). In-process LRU-ish set keyed
 // by reviewDedupeKey(sim,urlPath,domSig); a page isn't re-reviewed for a Sim until its DOM sig changes.
@@ -11165,6 +11181,33 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     const pid = resolvedA.id
     // seg = [apId?, "groups"|"test-cases"?, childId?, "trails"?, trailId?]
     const seg = path.split("/").slice(3).filter(Boolean).map(decodeURIComponent)
+    // POST /api/autosim-projects/:id/extract — "Upload & Extract": multipart `file` (PDF/DOCX/TXT ≤25 MB) →
+    // extracted requirement counts + test scenarios for the UI to pre-fill. Saves nothing. Handled before
+    // the JSON body parse below (this body is multipart).
+    if (seg.length === 2 && seg[1] === "extract" && req.method === "POST") {
+      try {
+        if (!(await asp.getAutosimProject(pid, seg[0]))) return json({ error: "Not found" }, 404)
+        const form = await req.formData().catch(() => null)
+        const file = form?.get("file")
+        if (!file || typeof file === "string") return json({ error: "Attach a document (field \"file\")." }, 400)
+        if (file.size > reqExtract.EXTRACT_MAX_BYTES) return json({ error: "The file is larger than 25 MB." }, 413)
+        const bytes = new Uint8Array(await file.arrayBuffer()), filename = (file.name || "document").slice(0, 200)
+        const result = await reqExtract.extractRequirements({ bytes, filename, contentType: file.type, projectId: pid, actorEmail: meA })
+        // DEV-01/02: keep the source document (best-effort) and store the structured extraction.
+        let sourceKey: string | null = null
+        try { const { uploadAttachment } = await import("./lib/s3"); sourceKey = (await uploadAttachment(bytes, filename, file.type || "application/octet-stream")).key }
+        catch (e: any) { console.warn("[requirements] source document not stored:", e?.message || e) }
+        const saved = await reqStore.saveExtraction(pid, seg[0], { filename, contentType: file.type || null, sizeBytes: bytes.length, sourceKey, result, createdBy: meA })
+        return json({
+          ...result, docId: saved.docId,
+          requirements: result.requirements.map(q => ({ ...q, dbId: saved.requirementIds[q.ref] })),
+          scenarios: result.scenarios.map(x => ({ ...x, dbId: saved.scenarioIds[x.id] })),
+        })
+      } catch (e) {
+        if (e instanceof reqExtract.ExtractError) return json({ error: e.message }, e.status)
+        return json(oops(e, "autosim-extract"), 500)
+      }
+    }
     const body: any = req.method === "POST" || req.method === "PATCH" ? await req.json().catch(() => null) : {}
     if (body === null || typeof body !== "object") return json({ error: "Invalid body" }, 400)
     // Validated string field: undefined = absent, string = value, {error} = reject.
@@ -11205,11 +11248,85 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (req.method === "GET") return json({ projectId: pid, role: resolvedA.access, ...(await asp.autosimProjectDetail(pid, ap.id)) })
         if (req.method === "PATCH") {
           const v: any = nameDesc(80, 2000, false); if (v.error) return json(v, 400)
+          // F-01: common setup steps (prepended to every test case created from a requirements document).
+          if ("setup_steps" in body) { const ss = text("setup_steps", 2000, false); if (isErr(ss)) return json(ss, 400); v.setupSteps = ss ?? "" }
           try { await asp.updateAutosimProject(pid, ap.id, v) }
           catch (e) { if (dup(e)) return json({ error: `A project named "${v.name}" already exists.` }, 409); throw e }
           return json({ project: await asp.getAutosimProject(pid, ap.id) })
         }
         if (req.method === "DELETE") { await asp.deleteAutosimProject(pid, ap.id); return json({ ok: true }) }
+        return json({ error: "Method not allowed" }, 405)
+      }
+      // ── F-01 requirements: /api/autosim-projects/:id/requirement-docs[/:docId[/source|/test-cases]] ──
+      if (seg[1] === "requirement-docs") {
+        if (seg.length === 2 && req.method === "GET") return json({ docs: await reqStore.listDocs(pid, ap.id) })
+        const docId = seg[2]
+        if (!docId || !(await reqStore.getDoc(pid, ap.id, docId))) return json({ error: "Not found" }, 404)
+        if (seg.length === 3 && req.method === "GET") {
+          const [detail, runs] = await Promise.all([reqStore.docDetail(pid, ap.id, docId), reqRuns.listRuns(pid, ap.id, 10)])
+          return json({ ...detail, runs: runs.filter(r => r.docId === docId), activeRun: await reqRuns.activeRun(pid, ap.id) })
+        }
+        if (seg.length === 3 && req.method === "DELETE") { await reqStore.deleteDoc(pid, ap.id, docId); return json({ ok: true }) }
+        // GET …/source — the original uploaded document (DEV-01 source reference).
+        if (seg.length === 4 && seg[3] === "source" && req.method === "GET") {
+          const src = await reqStore.docSourceKey(pid, ap.id, docId)
+          if (!src) return json({ error: "The original document was not stored." }, 404)
+          const { getObjectBytes } = await import("./lib/s3")
+          const obj = await getObjectBytes(src.key)
+          const safe = src.filename.replace(/["\r\n\\]/g, "_")
+          return new Response(obj.bytes, { headers: { "content-type": src.contentType || obj.contentType || "application/octet-stream", "content-disposition": `inline; filename="${safe}"`, "x-content-type-options": "nosniff", "cache-control": "private,max-age=300" } })
+        }
+        // POST …/test-cases — create test cases from selected scenarios with the user's completed details.
+        if (seg.length === 4 && seg[3] === "test-cases" && req.method === "POST") {
+          const items = Array.isArray(body.items) ? body.items.slice(0, 200) : []
+          if (!items.length) return json({ error: "Pick at least one scenario." }, 400)
+          const clean: any[] = []
+          for (const it of items) {
+            const name = typeof it?.name === "string" ? it.name.trim() : ""
+            const startUrl = typeof it?.start_url === "string" ? it.start_url.trim() : ""
+            if (!name || name.length > 120) return json({ error: "Each test case needs a name (max 120 characters)." }, 400)
+            if (!/^https?:\/\/\S+$/.test(startUrl) || startUrl.length > 500) return json({ error: `"${name}": start_url must be an http(s) URL` }, 400)
+            const str = (k: string, max: number) => (typeof it?.[k] === "string" ? it[k].trim().slice(0, max) : "")
+            clean.push({ scenarioId: String(it.scenario_id || ""), name, startUrl, steps: str("steps", 4000), preconditions: str("preconditions", 1000), expectedResult: str("expected_result", 1000) })
+          }
+          let testAccountId: string | null = null
+          if (body.test_account_id) {
+            const acc = await getTestAccountById(pid, String(body.test_account_id))
+            if (!acc || (acc.autosimProjectId && acc.autosimProjectId !== ap.id)) return json({ error: "Unknown credentials for this project." }, 400)
+            testAccountId = acc.id
+          }
+          if (body.group_id && !(await asp.getGroup(pid, ap.id, String(body.group_id)))) return json({ error: "Unknown group for this project." }, 400)
+          const status = asp.TEST_CASE_STATUSES.includes(body.status) ? body.status : "active"
+          const out = await reqStore.createTestCasesFromScenarios(pid, ap.id, docId, clean, { testAccountId, groupId: body.group_id ? String(body.group_id) : null, status }, meA)
+          return json(out, 201)
+        }
+        return json({ error: "Method not allowed" }, 405)
+      }
+      // ── F-01 runs: /api/autosim-projects/:id/requirement-runs[/:runId[/cancel]] ──
+      if (seg[1] === "requirement-runs") {
+        if (seg.length === 2 && req.method === "GET") return json({ active: await reqRuns.activeRun(pid, ap.id), runs: await reqRuns.listRuns(pid, ap.id, 20) })
+        if (seg.length === 2 && req.method === "POST") {
+          const ids = Array.isArray(body.test_case_ids) ? body.test_case_ids.map(String).slice(0, 200) : []
+          const docId = body.doc_id ? String(body.doc_id) : null
+          if (docId && !(await reqStore.getDoc(pid, ap.id, docId))) return json({ error: "Unknown requirements document." }, 400)
+          const proj = await projectById(pid)
+          const lock = proj ? snapLocked(proj) : null
+          if (lock) return json(lock, 402)
+          try {
+            const runId = await reqRuns.createRun(pid, ap.id, ids, { docId, createdBy: meA })
+            reqRuns.kickRun(pid, runId)
+            return json({ run: await reqRuns.getRun(pid, ap.id, runId) }, 202)
+          } catch (e) { if (e instanceof reqRuns.RunConflictError) return json({ error: e.message }, e.status); throw e }
+        }
+        const run = seg[2] ? await reqRuns.getRun(pid, ap.id, seg[2]) : null
+        if (!run) return json({ error: "Not found" }, 404)
+        if (seg.length === 3 && req.method === "GET") return json({ run })
+        if (seg.length === 4 && seg[3] === "cancel" && req.method === "POST") {
+          const ok = await reqRuns.cancelRun(pid, ap.id, run.id)
+          // A run left queued by a stopped server isn't being processed here — let the runner finalize it.
+          if (ok && !reqRuns.isRunActive(run.id)) reqRuns.kickRun(pid, run.id)
+          return ok ? json({ ok: true }) : json({ error: "This run has already finished." }, 409)
+        }
         return json({ error: "Method not allowed" }, 405)
       }
       // /api/autosim-projects/:id/groups[/:gid]
@@ -11262,6 +11379,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!/^https?:\/\/\S+$/.test(su) || su.length > 500) return json({ error: "start_url must be an http(s) URL" }, 400)
           v.startUrl = su
         }
+        // F-01: preconditions + expected result (both optional free text).
+        for (const [k, key] of [["preconditions", "preconditions"], ["expected_result", "expectedResult"]] as const) {
+          if (!(k in body)) continue
+          const t = text(k, 1000, false)
+          if (isErr(t)) return json(t, 400)
+          v[key] = t ?? ""
+        }
         // Execution mode: test_account_id null/"" = run WITHOUT credentials; otherwise the credential
         // (reference name picked in the UI) must be in this Klavity project and either belong to this
         // AutoSim project or be shared.
@@ -11284,6 +11408,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             return json({ testCase: await asp.getTestCase(pid, tc.id) })
           }
           if (req.method === "DELETE") { await asp.deleteTestCase(pid, ap.id, tc.id); return json({ ok: true }) }
+        }
+        // GET .../test-cases/:tcid/validation — F-01: the requirement it verifies + its validation history
+        // (actual vs expected, from requirement runs).
+        if (seg.length === 4 && seg[3] === "validation" && req.method === "GET") {
+          return json({ requirement: await reqStore.requirementForTestCase(pid, tc), validations: await reqRuns.testCaseValidations(pid, tc.id, 10) })
         }
         // GET .../test-cases/:tcid/runs — execution results summary (every Walk, re-recordings included).
         if (seg.length === 4 && seg[3] === "runs" && req.method === "GET") {
@@ -16758,6 +16887,9 @@ if (db && process.env.NODE_ENV !== "test") {
   startTrailScheduler()
   // KLA-55: crash reaper — sweeps stale-heartbeat walks/sessions every 60s.
   startCrashReaper(db!)
+  // F-01: continue requirement runs that were queued/in flight when the server stopped. Delayed so the
+  // crash reaper has marked the interrupted author sessions first.
+  setTimeout(() => { reqRuns.resumeRequirementRuns().then(n => { if (n) console.log(`[requirement-runs] resumed ${n} run(s)`) }).catch((e) => console.warn("requirement-runs resume failed:", e?.message || e)) }, 20_000)
   // KLAVITYKLA-261: daily Sims digest — ticks every hour, sends per-project digest.
   startSimsDigestScheduler({ db: db!, sendEmail: sendReportAlertEmail })
   // KLAVITYKLA-330: lead nurture scheduler — ticks every hour, sends steps 2 + 3.

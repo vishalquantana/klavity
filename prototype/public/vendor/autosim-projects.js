@@ -83,6 +83,121 @@
     '#aspModalBg .radio span{display:grid;gap:2px;font-size:13.5px}',
     '#aspModalBg .err{color:var(--rose);font-size:13px;min-height:18px}',
     '#aspModalBg .acts{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}',
+    '#aspRoot .toolbar .btn svg{vertical-align:-3px;margin-right:2px}',
+    // Test case list: AI badge, one-line URL, side-by-side icon actions
+    '#aspRoot .asp-tcname{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
+    '#aspRoot .asp-ai{display:inline-flex;align-items:center;gap:3px;font:700 10px var(--body);letter-spacing:.04em;padding:2px 7px;border-radius:99px;color:#fff;background:linear-gradient(135deg,#8b5cf6,var(--indigo));white-space:nowrap;cursor:default}',
+    '#aspRoot .asp-url{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '#aspRoot .asp-nowrap{white-space:nowrap}',
+    '#aspRoot .asp-tc-acts{display:flex;gap:6px;justify-content:flex-end}',
+    '#aspRoot .asp-ibtn{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;border:1px solid var(--line);background:var(--ink-2);color:var(--paper-dim);cursor:pointer;transition:background .15s,color .15s,border-color .15s}',
+    '#aspRoot .asp-ibtn:hover{color:var(--indigo);border-color:var(--indigo);background:rgba(99,102,241,.07)}',
+    '#aspRoot .asp-ibtn.danger:hover{color:var(--rose);border-color:var(--rose);background:rgba(225,29,72,.07)}',
+    '#aspRoot .asp-ibtn:focus-visible{outline:2px solid var(--indigo);outline-offset:1px}',
+    // Upload & Extract dialog
+    '#aspUxBg .asp-ux{max-width:560px;width:100%;max-height:90vh;overflow-y:auto;padding:22px 24px}',
+    '#aspUxBg .ux-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}',
+    '#aspUxBg .ux-eyebrow{font:600 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:4px}',
+    '#aspUxBg h2{font:600 21px var(--display);margin:0}',
+    '#aspUxBg .ux-x{background:none;border:0;color:var(--paper-faint);cursor:pointer;padding:4px;border-radius:6px;line-height:0}#aspUxBg .ux-x:hover{color:var(--paper);background:var(--ink-3)}',
+    '#aspUxBg .ux-stepper{display:flex;align-items:center;justify-content:center;gap:0;margin:6px auto 6px;max-width:260px}',
+    '#aspUxBg .ux-dot{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font:600 12px var(--body);border:1.5px solid var(--line);color:var(--paper-faint);background:var(--ink-2);flex-shrink:0}',
+    '#aspUxBg .ux-dot.on{background:var(--indigo);border-color:var(--indigo);color:#fff}',
+    '#aspUxBg .ux-dot.done{border-color:var(--green);color:var(--green);background:rgba(15,157,107,.08)}',
+    '#aspUxBg .ux-line{flex:1;height:1.5px;background:var(--line);margin:0 6px}#aspUxBg .ux-line.done{background:var(--green)}',
+    '#aspUxBg .ux-steplbl{text-align:center;font:600 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:14px}',
+    '#aspUxBg .ux-lead{color:var(--paper-dim);font-size:13.5px;margin:0 0 12px}',
+    '#aspUxBg .ux-drop{border:1.5px dashed var(--line);border-radius:14px;padding:26px 16px;text-align:center;color:var(--paper-dim);cursor:pointer;display:grid;gap:6px;justify-items:center;font-size:13.5px;transition:border-color .15s,background .15s}',
+    '#aspUxBg .ux-drop:hover,#aspUxBg .ux-drop.over,#aspUxBg .ux-drop:focus-visible{border-color:var(--indigo);background:rgba(99,102,241,.05);outline:none}',
+    '#aspUxBg .ux-drop svg{color:var(--paper-faint)}#aspUxBg .ux-linktxt{color:var(--indigo);font-weight:600}',
+    '#aspUxBg .ux-hint{font-size:12px;color:var(--paper-faint)}',
+    '#aspUxBg .ux-file{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:12px;padding:11px 14px;margin-bottom:12px;background:var(--ink-2)}',
+    '#aspUxBg .ux-fic{width:34px;height:34px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:rgba(219,39,119,.1);color:var(--rose);flex-shrink:0}',
+    '#aspUxBg .ux-fmeta{display:grid;flex:1;min-width:0}#aspUxBg .ux-fmeta b{font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#aspUxBg .ux-fmeta span{font-size:12px;color:var(--paper-faint)}',
+    '#aspUxBg .ux-fok{width:20px;height:20px;border-radius:50%;background:var(--green);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}',
+    '#aspUxBg .ux-link{background:none;border:0;color:var(--indigo);font:600 12.5px var(--body);cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:0}',
+    '#aspUxBg .ux-remove{margin:-4px 0 6px}',
+    '#aspUxBg .ux-note{display:flex;gap:9px;align-items:flex-start;background:rgba(99,102,241,.07);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--paper-dim);margin:4px 0}#aspUxBg .ux-note svg{color:var(--indigo);flex-shrink:0;margin-top:1px}',
+    '#aspUxBg .ux-center{text-align:center;padding:6px 0 4px;color:var(--paper-dim);font-size:13.5px}',
+    '#aspUxBg .ux-hero{position:relative;width:70px;height:70px;border-radius:18px;margin:4px auto 10px;display:flex;align-items:center;justify-content:center;background:rgba(99,102,241,.08);color:var(--indigo)}',
+    '#aspUxBg .ux-spark{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;background:var(--indigo);color:#fff;display:flex;align-items:center;justify-content:center;animation:uxPulse 1.4s ease-in-out infinite}',
+    '@keyframes uxPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}',
+    '#aspUxBg .ux-progress{display:flex;align-items:center;gap:10px;margin:10px 0 4px}',
+    '#aspUxBg .ux-bar{flex:1;height:8px;border-radius:99px;background:var(--ink-3);overflow:hidden}#aspUxBg .ux-bar span{display:block;height:100%;background:var(--indigo);border-radius:99px;transition:width .4s ease}',
+    '#aspUxBg #uxPct{font:600 12px var(--mono);color:var(--paper-dim);min-width:34px;text-align:right}',
+    '#aspUxBg .ux-tiles{display:grid;gap:8px;margin-bottom:12px}#aspUxBg .ux-tiles.four{grid-template-columns:repeat(4,1fr)}#aspUxBg .ux-tiles.three{grid-template-columns:repeat(3,1fr)}#aspUxBg .ux-tiles.two{grid-template-columns:repeat(2,1fr)}#aspUxBg .ux-tiles.one{grid-template-columns:1fr}',
+    '#aspUxBg .ux-tile{border-radius:12px;padding:12px;background:var(--ink-3);text-align:center;display:grid;justify-items:center;gap:2px}',
+    '#aspUxBg .ux-tic{color:var(--indigo)}#aspUxBg .ux-tn{font:600 20px var(--display)}#aspUxBg .ux-tk{font-size:11.5px;color:var(--paper-dim)}',
+    '#aspUxBg .ux-tile.green .ux-tic{color:var(--green)}#aspUxBg .ux-tile.warn{background:rgba(217,131,36,.12)}#aspUxBg .ux-tile.warn .ux-tic{color:var(--amber)}',
+    '#aspUxBg .ux-clar{font-size:13px;color:var(--paper-dim);margin-bottom:6px}#aspUxBg .ux-clar summary{cursor:pointer;color:var(--amber);font-weight:600}#aspUxBg .ux-clar ul{margin:6px 0 0 18px;display:grid;gap:4px}',
+    '#aspUxBg .ux-list{border:1px solid var(--line);border-radius:12px;max-height:340px;overflow-y:auto;scrollbar-width:thin}',
+    '#aspUxBg .ux-row{border-bottom:1px solid var(--line)}#aspUxBg .ux-row:last-child{border-bottom:0}',
+    '#aspUxBg .ux-rhead{display:flex;align-items:center;gap:10px;padding:9px 12px;font-size:13px}',
+    '#aspUxBg .ux-rhead input[type=checkbox]{width:16px;height:16px;accent-color:var(--indigo);flex-shrink:0}',
+    '#aspUxBg .ux-id{font:600 11px var(--mono);color:var(--paper-faint);flex-shrink:0}',
+    '#aspUxBg .ux-rt{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '#aspUxBg .ux-pill{font:600 10.5px var(--body);padding:2px 8px;border-radius:99px;flex-shrink:0}#aspUxBg .ux-pill.ok{background:rgba(15,157,107,.13);color:var(--green)}#aspUxBg .ux-pill.warn{background:rgba(217,131,36,.15);color:var(--amber)}',
+    '#aspUxBg .ux-chev{background:none;border:0;color:var(--paper-faint);cursor:pointer;line-height:0;padding:2px;transition:transform .15s}#aspUxBg .ux-chev[aria-expanded=true]{transform:rotate(180deg)}',
+    '#aspUxBg .ux-rbody{padding:0 12px 12px 38px;display:grid;gap:6px}',
+    '#aspUxBg .ux-steps{white-space:pre-wrap;font-size:12.5px;color:var(--paper-dim);background:var(--ink-3);border-radius:8px;padding:8px 10px}',
+    '#aspUxBg .ux-miss{display:flex;gap:6px;align-items:flex-start;font-size:12.5px;color:var(--amber)}#aspUxBg .ux-miss svg{flex-shrink:0;margin-top:2px}',
+    '#aspUxBg .ux-allready{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-top:10px}#aspUxBg .ux-allready input{width:16px;height:16px;accent-color:var(--indigo)}',
+    '#aspUxBg .ux-form{display:grid;gap:6px}',
+    '#aspUxBg .ux-fl{font-size:12.5px;font-weight:600;margin-top:6px;display:flex;align-items:center;gap:6px}',
+    '#aspUxBg .ux-tag{font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.04em;padding:1px 6px;border-radius:5px;background:rgba(99,102,241,.1);color:var(--indigo)}#aspUxBg .ux-tag.warn{background:rgba(217,131,36,.15);color:var(--amber)}',
+    '#aspUxBg input[type=url],#aspUxBg .ux-name,#aspUxBg select,#aspUxBg textarea{font:13.5px var(--body);color:var(--paper);background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:7px 10px;width:100%}',
+    '#aspUxBg .ux-name{padding:5px 8px;flex:1;min-width:0;font-weight:600}',
+    '#aspUxBg textarea{resize:vertical;min-height:90px}',
+    '#aspUxBg .ux-radios{display:grid;gap:6px}#aspUxBg .ux-radio{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:9px 12px;cursor:pointer;font-size:13px}',
+    '#aspUxBg .ux-radio:has(input:checked){border-color:var(--indigo);background:rgba(99,102,241,.06)}#aspUxBg .ux-radio input{margin-top:3px}#aspUxBg .ux-radio span{display:grid;gap:1px}',
+    '#aspUxBg .ux-two{display:grid;grid-template-columns:1fr 1fr;gap:10px}',
+    '#aspUxBg .ux-fails{margin:0 0 10px 18px;font-size:12.5px;color:var(--rose);display:grid;gap:4px}',
+    '#aspUxBg .ux-err{color:var(--rose);font-size:13px;margin-top:10px}',
+    '#aspUxBg .ux-acts{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:18px}#aspUxBg .ux-acts>div{display:flex;gap:8px}',
+    // Figma look for every card of this popup: black primary buttons (cream in dark theme), compact
+    // white secondary buttons, bold sans titles, black active step, neutral selected radios.
+    '#aspUxBg .asp-ux{max-width:520px;border-radius:16px;padding:20px 22px}',
+    '#aspUxBg h2{font:700 19px var(--body);letter-spacing:-.01em}',
+    '#aspUxBg .ux-eyebrow{font:700 10px var(--body);letter-spacing:.06em;color:var(--paper-dim)}',
+    '#aspUxBg .ux-acts .btn{font-size:13px;padding:8px 16px;border-radius:8px;box-shadow:none}',
+    '#aspUxBg .ux-acts .btn-indigo{background:var(--paper);color:var(--ink-2)}#aspUxBg .ux-acts .btn-indigo:hover:not(:disabled){opacity:.88}',
+    '#aspUxBg .ux-acts .btn-indigo:disabled{opacity:.4;cursor:not-allowed}',
+    '#aspUxBg .ux-acts .btn-ghost{background:var(--ink-2);border:1px solid var(--line);color:var(--paper)}#aspUxBg .ux-acts .btn-ghost:hover{background:var(--ink-3)}',
+    '#aspUxBg .ux-acts .btn-ghost svg{vertical-align:-2px}',
+    '#aspUxBg .ux-dot{width:24px;height:24px;font-size:11px}#aspUxBg .ux-dot.on{background:var(--paper);border-color:var(--paper);color:var(--ink-2)}',
+    '#aspUxBg .ux-steplbl{font:700 10px var(--body);letter-spacing:.06em}',
+    '#aspUxBg .ux-lead{font-size:13px}',
+    '#aspUxBg .ux-radio{border-radius:10px;padding:10px 12px}#aspUxBg .ux-radio:has(input:checked){border-color:var(--paper);background:var(--ink-3)}',
+    '#aspUxBg .ux-radio input,#aspUxBg .ux-rhead input[type=checkbox],#aspUxBg .ux-allready input{accent-color:var(--paper)}',
+    '#aspUxBg input[type=url],#aspUxBg .ux-name,#aspUxBg select,#aspUxBg textarea{font-size:13px}',
+    '#aspUxBg input[type=url]:focus,#aspUxBg .ux-name:focus,#aspUxBg select:focus,#aspUxBg textarea:focus{outline:none;border-color:var(--paper)}',
+    '#aspUxBg .ux-fl{font-size:12.5px;font-weight:700}',
+    '#aspUxBg .ux-app{grid-template-columns:1fr 1fr;gap:10px}#aspUxBg .ux-app .ux-radio{align-items:center}@media (max-width:480px){#aspUxBg .ux-app{grid-template-columns:1fr}}',
+    '#aspUxBg .ux-list{border-radius:10px}#aspUxBg .ux-rhead{padding:8px 12px}',
+    '#aspUxBg .ux-acts .btn{display:inline-flex;align-items:center;gap:4px}',
+    '#aspUxBg .muted{color:var(--paper-faint);font-size:12px}',
+    '@media (max-width:560px){#aspUxBg .ux-tiles.four{grid-template-columns:repeat(2,1fr)}#aspUxBg .ux-two{grid-template-columns:1fr}}',
+    // Live view of the running test case in the queue
+    '#aspUxBg .ux-live,#aspRoot .ux-live{padding:0 12px 12px;display:grid;gap:8px;font-size:12.5px}',
+    '#aspUxBg .ux-live a,#aspRoot .ux-live a{color:var(--indigo);font-weight:600}',
+    '#aspUxBg .ux-live-shot,#aspRoot .ux-live-shot{width:100%;max-height:220px;object-fit:contain;border-radius:8px;border:1px solid var(--line);background:var(--ink-3)}',
+    '#aspUxBg .ux-live-empty,#aspRoot .ux-live-empty{display:flex;align-items:center;justify-content:center;height:90px;color:var(--paper-faint)}',
+    '#aspUxBg .ux-live-steps,#aspRoot .ux-live-steps{margin:0 0 0 16px;display:grid;gap:3px;color:var(--paper-dim)}',
+    '#aspUxBg .ux-live-steps li.bad,#aspRoot .ux-live-steps li.bad{color:var(--rose)}#aspUxBg .ux-live-err,#aspRoot .ux-live-err{color:var(--rose)}',
+    '#aspUxBg .ux-indet span{width:35%!important;animation:uxIndet 1.2s ease-in-out infinite}@keyframes uxIndet{0%{margin-left:-35%}100%{margin-left:100%}}',
+    // Back link, progress bars, tiles + validation rows (shared by test case pages and Upload & Extract)
+    '#aspRoot .asp-back{display:inline-flex;align-items:center;gap:4px;margin-bottom:10px;background:none;border:0;padding:0;color:var(--paper-dim);font:600 12.5px var(--body);cursor:pointer}#aspRoot .asp-back:hover{color:var(--indigo)}',
+    '#aspRoot .asp-reqhead .head{margin-bottom:12px}',
+    '#aspRoot .ux-bar{height:8px;border-radius:99px;background:var(--ink-3);overflow:hidden}#aspRoot .ux-bar span{display:block;height:100%;background:var(--indigo);border-radius:99px;transition:width .4s ease}',
+    '#aspRoot .asp-runbox{margin-bottom:14px;border-color:rgba(99,102,241,.35)}',
+    '#aspRoot .asp-reqtiles{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:14px}',
+    '#aspRoot .ux-tile{border-radius:12px;padding:10px;background:var(--ink-2);border:1px solid var(--line);text-align:center}#aspRoot .ux-tn{font:600 20px var(--display)}#aspRoot .ux-tk{font-size:11.5px;color:var(--paper-dim)}',
+    '#aspRoot .asp-reqdetail{display:grid;gap:8px;font-size:13px;padding:4px 0}',
+    '#aspRoot .asp-reqdetail blockquote{margin:0;padding:6px 10px;border-left:3px solid var(--line);color:var(--paper-dim);font-style:italic}',
+    '#aspRoot .asp-reqtc{border-top:1px solid var(--line);padding-top:8px;display:grid;gap:4px}',
+    '#aspRoot .asp-val{display:grid;gap:3px;font-size:13px;padding:8px 0;border-bottom:1px solid var(--line)}#aspRoot .asp-val:last-child{border-bottom:0}',
+    '#aspRoot .asp-ev{font-size:12.5px;color:var(--paper-faint)}#aspRoot .asp-ev a{color:var(--indigo);text-decoration:none;font-weight:600}',
+    '@media (max-width:760px){#aspRoot .asp-reqtiles{grid-template-columns:repeat(3,1fr)}}',
     '@media (max-width:640px){#aspRoot .kv{grid-template-columns:1fr}.asp-switch{padding:14px 16px 0}}',
   ].join('\n')
   document.head.appendChild(css)
@@ -165,9 +280,11 @@
     $('aspModalBg').classList.add('show')
     var first = $('aspModalBody').querySelector('input:not([type=radio]),textarea,select'); if (first) first.focus()
   }
-  async function confirmDanger(title, message, okLabel, fn) {
+  // cancelLabel: the dismiss button's text (default "Cancel") — pass one when the action itself is a "cancel"
+  // so the two buttons can't be confused ("Cancel" vs "Cancel run").
+  async function confirmDanger(title, message, okLabel, fn, cancelLabel) {
     var ok = typeof window.klavConfirm === 'function'
-      ? await window.klavConfirm({ title: title, message: message, confirmText: okLabel })
+      ? await window.klavConfirm({ title: title, message: message, confirmText: okLabel, cancelText: cancelLabel || 'Cancel' })
       : window.confirm(title + '\n\n' + message)
     if (!ok) return
     try { await fn() } catch (e) { toast(e.message, true) }
@@ -277,10 +394,15 @@
       fields: [
         { key: 'name', label: 'Project name', required: true, max: 80, value: p && p.name, placeholder: 'e.g. Website Automation' },
         { key: 'description', label: 'Description', type: 'textarea', max: 2000, value: p && p.description },
+        // Setup steps are not asked here: the project may not be a PX4 app. Upload & Extract asks
+        // "PX4 or other application" at the Start URL step and adds the PX4 steps only for PX4.
       ],
       submit: async function (v) {
         if (p) { await api('PATCH', '/api/autosim-projects/' + encodeURIComponent(p.id), v); toast('Project updated'); sync() }
-        else { var d = await api('POST', '/api/autosim-projects', v); toast('Project created'); go({ asp: d.project.id }) }
+        else {
+          var d = await api('POST', '/api/autosim-projects', v)
+          toast('Project created'); go({ asp: d.project.id })
+        }
       },
     })
   }
@@ -308,6 +430,7 @@
     var p = cur.project
     crumbs([navLink({ asp: 'list' }, 'Projects'), '<span>' + esc(p.name) + '</span>'])
     var TABS = [['overview', 'Overview'], ['credentials', 'Credentials'], ['groups', 'Test Case Groups'], ['test-cases', 'Test Cases']]
+    if (tab === 'requirements') tab = 'test-cases'   // the Requirements tab was removed: extracted test cases live under Test Cases
     if (!TABS.some(function (t) { return t[0] === tab })) tab = 'overview'
     $('aspMain').innerHTML =
       '<div class="head"><div><h1>' + esc(p.name) + '</h1>' + (p.description ? '<p class="lead">' + esc(p.description) + '</p>' : '') + '</div>' +
@@ -456,6 +579,10 @@
         { key: 'description', label: 'Execution steps', type: 'textarea', max: 4000, value: tc && tc.description,
           placeholder: '1. Log in\n2. Choose the "PX4 Softwares" company\n3. Open Reports and check the totals load',
           hint: 'What the AutoSim should do and check, in plain words. Used as the AutoSim objective.' },
+        { key: 'preconditions', label: 'Preconditions', type: 'textarea', max: 1000, value: tc && tc.preconditions,
+          placeholder: 'e.g. The user account exists and has at least one project', hint: 'State that must hold before the steps run (optional).' },
+        { key: 'expected_result', label: 'Expected result', type: 'textarea', max: 1000, value: tc && tc.expectedResult,
+          placeholder: 'e.g. The dashboard opens and shows "Welcome back"', hint: 'What must be true at the end for this test case to pass. Runs are validated against it.' },
         { key: 'exec', label: 'How should this test case run?', type: 'radio', value: curCred ? 'creds' : 'none', options: [
           { value: 'none', label: 'Execute without credentials', hint: 'Public pages only. No login step.' },
           { value: 'creds', label: 'Execute with credentials', disabled: !accs.length,
@@ -486,6 +613,7 @@
     $('aspTab').innerHTML = '<div class="toolbar"><input type="search" id="aspTq" placeholder="Search test cases" aria-label="Search test cases" value="' + esc(tcState.q) + '">' +
       '<select id="aspTgroup" aria-label="Group"><option value="all">All groups</option><option value="none">Ungrouped</option>' + cur.groups.map(function (g) { return '<option value="' + esc(g.id) + '">' + esc(g.name) + '</option>' }).join('') + '</select>' +
       '<select id="aspTstatus" aria-label="Status"><option value="all">Any status</option><option value="active">Active</option><option value="draft">Draft</option><option value="archived">Archived</option></select>' +
+      '<button class="btn btn-ghost" id="aspTcExtract" title="Create test cases from a requirements document (PDF, DOCX, TXT)">' + ui('upload', 15) + ' Upload &amp; Extract</button>' +
       '<button class="btn btn-indigo" id="aspTcAdd">+ New test case</button></div><div id="aspTcList"></div>'
     if (tcState.group !== 'all' && tcState.group !== 'none' && !cur.groups.some(function (g) { return g.id === tcState.group })) tcState.group = 'all'
     $('aspTgroup').value = tcState.group; $('aspTstatus').value = tcState.status
@@ -493,6 +621,7 @@
     $('aspTgroup').onchange = function () { tcState.group = this.value; tcState.page = 1; drawTcRows() }
     $('aspTstatus').onchange = function () { tcState.status = this.value; tcState.page = 1; drawTcRows() }
     $('aspTcAdd').onclick = function () { testCaseForm(null) }
+    $('aspTcExtract').onclick = function () { uxOpen() }
     drawTcRows()
   }
   function drawTcRows() {
@@ -510,12 +639,17 @@
     $('aspTcList').innerHTML = '<div class="table-wrap"><table><thead><tr><th>Test case</th><th>Start URL</th><th>Group</th><th>Login</th><th>Status</th><th>AutoSims</th><th>Updated</th><th></th></tr></thead><tbody>' +
       rows.slice((tcState.page - 1) * 20, tcState.page * 20).map(function (t) {
         var c = credOf(t)
-        return '<tr><td>' + navLink({ asp: cur.project.id, tc: t.id }, t.name) + '</td>' +
-          '<td class="muted" style="max-width:220px;word-break:break-all">' + (t.startUrl ? esc(t.startUrl) : '<span style="color:var(--amber)">Not set</span>') + '</td>' +
+        // Created from an uploaded requirements document (Upload & Extract) → AI badge.
+        var ai = t.requirementId ? ' <span class="asp-ai" title="Created by AI from an uploaded requirements document">' + ui('spark', 11) + 'AI</span>' : ''
+        return '<tr><td><div class="asp-tcname">' + navLink({ asp: cur.project.id, tc: t.id }, t.name) + ai + '</div></td>' +
+          '<td class="muted"><div class="asp-url"' + (t.startUrl ? ' title="' + esc(t.startUrl) + '"' : '') + '>' + (t.startUrl ? esc(t.startUrl.replace(/^https?:\/\//, '')) : '<span style="color:var(--amber)">Not set</span>') + '</div></td>' +
           '<td><select data-move="' + esc(t.id) + '" aria-label="Move ' + esc(t.name) + ' to group">' + opts(t.groupId) + '</select></td>' +
           '<td>' + (c ? '<span class="asp-pill green">' + esc(c.name) + '</span>' : '<span class="muted">None</span>') + '</td>' +
-          '<td><span class="asp-pill ' + esc(t.status) + '">' + esc(t.status) + '</span></td><td>' + t.trailCount + '</td><td class="muted">' + esc(fmtDate(t.updatedAt)) + '</td>' +
-          '<td><div class="actions"><button class="btn btn-ghost btn-sm" data-tedit="' + esc(t.id) + '">Edit</button><button class="btn btn-ghost btn-sm btn-danger" data-tdel="' + esc(t.id) + '">Delete</button></div></td></tr>'
+          '<td><span class="asp-pill ' + esc(t.status) + '">' + esc(t.status) + '</span></td><td>' + t.trailCount + '</td><td class="muted asp-nowrap">' + esc(fmtDate(t.updatedAt)) + '</td>' +
+          '<td><div class="asp-tc-acts">' +
+          '<button type="button" class="asp-ibtn" data-tedit="' + esc(t.id) + '" title="Edit" aria-label="Edit ' + esc(t.name) + '">' + ui('pencil', 15) + '</button>' +
+          '<button type="button" class="asp-ibtn danger" data-tdel="' + esc(t.id) + '" title="Delete" aria-label="Delete ' + esc(t.name) + '">' + ui('trash', 15) + '</button>' +
+          '</div></td></tr>'
       }).join('') + '</tbody></table></div>' + pager(tcState.page, pages, rows.length, 't')
     var tcOf = function (id) { return cur.testCases.find(function (t) { return t.id === id }) }
     $('aspTcList').querySelectorAll('[data-move]').forEach(function (s) {
@@ -606,11 +740,14 @@
         '<div class="actions"><button class="btn btn-ghost" id="aspImport" title="Use a script exported from Klavity (this or another server)">Import script</button><button class="btn btn-indigo" id="aspTcCreate">+ Create AutoSim</button></div></div></div>'
 
     $('aspMain').innerHTML =
-      '<div class="head"><div><h1>' + esc(tc.name) + '</h1></div>' +
+      '<div class="head"><div><h1>' + esc(tc.name) + (tc.requirementId ? ' <span class="asp-ai" style="vertical-align:middle" title="Created by AI from an uploaded requirements document">' + ui('spark', 11) + 'AI</span>' : '') + '</h1></div>' +
       '<div class="actions"><button class="btn btn-ghost" id="aspTcEdit">Edit</button><button class="btn btn-ghost btn-danger" id="aspTcDel">Delete</button></div></div>' +
       '<div class="asp-card" style="margin-bottom:18px"><dl class="kv">' +
       '<dt>Start URL</dt><dd>' + (tc.startUrl ? '<a href="' + esc(tc.startUrl) + '" target="_blank" rel="noopener noreferrer" style="color:var(--indigo)">' + esc(tc.startUrl) + '</a>' : '<span style="color:var(--amber)">Not set. Edit the test case to add where it starts.</span>') + '</dd>' +
+      (tc.preconditions ? '<dt>Preconditions</dt><dd><div class="steps">' + esc(tc.preconditions) + '</div></dd>' : '') +
       '<dt>Execution steps</dt><dd>' + (tc.description ? '<div class="steps">' + esc(tc.description) + '</div>' : '<span class="muted">None yet. Edit the test case to describe what the AutoSim should do.</span>') + '</dd>' +
+      '<dt>Expected result</dt><dd>' + (tc.expectedResult ? '<div class="steps">' + esc(tc.expectedResult) + '</div>' : '<span class="muted">Not set. Add one so runs are validated against it.</span>') + '</dd>' +
+      (tc.requirementId ? '<dt>Requirement</dt><dd id="aspTcReq"><span class="muted">Loading…</span></dd>' : '') +
       '<dt>Execution</dt><dd>' + (cred
         ? 'With credentials: <b>' + esc(cred.name) + '</b> <span class="muted">(' + esc(cred.loginEmail) + ')</span>'
         : (tc.testAccountId ? '<span style="color:var(--rose)">Its credentials are no longer available.</span> ' : 'Without credentials <span class="muted">(no login step)</span>')) + '</dd>' +
@@ -618,6 +755,7 @@
       '<dt>Status</dt><dd><span class="asp-pill ' + esc(tc.status) + '">' + esc(tc.status) + '</span></dd>' +
       '<dt>Last updated</dt><dd>' + esc(fmtDate(tc.updatedAt)) + '</dd></dl></div>' +
       autoHtml +
+      '<div id="aspVal"></div>' +
       '<h2 style="font:500 20px var(--display);margin-bottom:10px">Execution results</h2><div id="aspRuns"><div class="loading">Loading results…</div></div>'
 
     $('aspTcEdit').onclick = function () { testCaseForm(tc) }
@@ -627,6 +765,14 @@
       try { await moveTestCase(tc, s.value); await renderTestCase(apId, tcId) } catch (e) { toast(e.message, true); s.disabled = false }
     }
 
+    // F-01: the requirement this test case verifies + its validation history (actual vs expected).
+    var tcReq = null
+    api('GET', tcBase + '/validation').then(function (d) {
+      tcReq = d.requirement
+      if ($('aspTcReq')) $('aspTcReq').innerHTML = tcReq ? '<b>' + esc(tcReq.ref) + '</b> ' + esc(tcReq.title) + ' <span class="muted">· ' + esc(tcReq.docFilename) + (tcReq.section ? ' · ' + esc(tcReq.section) : '') + '</span>' : '<span class="muted">The requirements document was removed.</span>'
+      if ($('aspVal') && d.validations.length) $('aspVal').innerHTML = '<h2 style="font:500 20px var(--display);margin-bottom:10px">Requirement validation</h2><div class="asp-card" style="margin-bottom:18px;padding:6px 18px">' + d.validations.map(valRow).join('') + '</div>'
+    }).catch(function () { if ($('aspTcReq')) $('aspTcReq').innerHTML = '<span class="muted">Could not load.</span>' })
+
     // Record (first time) / re-record (replace) from this test case's own details — no wizard.
     async function record(btn, replace) {
       if (!tc.startUrl) { toast('Add a Start URL to this test case first.', true); testCaseForm(tc); return }
@@ -634,7 +780,7 @@
       if (tc.testAccountId && !cred) { toast('This test case\'s credentials no longer exist. Pick another login first.', true); testCaseForm(tc); return }
       if (typeof window.klavStartAutosimForTestCase !== 'function') { toast('AutoSims is still loading. Try again in a moment.', true); return }
       var label = btn.textContent; btn.disabled = true; btn.textContent = 'Starting…'
-      try { await window.klavStartAutosimForTestCase({ id: tc.id, name: tc.name, url: tc.startUrl, objective: tc.description.trim(), cred: cred ? cred.name : '-', replace: replace }) }
+      try { await window.klavStartAutosimForTestCase({ id: tc.id, name: tc.name, url: tc.startUrl, objective: objectiveFor(tc, tcReq), cred: cred ? cred.name : '-', replace: replace }) }
       catch (e) { toast(e.message, true) }
       finally { btn.disabled = false; btn.textContent = label }
     }
@@ -719,6 +865,486 @@
     runs.forEach(function (r) { if (openRuns[r.runId]) drawRunSteps(tcBase, r) })
     if (runs.some(function (r) { return r.status === 'running' || r.status === 'paused' })) {
       pollTimer = setTimeout(function () { if ($('aspRuns') === box) drawRuns(tc, tcBase) }, 3000)
+    }
+  }
+
+  // ── Requirement validation helpers (F-01) ─────────────────────────────────────
+  // Extracted test cases keep their requirement link + validation history (actual vs expected, evidence),
+  // shown on the test case page. There is no separate Requirements tab: everything lives under Test Cases.
+  var VAL = {
+    passed: ['Passed', 'green'], failed: ['Failed', 'red'], blocked: ['Blocked', 'paused'], error: ['Error', 'paused'],
+    partial: ['Partly passed', 'paused'], not_run: ['Not run', ''], no_tests: ['No test cases', ''],
+    queued: ['Queued', ''], running: ['Running…', 'draft'], cancelled: ['Cancelled', ''],
+  }
+  function valPill(st) { var v = VAL[st] || [st, '']; return '<span class="asp-pill ' + v[1] + '">' + esc(v[0]) + '</span>' }
+  function withProj(url) { var p = pid(); return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'project=' + encodeURIComponent(p) }
+  function fmtWhenShort(ms) { try { return ms ? new Date(Number(ms)).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '' } catch (e) { return '' } }
+  // Evidence links stored on a validation (screenshots, verification report, PDF).
+  function evidenceLinks(ev) {
+    if (!ev) return ''
+    var out = []
+    ;(ev.screenshots || []).forEach(function (s, i) { out.push('<a href="' + esc(withProj(s.url)) + '" target="_blank" rel="noopener">Screenshot ' + (i + 1) + '</a>') })
+    if (ev.reportUrl) out.push('<a href="' + esc(withProj(ev.reportUrl)) + '" target="_blank" rel="noopener">Run report</a>')
+    if (ev.pdfUrl) out.push('<a href="' + esc(withProj(ev.pdfUrl)) + '" target="_blank" rel="noopener">PDF</a>')
+    return out.length ? '<div class="asp-ev">Evidence: ' + out.join(' · ') + '</div>' : ''
+  }
+  // One validation result (a requirement-run item).
+  function valRow(v) {
+    return '<div class="asp-val">' + valPill(v.status) +
+      ' <span class="muted">' + esc(fmtWhenShort(v.finishedAt || v.startedAt)) + (v.mode ? ' · ' + (v.mode === 'record' ? 'recorded' : 'replayed') : '') + '</span>' +
+      (v.expectedResult ? '<div><b>Expected:</b> ' + esc(v.expectedResult) + '</div>' : '') +
+      (v.observed ? '<div><b>Observed:</b> ' + esc(v.observed) + '</div>' : '') +
+      (v.reason ? '<div class="muted">' + esc(v.reason) + '</div>' : '') + evidenceLinks(v.evidence) + '</div>'
+  }
+  // Objective handed to the AutoSim when recording (mirrors lib/requirement-runs.ts buildObjective).
+  function objectiveFor(tc, req) {
+    var parts = [String(tc.description || '').trim()]
+    if ((tc.preconditions || '').trim()) parts.push('Preconditions (make sure these hold before you start): ' + tc.preconditions.trim())
+    if ((tc.expectedResult || '').trim()) parts.push('Expected result (before finishing, confirm this is actually shown/true in the application): ' + tc.expectedResult.trim())
+    if (req) parts.push('This checks requirement ' + req.ref + ': ' + req.title)
+    return parts.filter(Boolean).join('\n\n')
+  }
+  function reqBase() { return '/api/autosim-projects/' + encodeURIComponent(cur.project.id) }
+
+  // Project "Common setup steps" (e.g. PX4: log in → security code → choose company → wait for dashboard) go in
+  // FRONT of a test case's own steps, renumbered as one list. Idempotent: never added twice.
+  function stepLines(s) { return String(s || '').split(/\r?\n/).map(function (l) { return l.trim().replace(/^\d+\s*[.)]\s*/, '') }).filter(Boolean) }
+  function hasSetupSteps(setup, steps) {
+    var a = stepLines(setup), b = stepLines(steps)
+    if (!a.length || b.length < a.length) return false
+    var norm = function (l) { return l.toLowerCase().replace(/\s+/g, ' ') }
+    return a.every(function (l, i) { return norm(l) === norm(b[i]) })
+  }
+  function withSetupSteps(setup, steps) {
+    if (!stepLines(setup).length || hasSetupSteps(setup, steps)) return String(steps || '').trim()
+    return stepLines(setup).concat(stepLines(steps)).map(function (l, i) { return (i + 1) + '. ' + l }).join('\n')
+  }
+
+
+  // ── Upload & Extract ──────────────────────────────────────────────────────────
+  // Test Cases tab → "Upload & Extract": upload a requirements document → the server extracts test
+  // scenarios (POST …/extract, saves nothing) → review/select them → "Run Tests" opens "Complete details"
+  // where each scenario is shown PRE-FILLED (name, execution steps, start URL) and the user fills only what
+  // the document lacked (start URL, credentials, group) → the test cases are created via the normal API.
+  // Like New AutoSim, the dialog never closes on a backdrop click — only via ✕ / Cancel (with a warning
+  // once extracted work would be lost).
+  var UX_MAX = 25 * 1024 * 1024
+  var UX_EXT = /\.(pdf|docx|txt|md)$/i
+  var ux = null
+  function uxOpen() {
+    ensureUx()
+    ux = { step: 'upload', file: null, result: null, err: '', selected: {}, open: {}, edits: {}, shared: null, progress: 0 }
+    $('aspUxBg').classList.add('show')
+    uxDraw()
+  }
+  function ensureUx() {
+    if ($('aspUxBg')) return
+    var bg = document.createElement('div')
+    bg.className = 'modal-bg'; bg.id = 'aspUxBg'
+    bg.innerHTML = '<div class="modal asp-ux" role="dialog" aria-modal="true" aria-labelledby="aspUxTitle"><div id="aspUxBody"></div></div>'
+    document.body.appendChild(bg)
+    var body = $('aspUxBody')
+    body.addEventListener('click', function (e) {
+      var t = e.target.closest('[data-ux]'); if (!t || t.disabled) return
+      uxAction(t.getAttribute('data-ux'), t)
+    })
+    body.addEventListener('change', function (e) {
+      var t = e.target
+      if (t.id === 'uxFile') { uxPick(t.files && t.files[0]); return }
+      if (t.hasAttribute('data-ux-sel')) { ux.selected[t.getAttribute('data-ux-sel')] = t.checked; uxSyncSel(); return }
+      if (t.id === 'uxAllReady') {
+        uxScenarios().forEach(function (s) { ux.selected[s.id] = t.checked })
+        body.querySelectorAll('[data-ux-sel]').forEach(function (cb) { cb.checked = !!ux.selected[cb.getAttribute('data-ux-sel')] })
+        uxSyncSel(); return
+      }
+      if (t.name === 'uxExec' || t.name === 'uxApp' || t.id === 'uxCred' || t.id === 'uxGroup' || t.id === 'uxStatus') uxReadShared()
+      if (t.name === 'uxExec' || t.name === 'uxApp') uxDraw()
+    })
+    body.addEventListener('input', function (e) {
+      var t = e.target, id = t.getAttribute('data-ux-id')
+      if (id) {
+        ux.edits[id] = ux.edits[id] || {}; ux.edits[id][t.getAttribute('data-ux-f')] = t.value
+        uxSyncRow(id)
+      }
+      else if (t.id === 'uxUrl') uxReadShared()
+    })
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && bg.classList.contains('show')) uxRequestClose() })
+  }
+  async function uxRequestClose() {
+    if (!ux || ux.step === 'creating') return   // creation finishes on its own in a few seconds
+    // Extracted but not created yet → those test cases would be lost, so confirm first.
+    if (ux.result && ['review', 'generated', 'scenarios', 'details'].indexOf(ux.step) >= 0) {
+      var mine = ux
+      return confirmDanger('Discard the extracted test cases?', 'None of the ' + plural(uxScenarios().length, 'extracted test case') + ' have been added yet. Closing now discards them, and you would need to upload the document again.', 'Discard',
+        function () { if (ux === mine) uxClose() }, 'Keep editing')
+    }
+    uxClose()
+  }
+  function uxClose() {
+    if (ux) { if (ux.ctrl) try { ux.ctrl.abort() } catch (e) { } clearInterval(ux.timer); if (ux.srcUrl) URL.revokeObjectURL(ux.srcUrl) }
+    var touched = ux && ux.created && ux.created.length
+    ux = null
+    var bg = $('aspUxBg'); if (bg) bg.classList.remove('show')
+    if (!touched || !cur) return
+    // The new test cases (and their run results) are listed under Test Cases.
+    if (currentTab() === 'test-cases') refreshTab('test-cases'); else go({ asp: cur.project.id, tab: 'test-cases' })
+  }
+  function currentTab() { var t = document.querySelector('#aspMain .asp-tab[aria-selected="true"]'); return t ? t.dataset.tab : 'test-cases' }
+  // Selection changed on "Review Test Scenarios": update the Run button + "Run N ready" box in place
+  // (a full redraw would jump the scenario list back to the top).
+  function uxSyncSel() {
+    var n = uxSel().length, run = document.querySelector('#aspUxBody [data-ux="run"]'), all = $('uxAllReady')
+    if (run) { run.disabled = !n; run.textContent = n ? uxAddLabel(n) : 'Select test cases' }
+    var total = uxScenarios().length
+    if (all) { all.checked = total > 0 && n === total; all.indeterminate = n > 0 && n < total }
+  }
+  // Editing a test case on the review step: update its title + "Needs Info" pill in place (no redraw,
+  // so the textarea keeps focus and the list keeps its scroll position).
+  function uxSyncRow(id) {
+    var s = uxScenarios().filter(function (x) { return x.id === id })[0]; if (!s) return
+    var row = document.querySelector('#aspUxBody [data-ux-row="' + id + '"]'); if (!row) return
+    var rt = row.querySelector('.ux-rt'); if (rt) rt.textContent = uxVal(s, 'title')
+    var pill = row.querySelector('.ux-pill'); if (pill) pill.outerHTML = uxPill(s)
+    var miss = row.querySelector('.ux-miss'), m = uxMissing(s)
+    if (miss) { miss.style.display = m.length ? '' : 'none'; var sp = miss.querySelector('span'); if (sp) sp.textContent = 'Still missing: ' + m.join(', ') + '. Add it to the steps or the expected result below.' }
+    var allLbl = $('uxAllCount'); if (allLbl) allLbl.textContent = uxAllLabel()
+  }
+  // PX4 apps need the same first steps in every test case (log in, security code, choose the company,
+  // wait for the dashboard). Added only when the user says the application is PX4.
+  var PX4_SETUP = '1. Log in to the application with the attached credentials\n2. Security code: 147852\n3. Choose "PX4 Softwaress" company\n4. Wait until the dashboard page is visible.'
+  // What the document left out that the Start URL step already asks for (start URL, login/credentials,
+  // PX4 security code/company) is NOT "needs info" — only what the user must still write in.
+  var UX_COVERED = /(url|link|web ?address|website|credential|log ?in|sign ?in|user ?name|email|password|account|security code|otp|one[- ]time|company|environment)/i
+  function uxMissing(s) {
+    var m = (s.missing || []).filter(function (x) { return !UX_COVERED.test(x) && !/expected/i.test(x) })
+    var e = ux.edits[s.id]
+    if (e && ('steps' in e || 'pre' in e)) m = []   // the user rewrote the steps/preconditions: trust them
+    if (!uxVal(s, 'exp').trim()) m.push('expected result')
+    return m
+  }
+  function uxReady(s) { return !uxMissing(s).length }
+  function uxPill(s) {
+    var m = uxMissing(s)
+    return m.length ? '<span class="ux-pill warn" title="Missing: ' + esc(m.join(', ')) + '">Needs Info</span>' : '<span class="ux-pill ok">Ready</span>'
+  }
+  function uxAllLabel() {
+    var sc = uxScenarios(), need = sc.filter(function (s) { return !uxReady(s) }).length
+    return 'Select all ' + plural(sc.length, 'test case') + (need ? ' (' + need + ' need info: open one to fill it in)' : '')
+  }
+  // Button label for adding the selected test cases: 'Add 22 Test Cases' / 'Add 1 Test Case'.
+  function uxAddLabel(n) { return 'Add ' + n + ' Test Case' + (n === 1 ? '' : 's') }
+  function uxScenarios() { return (ux.result && ux.result.scenarios) || [] }
+  function uxSel() { return uxScenarios().filter(function (s) { return ux.selected[s.id] }) }
+  function uxVal(s, f) {
+    var e = ux.edits[s.id]
+    if (e && f in e) return e[f]
+    return ({ title: s.title, steps: s.steps, pre: s.preconditions || '', exp: s.expectedResult || '', url: s.startUrl || '' })[f] || ''
+  }
+  function uxPick(f) {
+    ux.err = ''
+    if (!f) return uxDraw()
+    if (!UX_EXT.test(f.name)) ux.err = 'Upload a PDF, DOCX or TXT file.'
+    else if (f.size > UX_MAX) ux.err = 'The file is larger than 25 MB.'
+    else if (!f.size) ux.err = 'The file is empty.'
+    else ux.file = f
+    uxDraw()
+  }
+  function uxReadShared() {
+    var exec = document.querySelector('input[name="uxExec"]:checked'), app = document.querySelector('input[name="uxApp"]:checked')
+    ux.shared = {
+      app: app ? app.value : (ux.shared && ux.shared.app) || '',   // required: no default
+      url: $('uxUrl') ? $('uxUrl').value.trim() : (ux.shared && ux.shared.url) || '',
+      exec: exec ? exec.value : 'none',
+      cred: $('uxCred') ? $('uxCred').value : '',
+      group: $('uxGroup') ? $('uxGroup').value : '',
+      status: $('uxStatus') ? $('uxStatus').value : 'active',
+      setup: cur.project.setupSteps || PX4_SETUP,   // PX4 steps (not shown to the user)
+    }
+  }
+  async function uxExtract() {
+    ux.step = 'extracting'; ux.err = ''; ux.progress = 4; uxDraw()
+    // The server answers in one go; ease the bar toward 90% meanwhile so the wait is visible.
+    ux.timer = setInterval(function () {
+      if (!ux || ux.step !== 'extracting') return
+      ux.progress = Math.min(90, ux.progress + (90 - ux.progress) * 0.05 + 0.3)
+      var bar = $('uxBar'), pct = $('uxPct'); if (bar) bar.style.width = ux.progress + '%'; if (pct) pct.textContent = Math.round(ux.progress) + '%'
+    }, 400)
+    var mine = ux, fd = new FormData()
+    fd.append('file', ux.file, ux.file.name)
+    ux.ctrl = new AbortController()
+    try {
+      var p = pid()
+      var r = await fetch('/api/autosim-projects/' + encodeURIComponent(cur.project.id) + '/extract' + (p ? '?project=' + encodeURIComponent(p) : ''),
+        { method: 'POST', body: fd, credentials: 'include', signal: ux.ctrl.signal })
+      var d = await r.json().catch(function () { return {} })
+      if (ux !== mine) return
+      if (r.status === 401) { location.href = '/login'; return }
+      if (!r.ok) throw new Error(d.error || ('Extraction failed (' + r.status + ')'))
+      clearInterval(ux.timer); ux.progress = 100; uxDraw()
+      ux.result = d
+      ux.selected = {}
+      d.scenarios.forEach(function (s) { ux.selected[s.id] = true })   // all extracted test cases are created by default
+      setTimeout(function () { if (ux === mine) { ux.step = 'review'; uxDraw() } }, 350)
+    } catch (e) {
+      if (ux !== mine || e.name === 'AbortError') return
+      clearInterval(ux.timer); ux.step = 'uploaded'; ux.err = e.message; uxDraw()
+    }
+  }
+  async function uxCreate() {
+    uxReadShared()
+    var sh = ux.shared, sel = uxSel(), urlRe = /^https?:\/\/\S+$/
+    if (sh.url && !urlRe.test(sh.url)) { ux.err = 'Start URL must start with http:// or https://'; return uxDraw() }
+    for (var i = 0; i < sel.length; i++) {
+      // A problem with one test case opens its row (listed on this step) so it can be fixed in place.
+      var s = sel[i], u = uxVal(s, 'url').trim() || sh.url
+      if (!uxVal(s, 'title').trim()) { ux.err = s.id + ': add a test case name.'; ux.open[s.id] = true; return uxDraw() }
+      if (!u) { ux.err = 'Add a Start URL (or one for ' + s.id + ').'; return uxDraw() }
+      if (!urlRe.test(u)) { ux.err = s.id + ': Start URL must start with http:// or https://'; ux.open[s.id] = true; return uxDraw() }
+    }
+    if (sh.exec === 'creds' && !sh.cred) { ux.err = 'Pick the credentials to use.'; return uxDraw() }
+    if (sh.app !== 'px4' && sh.app !== 'other') { ux.err = 'Choose which application this is: PX4 or Other.'; return uxDraw() }
+    ux.err = ''; ux.step = 'creating'; ux.created = []; ux.failed = []; uxDraw()
+    // PX4 → its setup steps go in front of every test case; any other application → none.
+    // Remembered on the project so the next upload pre-selects the same choice.
+    var setup = sh.app === 'px4' ? String(sh.setup || '').trim() : ''
+    if (setup !== String(cur.project.setupSteps || '').trim()) {
+      try { await api('PATCH', reqBase(), { setup_steps: setup }); cur.project.setupSteps = setup } catch (e) { /* steps still prepended below */ }
+    }
+    var mine = ux, byDb = {}; sel.forEach(function (sc) { byDb[sc.dbId] = sc })
+    try {
+      // One call: the server creates each test case and links it to its scenario + requirement.
+      var out = await api('POST', reqBase() + '/requirement-docs/' + encodeURIComponent(ux.result.docId) + '/test-cases', {
+        items: sel.map(function (sc) {
+          return { scenario_id: sc.dbId, name: uxVal(sc, 'title').trim().slice(0, 120), start_url: uxVal(sc, 'url').trim() || sh.url,
+            steps: withSetupSteps(setup, uxVal(sc, 'steps')).slice(0, 4000), preconditions: uxVal(sc, 'pre').trim().slice(0, 1000), expected_result: uxVal(sc, 'exp').trim().slice(0, 1000) }
+        }),
+        test_account_id: sh.exec === 'creds' ? sh.cred : null, group_id: sh.group || null, status: sh.status,
+      })
+      if (ux !== mine) return
+      ux.created = out.created.map(function (c) { return Object.assign({ testCaseId: c.testCaseId }, byDb[c.scenarioId]) })
+      ux.failed = out.failed.map(function (f) { return { s: byDb[f.scenarioId] || { id: '?', title: '' }, msg: f.error } })
+    } catch (e) {
+      if (ux !== mine) return
+      ux.failed = sel.map(function (sc) { return { s: sc, msg: e.message } })
+    }
+    if (ux.failed.length) { ux.step = 'done'; return uxDraw() }
+    var n = ux.created.length
+    uxClose()   // → Test Cases tab, refreshed with the new test cases
+    toast(plural(n, 'test case') + ' added to Test Cases')
+  }
+  function uxAction(a, el) {
+    if (a === 'close' || a === 'cancel') return uxRequestClose()
+    if (a === 'browse') return $('uxFile').click()
+    if (a === 'remove') { ux.file = null; return uxDraw() }
+    if (a === 'upload') { ux.step = 'uploaded'; ux.err = ''; return uxDraw() }
+    if (a === 'extract') return uxExtract()
+    if (a === 'source') { if (!ux.srcUrl) ux.srcUrl = URL.createObjectURL(ux.file); window.open(ux.srcUrl, '_blank', 'noopener'); return }
+    if (a === 'toggle') { var id = el.getAttribute('data-id'); ux.open[id] = !ux.open[id]; return uxDraw() }
+    if (a === 'run') { ux.step = 'details'; ux.err = ''; return uxDraw() }
+    if (a === 'create') return uxCreate()
+    if (a === 'finish') return uxClose()
+    var NEXT = { generate: 'generated', scenarios: 'scenarios' }
+    if (NEXT[a]) { ux.step = NEXT[a]; ux.err = ''; return uxDraw() }
+    if (a === 'back') {
+      if (ux.step === 'details') uxReadShared()
+      ux.step = { uploaded: 'upload', review: 'uploaded', generated: 'review', scenarios: 'generated', details: 'scenarios' }[ux.step] || 'upload'
+      ux.err = ''; return uxDraw()
+    }
+  }
+
+  var UX_ICONS = {
+    upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
+    cloud: '<polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>',
+    file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
+    doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/>',
+    check: '<polyline points="20 6 9 17 4 12"/>',
+    x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+    info: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+    layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
+    grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>',
+    flow: '<circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M6 9v3a3 3 0 0 0 3 3h6"/>',
+    alert: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+    list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
+    chevron: '<polyline points="6 9 12 15 18 9"/>',
+    back: '<polyline points="15 18 9 12 15 6"/>',
+    spark: '<path d="M12 3l1.9 5.8L20 10l-6.1 1.2L12 17l-1.9-5.8L4 10l6.1-1.2z"/>',
+    pencil: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>',
+    ext: '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>',
+  }
+  function ui(name, size) {
+    return '<svg width="' + (size || 16) + '" height="' + (size || 16) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + UX_ICONS[name] + '</svg>'
+  }
+  function uxSize(b) { return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB' }
+  function uxStepper(active) {   // 1..3 = that step is current; 4 = all three done
+    var h = '<div class="ux-stepper">'
+    for (var i = 1; i <= 3; i++) {
+      h += '<span class="ux-dot' + (i < active ? ' done' : i === active ? ' on' : '') + '">' + (i < active ? ui('check', 13) : i) + '</span>'
+      if (i < 3) h += '<span class="ux-line' + (i < active ? ' done' : '') + '"></span>'
+    }
+    return h + '</div>' + (active <= 3 ? '<div class="ux-steplbl">Step ' + active + ' of 3</div>' : '')
+  }
+  function uxBtn(act, label, primary, opts) {
+    opts = opts || {}
+    return '<button type="button" class="btn ' + (primary ? 'btn-indigo' : 'btn-ghost') + '" data-ux="' + act + '"' + (opts.disabled ? ' disabled' : '') + '>' +
+      (opts.back ? ui('back', 14) + ' ' : '') + esc(label) + '</button>'
+  }
+  function uxFileCard(done, source) {
+    var f = ux.file
+    return '<div class="ux-file"><span class="ux-fic">' + ui('doc', 18) + '</span><div class="ux-fmeta"><b>' + esc(f.name) + '</b><span>' + esc(uxSize(f.size)) + '</span></div>' +
+      (source ? '<button type="button" class="ux-link" data-ux="source">View source ' + ui('ext', 12) + '</button>' : '') +
+      (done ? '<span class="ux-fok" aria-label="Uploaded">' + ui('check', 12) + '</span>' : '') + '</div>'
+  }
+  function uxTile(icon, n, label, cls) {
+    return '<div class="ux-tile ' + (cls || '') + '"><span class="ux-tic">' + ui(icon, 17) + '</span><div class="ux-tn">' + esc(n) + '</div><div class="ux-tk">' + esc(label) + '</div></div>'
+  }
+  function uxNote(text) { return '<div class="ux-note">' + ui('info', 15) + '<span>' + text + '</span></div>' }
+  function uxErr() { return ux.err ? '<div class="ux-err" role="alert">' + esc(ux.err) + '</div>' : '' }
+  function uxFrame(title, inner, left, right) {
+    return '<div class="ux-head"><div><div class="ux-eyebrow">Upload &amp; Extract</div><h2 id="aspUxTitle">' + esc(title) + '</h2></div>' +
+      '<button type="button" class="ux-x" data-ux="close" aria-label="Close"' + (ux.step === 'creating' ? ' disabled' : '') + '>' + ui('x', 18) + '</button></div>' +
+      inner + uxErr() + '<div class="ux-acts"><div>' + (left || '') + '</div><div>' + (right || '') + '</div></div>'
+  }
+
+  // One extracted test case: header (name + Needs Info/Ready pill) and, when opened, its edit form.
+  // Used on "Review Test Cases" (pickable: with its checkbox) and on "Complete Test Case Details".
+  function uxRow(s, pickable) {
+    var open = !!ux.open[s.id], m = uxMissing(s), sid = esc(s.id)
+    return '<div class="ux-row' + (open ? ' open' : '') + '" data-ux-row="' + sid + '"><div class="ux-rhead">' +
+      (pickable ? '<input type="checkbox" data-ux-sel="' + sid + '" aria-label="Select ' + sid + '"' + (ux.selected[s.id] ? ' checked' : '') + '>' : '') +
+      '<span class="ux-id">' + sid + '</span><span class="ux-rt">' + esc(uxVal(s, 'title')) + '</span>' + uxPill(s) +
+      '<button type="button" class="ux-chev" data-ux="toggle" data-id="' + sid + '" aria-expanded="' + open + '" aria-label="Edit ' + sid + '">' + ui('chevron', 15) + '</button></div>' +
+      // Expanded = an edit form: everything the test case will be created with.
+      (open ? '<div class="ux-rbody">' +
+        (s.requirementRefs.length ? '<div class="muted">Verifies ' + esc(s.requirementRefs.join(', ')) + (s.needsLogin ? ' · needs a signed-in user' : '') + '</div>' : (s.needsLogin ? '<div class="muted">Needs a signed-in user.</div>' : '')) +
+        '<div class="ux-miss"' + (m.length ? '' : ' style="display:none"') + '>' + ui('alert', 13) + '<span>Still missing: ' + esc(m.join(', ')) + '. Add it to the steps or the expected result below.</span></div>' +
+        '<label class="ux-fl" for="uxT_' + sid + '">Test case name</label><input class="ux-name" id="uxT_' + sid + '" data-ux-id="' + sid + '" data-ux-f="title" maxlength="120" value="' + esc(uxVal(s, 'title')) + '">' +
+        '<label class="ux-fl" for="uxP_' + sid + '">Preconditions</label><textarea id="uxP_' + sid + '" data-ux-id="' + sid + '" data-ux-f="pre" maxlength="1000" rows="2" placeholder="State that must hold first (optional)">' + esc(uxVal(s, 'pre')) + '</textarea>' +
+        '<label class="ux-fl" for="uxS_' + sid + '">Execution steps</label><textarea id="uxS_' + sid + '" data-ux-id="' + sid + '" data-ux-f="steps" maxlength="4000" rows="6">' + esc(uxVal(s, 'steps')) + '</textarea>' +
+        '<label class="ux-fl" for="uxE_' + sid + '">Expected result</label><textarea id="uxE_' + sid + '" data-ux-id="' + sid + '" data-ux-f="exp" maxlength="1000" rows="2" placeholder="What must be true at the end for this to pass">' + esc(uxVal(s, 'exp')) + '</textarea>' +
+        '<label class="ux-fl" for="uxU_' + sid + '">Start URL <span class="muted">(optional, only if this one starts somewhere else)</span></label><input id="uxU_' + sid + '" type="url" data-ux-id="' + sid + '" data-ux-f="url" maxlength="500" placeholder="' + (pickable ? 'Uses the Start URL from the next step' : 'Uses the Start URL above') + '" value="' + esc(uxVal(s, 'url')) + '">' +
+        '</div>' : '') + '</div>'
+  }
+  function uxDraw() {
+    if (!ux) return
+    var box = $('aspUxBody'), sc = uxScenarios(), r = ux.result
+    var ready = sc.filter(uxReady), sel = uxSel()
+    var h
+    switch (ux.step) {
+      case 'upload':
+        h = uxFrame('Upload Requirements', uxStepper(1) +
+          '<p class="ux-lead">Upload the functional requirement document to generate test scenarios.</p>' +
+          (ux.file ? uxFileCard(false) + '<button type="button" class="ux-link ux-remove" data-ux="remove">Choose a different file</button>'
+            : '<div class="ux-drop" id="uxDrop" data-ux="browse" role="button" tabindex="0">' + ui('cloud', 30) +
+              '<div><b>Drag &amp; drop a file here</b>, or <span class="ux-linktxt">browse</span></div><div class="ux-hint">PDF, DOCX, TXT · Max 25 MB</div></div>') +
+          '<input type="file" id="uxFile" accept=".pdf,.docx,.txt,.md" hidden>',
+          '', uxBtn('cancel', 'Cancel') + uxBtn('upload', 'Upload', true, { disabled: !ux.file }))
+        break
+      case 'uploaded':
+        h = uxFrame('Document Uploaded', uxStepper(2) + uxFileCard(true) +
+          uxNote('We\'ll extract requirements, features, and expected results from your document.'),
+          uxBtn('back', 'Back', false, { back: true }), uxBtn('extract', ux.err ? 'Try again' : 'Extract Requirements', true))
+        break
+      case 'extracting':
+        h = uxFrame('Extracting Requirements', uxStepper(3) +
+          '<div class="ux-center"><div class="ux-hero">' + ui('doc', 34) + '<span class="ux-spark">' + ui('spark', 14) + '</span></div>' +
+          '<p>Analyzing document and extracting details…</p>' +
+          '<div class="ux-progress"><div class="ux-bar"><span id="uxBar" style="width:' + ux.progress + '%"></span></div><span id="uxPct">' + Math.round(ux.progress) + '%</span></div></div>',
+          '', uxBtn('cancel', 'Cancel'))
+        break
+      case 'review':
+        var reqs = r.requirements || []
+        h = uxFrame('Review Extracted Requirements', uxStepper(4) +
+          '<div class="ux-tiles four">' + uxTile('layers', r.counts.requirements, 'Requirements') + uxTile('grid', r.counts.features, 'Features') +
+          uxTile('flow', r.counts.workflows, 'Workflows') + uxTile('alert', r.counts.clarifications, 'Need Clarification', r.counts.clarifications ? 'warn' : '') + '</div>' +
+          uxFileCard(false, true) +
+          ((r.documentIssues || []).length ? '<div class="ux-miss" style="margin-bottom:8px">' + ui('alert', 13) + ' Document issues: ' + esc(r.documentIssues.join(' · ')) + '</div>' : '') +
+          (reqs.length ? '<div class="ux-fl">Requirements</div><div class="ux-list">' + reqs.map(function (q) {
+            var key = 'q:' + q.ref, open = !!ux.open[key]
+            return '<div class="ux-row' + (open ? ' open' : '') + '"><div class="ux-rhead"><span class="ux-id">' + esc(q.ref) + '</span><span class="ux-rt">' + esc(q.title) + '</span>' +
+              (q.ambiguous ? '<span class="ux-pill warn">Unclear</span>' : '<span class="ux-pill ok">' + (q.type === 'business_rule' ? 'Rule' : 'Functional') + '</span>') +
+              '<button type="button" class="ux-chev" data-ux="toggle" data-id="' + esc(key) + '" aria-expanded="' + open + '" aria-label="Show requirement">' + ui('chevron', 15) + '</button></div>' +
+              (open ? '<div class="ux-rbody">' + (q.description ? '<div>' + esc(q.description) + '</div>' : '') +
+                (q.quote ? '<div class="ux-steps">“' + esc(q.quote) + '”' + (q.section ? ' — ' + esc(q.section) : '') + '</div>' : (q.section ? '<div class="muted">Section: ' + esc(q.section) + '</div>' : '')) +
+                (q.expectedResult ? '<div><b>Expected:</b> ' + esc(q.expectedResult) + '</div>' : '') +
+                (q.ambiguous ? '<div class="ux-miss">' + ui('alert', 13) + ' ' + esc(q.clarification) + '</div>' : '') + '</div>' : '') + '</div>'
+          }).join('') + '</div>' : ''),
+          uxBtn('back', 'Back', false, { back: true }), uxBtn('generate', 'Generate Test Scenarios', true))
+        break
+      case 'generated':
+        h = uxFrame('Test Scenarios Generated', uxStepper(4) +
+          '<div class="ux-tiles three">' + uxTile('list', sc.length, 'Test Scenarios', 'blue') + uxTile('check', ready.length, 'Ready', 'green') +
+          uxTile('alert', sc.length - ready.length, 'Incomplete', sc.length - ready.length ? 'warn' : '') + '</div>' +
+          uxNote('All of them will be added to Test Cases. Each one is linked to the requirement it verifies.' + (sc.length - ready.length ? ' Incomplete ones are missing details you can fill in before adding them.' : '')),
+          uxBtn('back', 'Back', false, { back: true }), uxBtn('scenarios', 'Review Test Cases', true))
+        break
+      case 'scenarios':
+        var allSel = sc.length > 0 && sel.length === sc.length
+        h = uxFrame('Review Test Cases',
+          '<p class="ux-lead">Every test case extracted from <b>' + esc(ux.file.name) + '</b> is selected and will be added to Test Cases. Open one to edit its steps; untick any you don&#39;t want. Start URL and login are set on the next step.</p>' +
+          (sc.length ? '<div class="ux-list">' + sc.map(function (s) { return uxRow(s, true) }).join('') + '</div>' +
+          '<label class="ux-allready"><input type="checkbox" id="uxAllReady"' + (allSel ? ' checked' : '') + '> <span id="uxAllCount">' + esc(uxAllLabel()) + '</span></label>'
+            : '<div class="empty">No test cases were found in this document.</div>'),
+          uxBtn('back', 'Back', false, { back: true }), uxBtn('run', sel.length ? uxAddLabel(sel.length) : 'Select test cases', true, { disabled: !sel.length }))
+        break
+      case 'details':
+        var sh = ux.shared || { url: r.startUrl || '', exec: '', cred: '', group: '', status: 'active' }
+        var accs = cur.accounts || [], needLogin = sel.filter(function (s) { return s.needsLogin }).length
+        if (!sh.exec) sh.exec = needLogin && accs.length ? 'creds' : 'none'
+        if (!sh.cred && accs[0]) sh.cred = accs[0].id
+        if (sh.setup == null) sh.setup = cur.project.setupSteps || PX4_SETUP
+        ux.shared = sh
+        h = uxFrame('Complete Test Case Details',
+          '<p class="ux-lead">' + plural(sel.length, 'test case') + ' will be added to Test Cases from <b>' + esc(ux.file.name) + '</b>, each linked to its requirement. Nothing runs now; run them from Test Cases whenever you want.</p>' +
+          '<div class="ux-form">' +
+          '<label class="ux-fl" for="uxUrl">Start URL' + (r.startUrl ? ' <span class="ux-tag">from document</span>' : ' <span class="ux-tag warn">needed</span>') + '</label>' +
+          '<input id="uxUrl" type="url" maxlength="500" placeholder="https://app.example.com/login" value="' + esc(sh.url) + '">' +
+          '<div class="muted">Used by every test case that has no start URL of its own.</div>' +
+          // Required. PX4 → the PX4 setup steps are added (behind the scenes) in front of every test case;
+          // Other → none. The steps themselves are not shown.
+          '<div class="ux-fl" id="uxAppLbl">Which application is this? *</div>' +
+          '<div class="ux-radios ux-app" role="radiogroup" aria-labelledby="uxAppLbl" aria-required="true">' +
+          '<label class="ux-radio"><input type="radio" name="uxApp" value="px4"' + (sh.app === 'px4' ? ' checked' : '') + '><span><b>PX4 application</b></span></label>' +
+          '<label class="ux-radio"><input type="radio" name="uxApp" value="other"' + (sh.app === 'other' ? ' checked' : '') + '><span><b>Other application</b></span></label></div>' +
+          '<div class="ux-fl">How should these test cases run?' + (needLogin ? ' <span class="ux-tag">' + needLogin + ' need a login</span>' : '') + '</div>' +
+          '<div class="ux-radios"><label class="ux-radio"><input type="radio" name="uxExec" value="none"' + (sh.exec !== 'creds' ? ' checked' : '') + '><span><b>Without credentials</b><span class="muted">Public pages only. No login step.</span></span></label>' +
+          '<label class="ux-radio"><input type="radio" name="uxExec" value="creds"' + (sh.exec === 'creds' ? ' checked' : '') + (accs.length ? '' : ' disabled') + '><span><b>With credentials</b><span class="muted">' + (accs.length ? 'The AutoSim logs in with the credentials below.' : 'Add credentials in the Credentials tab first.') + '</span></span></label></div>' +
+          (sh.exec === 'creds' && accs.length ? '<select id="uxCred" aria-label="Credentials">' + accs.map(function (a) { return '<option value="' + esc(a.id) + '"' + (a.id === sh.cred ? ' selected' : '') + '>' + esc(credLabel(a)) + '</option>' }).join('') + '</select>' : '') +
+          '<div class="ux-two"><div><label class="ux-fl" for="uxGroup">Group</label><select id="uxGroup"><option value="">No group</option>' + cur.groups.map(function (g) { return '<option value="' + esc(g.id) + '"' + (g.id === sh.group ? ' selected' : '') + '>' + esc(g.name) + '</option>' }).join('') + '</select></div>' +
+          '<div><label class="ux-fl" for="uxStatus">Status</label><select id="uxStatus">' + [['active', 'Active'], ['draft', 'Draft']].map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === sh.status ? ' selected' : '') + '>' + o[1] + '</option>' }).join('') + '</select></div></div>' +
+          '<div class="ux-fl">Test cases to add <span class="ux-tag">' + sel.length + '</span></div>' +
+          '<div class="ux-list">' + sel.map(function (s) { return uxRow(s, false) }).join('') + '</div>' +
+          '</div>',
+          uxBtn('back', 'Back', false, { back: true }), uxBtn('create', uxAddLabel(sel.length), true))
+        break
+      case 'creating':
+        h = uxFrame('Adding Test Cases',
+          '<div class="ux-center"><div class="ux-hero">' + ui('list', 32) + '</div><p>Adding ' + plural(sel.length, 'test case') + ' and linking them to their requirements…</p>' +
+          '<div class="ux-progress"><div class="ux-bar ux-indet"><span></span></div></div></div>',
+          '', '')
+        break
+      case 'done':   // only shown when some test cases could not be added
+        h = uxFrame('Some Test Cases Were Not Added',
+          '<div class="ux-tiles two">' + uxTile('check', ux.created.length, 'Added', 'green') + uxTile('alert', ux.failed.length, 'Not added', 'warn') + '</div>' +
+          '<ul class="ux-fails">' + ux.failed.map(function (f) { return '<li><b>' + esc(f.s.id) + ' ' + esc(f.s.title) + '</b>: ' + esc(f.msg) + '</li>' }).join('') + '</ul>' +
+          (ux.created.length ? uxNote('The added ones are listed under Test Cases.') : ''),
+          '', uxBtn('finish', 'Close', true))
+        break
+    }
+    // Keep scroll positions across redraws on the same step (expanding a scenario redraws the dialog).
+    var modal = box.parentNode, oldList = box.querySelector('.ux-list')
+    var keep = ux.lastStep === ux.step ? { m: modal.scrollTop, l: oldList ? oldList.scrollTop : 0 } : null
+    ux.lastStep = ux.step
+    box.innerHTML = h
+    if (keep) { modal.scrollTop = keep.m; var nl = box.querySelector('.ux-list'); if (nl) nl.scrollTop = keep.l }
+    if (ux.step === 'upload') {
+      var drop = $('uxDrop')
+      if (drop) {
+        drop.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('uxFile').click() } })
+        ;['dragenter', 'dragover'].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('over') }) })
+        drop.addEventListener('dragleave', function () { drop.classList.remove('over') })
+        drop.addEventListener('drop', function (e) { e.preventDefault(); drop.classList.remove('over'); uxPick(e.dataTransfer.files && e.dataTransfer.files[0]) })
+      }
     }
   }
 

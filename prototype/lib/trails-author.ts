@@ -343,10 +343,16 @@ export async function authorTrail(
   if (req.testAccountName) {
     const acc = await getTestAccountByName(projectId, req.testAccountName)
     if (!acc) return { status: "failed", trailId: null, verificationRunId: null, verificationVerdict: null, steps: [], stallReason: `unknown test account: ${req.testAccountName}`, llmCalls: 0, costUsd: 0 }
-    credFields.push(`{{cred:${acc.name}:email}}`, `{{cred:${acc.name}:password}}`)
-    // When the test-OTP bypass is active, expose the :otp placeholder so the author model can fill
-    // in the fixed code (666666) without triggering a real OTP email or hitting the rate limit.
-    if (process.env.KLAV_TEST_OTP) credFields.push(`{{cred:${acc.name}:otp}}`)
+    // Offer ONLY the placeholders this credential can actually resolve. A password account can't fill
+    // {{cred:…:otp}} (resolveCredRefs throws "does not have an OTP code"), and an OTP account has no
+    // password. Offering :otp to a password account made the model pick it for an app's own security-code
+    // field (e.g. PX4 "Security code: 147852" given in the steps) and fail every attempt — it must type the
+    // code from the objective instead.
+    credFields.push(`{{cred:${acc.name}:email}}`)
+    if (acc.authShape !== "otp") credFields.push(`{{cred:${acc.name}:password}}`)
+    // When the test-OTP bypass is active, expose the :otp placeholder (OTP accounts only) so the author model
+    // can fill in the fixed code (666666) without triggering a real OTP email or hitting the rate limit.
+    if (process.env.KLAV_TEST_OTP && acc.authShape === "otp") credFields.push(`{{cred:${acc.name}:otp}}`)
   }
   // KLA-184 (AT6): perform the project's REGISTERED auth method at run start so the walk continues
   // authenticated instead of pausing at the login gate (KLA-179). Decrypt-at-execution ONLY -
