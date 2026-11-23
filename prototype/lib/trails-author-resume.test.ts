@@ -281,6 +281,10 @@ test("runAuthorNow atomically marks a claimed prior session as resuming", async 
     lastUrl: FIXTURE_URL,
   }
   await updateAuthorSession(proj, priorId, { checkpoint: cp, status: "needs_auth", stallReason: "auth gate" })
+  // R2: the claim state is only observable WHILE the child is running (when the child ends, the claim is settled: restored on a
+  // retryable failure, consumed on success). Hold the drive open so this assertion is deterministic, not a race with the drive.
+  let release!: () => void
+  const held = new Promise<void>((r) => { release = r })
   const out = await runAuthorNow(
     proj,
     { name: "new", objective: "test", baseUrl: FIXTURE_URL },
@@ -289,6 +293,7 @@ test("runAuthorNow atomically marks a claimed prior session as resuming", async 
       resumeSessionId: priorId,
       author: async (_projectId, _req, opts) => {
         expect(opts.checkpoint?.lastUrl).toBe(FIXTURE_URL)
+        await held
         return {
           status: "stalled",
           trailId: null,
@@ -306,6 +311,8 @@ test("runAuthorNow atomically marks a claimed prior session as resuming", async 
   expect(prior!.status).toBe("resuming")
   expect(prior!.resumedBy).toBe(out.sessionId)
   expect((await getAuthorSession(proj, out.sessionId))!.resumedFrom).toBe(priorId)
+  release()
+  for (let i = 0; i < 100 && (await getAuthorSession(proj, out.sessionId))!.status === "running"; i++) await new Promise((r) => setTimeout(r, 30))
 })
 
 // ── KLA-270: surface resumable partial drafts — listStalledAuthorSessions persist→list round-trip ──
@@ -355,15 +362,17 @@ describe("KLA-270 listStalledAuthorSessions — resumable partial drafts", () =>
     expect(list.map(x => x.id)).toContain(id)
   })
 
-  test("a stalled session with only a partial-draft trailId (no checkpoint) still surfaces", async () => {
+  // R1: this used to assert the OPPOSITE (a stalled session with only a partial-draft trailId was listed). The list then
+  // offered a Resume button that resume rejects ("resume session has no checkpoint"). The list must agree with resume.
+  test("a stalled session with only a partial-draft trailId (no checkpoint) is NOT listed: it cannot be resumed", async () => {
     const proj = "proj_kla270_partialdraft"
     const id = await createAuthorSession(proj, { name: "Partial", objective: "half done", baseUrl: FIXTURE_URL })
     await updateAuthorSession(proj, id, { trailId: "trail_partial_123", status: "stalled", stallReason: "stopped early" })
     const list = await listStalledAuthorSessions(proj)
-    expect(list).toHaveLength(1)
-    expect(list[0].id).toBe(id)
-    expect(list[0].trailId).toBe("trail_partial_123")
-    expect(list[0].checkpoint).toBeNull()
+    expect(list).toHaveLength(0)
+    const row = await getAuthorSession(proj, id)
+    expect(row!.trailId).toBe("trail_partial_123")   // the partial draft itself is still there
+    expect(row!.checkpoint).toBeNull()
   })
 
   test("running and crystallized sessions do NOT surface as resumable", async () => {

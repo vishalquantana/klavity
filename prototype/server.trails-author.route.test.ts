@@ -277,6 +277,25 @@ test("approve: draft→active once; second approve 409; cross-project 404; unaut
   expect((await fetch(`${base}/api/trails/${trailId}/approve?project=${pid}`, { method: "POST" })).status).toBe(401)
 })
 
+// R2: an actual resume claim conflict is a 409 (not a 500). The pre-check passes (the prior is `stalled` with a usable checkpoint),
+// but another attempt already owns it -> the engine refuses the claim -> the route must answer 409.
+// NOTE: kept BEFORE the "GET session is project-scoped (IDOR)" test: that test starts a real author drive in the server and holds
+// the in-memory author slot, which would answer 409 "already running" before the claim is ever attempted.
+test("POST /api/trails/author/:id/resume returns 409 when another resume attempt already owns the prior (claim conflict)", async () => {
+  const now = Date.now()
+  const URL1 = "https://example.com/start"
+  const cp = JSON.stringify({ traj: [{ action: "navigate", actionValue: URL1, url: URL1, domHash: "h" }], history: ["navigate"], stepIdx: 0, llmCalls: 1, costUsd: 0, lastUrl: URL1 })
+  const priorId = `auth_r2_conflict_prior_${ts}`
+  await rawExec(`INSERT INTO author_sessions (id,project_id,name,objective,base_url,status,stall_reason,checkpoint_json,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    [priorId, PROJECT_ID, priorId, "some long enough objective", URL1, "stalled", "paused", cp, ADMIN_EMAIL, now, now])
+  // another resume attempt is already live for this prior
+  await rawExec(`INSERT INTO author_sessions (id,project_id,name,objective,base_url,status,created_by,resumed_from,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [`auth_r2_conflict_child_${ts}`, PROJECT_ID, "child", "some long enough objective", URL1, "running", ADMIN_EMAIL, priorId, now, now])
+  const r = await fetch(`${base}/api/trails/author/${priorId}/resume?project=${pid}`, { method: "POST", headers: { cookie: adminCookie } })
+  expect(r.status).toBe(409)
+  expect((await r.json()).error).toMatch(/already claimed/)
+})
+
 test("GET session is project-scoped (IDOR)", async () => {
   const r = await fetch(`${base}/api/trails/author?project=${pid}`, {
     method: "POST", headers: { cookie: adminCookie, "content-type": "application/json" },
@@ -320,4 +339,65 @@ test("GET /api/trails/author/active: 200 { active:null } when none running; 200 
   const r4 = await fetch(`${base}/api/trails/author/active?project=${pid}`, { headers: { cookie: adminCookie } })
   expect(r4.status).toBe(200)
   expect((await r4.json()).active).toBeNull()
+})
+
+// R1: the Resume banner API. Only sessions with a USABLE checkpoint are listed, and the technical persistence detail kept in
+// the persisted stall_reason is never sent to the dashboard.
+test("GET /api/trails/author/stalled lists only usable checkpoints, with user-friendly reasons (no raw DB/persistence text)", async () => {
+  const now = Date.now()
+  const URL1 = "https://example.com/start"
+  const cp = JSON.stringify({ traj: [{ action: "navigate", actionValue: URL1, url: URL1, domHash: "h" }], history: ["navigate"], stepIdx: 0, llmCalls: 1, costUsd: 0, lastUrl: URL1 })
+  const mk = async (id: string, status: string, checkpoint: string | null, reason: string, trailId: string | null = null) =>
+    rawExec(`INSERT INTO author_sessions (id,project_id,name,objective,base_url,status,stall_reason,checkpoint_json,trail_id,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, PROJECT_ID, id, "some long enough objective", URL1, status, reason, checkpoint, trailId, ADMIN_EMAIL, now, now])
+  await mk(`auth_banner_older_${ts}`, "stalled", cp, "browser/page problem, run paused: page.evaluate: Target page, context or browser has been closed. Resume to continue from the last checkpoint. [latest checkpoint not saved (save error: SQLITE_BUSY: database is locked); Resume continues from an earlier step]")
+  await mk(`auth_banner_corrupt_${ts}`, "stalled", "{not json", "stopped")
+  await mk(`auth_banner_wrongshape_${ts}`, "stalled", JSON.stringify({ v: 1, lastUrl: URL1 }), "stopped")
+  await mk(`auth_banner_draftonly_${ts}`, "stalled", null, "stopped early", "trail_partial_banner")
+
+  const r = await fetch(`${base}/api/trails/author/stalled?project=${pid}`, { headers: { cookie: adminCookie } })
+  expect(r.status).toBe(200)
+  const ids = ((await r.json()).sessions as any[]).map((s) => s.id)
+  expect(ids).toContain(`auth_banner_older_${ts}`)
+  for (const hidden of ["corrupt", "wrongshape", "draftonly"]) expect(ids).not.toContain(`auth_banner_${hidden}_${ts}`)
+
+  const listed = ((await (await fetch(`${base}/api/trails/author/stalled?project=${pid}`, { headers: { cookie: adminCookie } })).json()).sessions as any[]).find((s) => s.id === `auth_banner_older_${ts}`)
+  expect(listed.stallReason).toContain("Resume will continue from the last saved progress")
+  for (const leak of [/SQLITE/i, /database/i, /save error/i, /\[/, /page\.evaluate/, /Target page/]) expect(listed.stallReason).not.toMatch(leak)
+})
+
+test("GET /api/trails/author/:id (dashboard polling) shows a friendly reason for a session whose checkpoint could not be saved", async () => {
+  const now = Date.now()
+  const id = `auth_banner_failed_${ts}`
+  await rawExec(`INSERT INTO author_sessions (id,project_id,name,objective,base_url,status,stall_reason,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [id, PROJECT_ID, id, "some long enough objective", "https://example.com", "failed", "stopped at auth gate [checkpoint not saved (save error: disk full); Resume is unavailable]", ADMIN_EMAIL, now, now])
+  const r = await fetch(`${base}/api/trails/author/${id}?project=${pid}`, { headers: { cookie: adminCookie } })
+  const body = await r.json()
+  expect(body.status).toBe("failed")
+  expect(body.stallReason).toMatch(/can't be resumed/)
+  expect(body.stallReason).not.toMatch(/disk full|save error|\[/)
+})
+
+test("POST /api/trails/author/:id/resume refuses a stalled session whose checkpoint is not usable (409)", async () => {
+  const now = Date.now()
+  const id = `auth_banner_noresume_${ts}`
+  await rawExec(`INSERT INTO author_sessions (id,project_id,name,objective,base_url,status,stall_reason,checkpoint_json,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, PROJECT_ID, id, "some long enough objective", "https://example.com", "stalled", "stopped", JSON.stringify({ v: 1 }), ADMIN_EMAIL, now, now])
+  const r = await fetch(`${base}/api/trails/author/${id}/resume?project=${pid}`, { method: "POST", headers: { cookie: adminCookie } })
+  expect(r.status).toBe(409)
+  expect((await r.json()).error).toMatch(/no usable checkpoint/)
+})
+
+test("GET /api/trails/author/:id never shows resume wording for a FAILED session (restart / stale-heartbeat, no checkpoint)", async () => {
+  const now = Date.now()
+  for (const [tag, reason] of [["restart", "interrupted by a server restart - please retry"], ["stale", "stale heartbeat \u2014 process may have crashed, please retry"]] as const) {
+    const id = `auth_banner_failed_${tag}_${ts}`
+    await rawExec(`INSERT INTO author_sessions (id,project_id,name,objective,base_url,status,stall_reason,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [id, PROJECT_ID, id, "some long enough objective", "https://example.com", "failed", reason, ADMIN_EMAIL, now, now])
+    const body = await (await fetch(`${base}/api/trails/author/${id}?project=${pid}`, { headers: { cookie: adminCookie } })).json()
+    expect(body.status).toBe("failed")
+    expect(body.stallReason).toMatch(/start a new run/i)
+    expect(body.stallReason).not.toMatch(/you can resume|resume will continue|resume to continue/i)
+    expect(body.stallReason).not.toMatch(/please retry/i)
+  }
 })

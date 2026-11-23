@@ -1,5 +1,6 @@
 // Turso / libSQL access: users, email-OTP login, sessions, accounts, projects, memberships.
 import { createClient, type Client } from "@libsql/client"
+import { usableCheckpointFromJson, isNewerUsableCheckpoint } from "./author-checkpoint"
 import { insightsFromTraits, type Trait, type TraitKind, type TraitStatus, type TraitEventRow } from "./provenance"
 import { encryptSecret, sha256hex } from "./crypto"
 import type { SanitizedAttr } from "./attr"
@@ -2186,17 +2187,94 @@ export async function backfillTrailStatus(c: Client): Promise<{ activated: numbe
 
 // Authoring runs in-process holding the walk slot; a service restart (the merge-train restarts on
 // every deploy) kills it mid-flight and leaves its author_sessions row 'running' forever — the UI
-// polls a zombie. At boot no authoring can legitimately be in flight (single-process design), so
-// mark every 'running' session failed with an honest reason. Observed live 2026-07-04.
-export async function sweepOrphanedAuthorSessions(c: Client): Promise<{ swept: number }> {
-  const r = await c.execute({
-    sql: `UPDATE author_sessions SET status='failed',
-            stall_reason='interrupted by a server restart - please retry', updated_at=?
-          WHERE status='running'`,
-    args: [Date.now()],
+// polls a zombie. Boot sweep: every 'running' session that is not demonstrably alive is ended. Observed live 2026-07-04.
+// R1 (A4): blue/green deploys run two processes against one DB, so a row with a FRESH heartbeat may belong to the other
+// slot - leave it to the stale reaper. Rows with no heartbeat (pre-KLA-55) are swept.
+// R1 (A1): a row with a USABLE checkpoint (the single shared rule in lib/author-checkpoint.ts) is resumable -> 'stalled';
+// anything else has nothing to resume -> 'failed'.
+async function endRunningAuthorSessions(
+  c: Client, beatSql: string, beatArgs: any[],
+  reasons: { resumable: string; failed: string },
+): Promise<number> {
+  const rows = await c.execute({ sql: `SELECT id, checkpoint_json FROM author_sessions WHERE status='running' AND ${beatSql}`, args: beatArgs })
+  let swept = 0
+  for (const row of rows.rows as any[]) {
+    const resumable = usableCheckpointFromJson(row.checkpoint_json) !== null
+    // Re-assert the 'running' + heartbeat predicate so a session that beats between the SELECT and this UPDATE is left alone.
+    const r = await c.execute({
+      sql: `UPDATE author_sessions SET status=?, stall_reason=?, updated_at=? WHERE id=? AND status='running' AND ${beatSql}`,
+      args: [resumable ? "stalled" : "failed", resumable ? reasons.resumable : reasons.failed, Date.now(), row.id, ...beatArgs],
+    })
+    swept += Number(r.rowsAffected ?? 0)
+  }
+  return swept
+}
+
+// R2: a prior session sits in `resuming` while a resume child owns it. If that child is gone, or ended in failure, nothing else would
+// ever move the prior again - its checkpoint would be unreachable. Runs after the child sweep, from BOTH the boot sweep and the
+// stale reaper, so it also sees the children those sweeps just ended. Idempotent: a crash part-way is simply redone next tick.
+//   - child row missing AND the claim older than the grace window   -> prior restored to 'stalled'
+//   - child 'failed' (retryable failure / process died)             -> prior restored to 'stalled', carrying the child's latest USABLE
+//                                                                      checkpoint if it is further along than the prior's (one transaction)
+//   - child 'failed' because the USER cancelled                     -> prior terminal 'failed' (never made resumable again; no transfer)
+//   - child running / crystallized / stalled / needs_auth           -> untouched (live, or the prior was consumed by progress)
+// Every UPDATE re-asserts `status='resuming' AND resumed_by=<that child>` (and the child's state), so it can never act on a claim a
+// newer attempt has since taken. Restoring never touches updated_at, so it cannot extend the seven-day retention window.
+//
+// BLUE/GREEN: an OLD (pre-R2) process claims with two statements (UPDATE prior, then INSERT child) and stamps updated_at=now when it
+// claims. A claim with no child row is therefore only provably orphaned once it is older than RESUME_CLAIM_GHOST_GRACE_MS; inside the
+// window the old process is (at most milliseconds) from inserting its child. New-code claims are one transaction and can never be
+// ghosts, so the window never delays recovery of anything R2 itself created. Needs clocks of the two slots to agree to within seconds.
+export const RESUME_CLAIM_GHOST_GRACE_MS = 5 * 60 * 1000
+export async function recoverOrphanedResumeClaims(c: Client, ghostGraceMs = RESUME_CLAIM_GHOST_GRACE_MS): Promise<number> {
+  const ghostCutoff = Date.now() - ghostGraceMs
+  const rows = await c.execute(`SELECT p.id AS pid, p.project_id AS proj, p.resumed_by AS rby, p.updated_at AS pupd, p.checkpoint_json AS pcp,
+                                       ch.id AS cid, ch.status AS cstatus, ch.stall_reason AS creason, ch.checkpoint_json AS ccp
+                                FROM author_sessions p LEFT JOIN author_sessions ch ON ch.id = p.resumed_by AND ch.project_id = p.project_id
+                                WHERE p.status='resuming'`)
+  let recovered = 0
+  for (const r of rows.rows as any[]) {
+    if (r.cid == null) {                                                         // ghost: claim without a child row
+      if (Number(r.pupd) >= ghostCutoff) continue                                // too fresh: an old process may be about to insert the child
+      const res = await c.execute({
+        sql: `UPDATE author_sessions SET status='stalled', resumed_by=NULL
+              WHERE id=? AND project_id=? AND status='resuming' AND resumed_by IS ? AND updated_at < ?
+                AND NOT EXISTS (SELECT 1 FROM author_sessions x WHERE x.id IS ?)`,
+        args: [r.pid, r.proj, r.rby ?? null, ghostCutoff, r.rby ?? null],
+      })
+      recovered += Number(res.rowsAffected ?? 0)
+      continue
+    }
+    if (String(r.cstatus) !== "failed") continue
+    const cancelled = String(r.creason) === "cancelled by user"
+    const stmts: Array<{ sql: string; args: any[] }> = []
+    if (!cancelled && r.ccp != null && isNewerUsableCheckpoint(usableCheckpointFromJson(r.ccp), usableCheckpointFromJson(r.pcp))) {
+      stmts.push({
+        sql: `UPDATE author_sessions SET checkpoint_json=?
+              WHERE id=? AND project_id=? AND status='resuming' AND resumed_by=?
+                AND EXISTS (SELECT 1 FROM author_sessions x WHERE x.id=? AND x.status='failed' AND x.checkpoint_json=?)`,
+        args: [String(r.ccp), r.pid, r.proj, r.rby, r.rby, String(r.ccp)],
+      })
+    }
+    stmts.push({
+      sql: `UPDATE author_sessions SET ${cancelled ? "status='failed', stall_reason='resume cancelled by user'" : "status='stalled', resumed_by=NULL"}
+            WHERE id=? AND project_id=? AND status='resuming' AND resumed_by=? AND EXISTS (SELECT 1 FROM author_sessions x WHERE x.id=? AND x.status='failed')`,
+      args: [r.pid, r.proj, r.rby, r.rby],
+    })
+    const rs = await c.batch(stmts, "write")
+    recovered += Number(rs[rs.length - 1].rowsAffected ?? 0)
+  }
+  if (recovered) console.log(`[author-sessions] recovered ${recovered} orphaned resume claim(s)`)
+  return recovered
+}
+
+export async function sweepOrphanedAuthorSessions(c: Client, freshMs = DEFAULT_STALE_MS): Promise<{ swept: number }> {
+  const swept = await endRunningAuthorSessions(c, "(last_beat_at IS NULL OR last_beat_at < ?)", [Date.now() - freshMs], {
+    resumable: "interrupted by a server restart - Resume to continue from the last checkpoint",
+    failed: "interrupted by a server restart - please retry",
   })
-  const swept = Number(r.rowsAffected ?? 0)
-  if (swept) console.log(`[author-sessions] swept ${swept} orphaned running session(s) → failed`)
+  if (swept) console.log(`[author-sessions] swept ${swept} orphaned running session(s) → stalled/failed`)
+  await recoverOrphanedResumeClaims(c)
   return { swept }
 }
 
@@ -2223,7 +2301,8 @@ export async function touchWalkHeartbeat(runId: string, c?: Client): Promise<voi
 }
 
 export async function touchAuthorHeartbeat(sessionId: string, c?: Client): Promise<void> {
-  await (c ?? db!).execute({ sql: `UPDATE author_sessions SET last_beat_at=? WHERE id=?`, args: [Date.now(), sessionId] })
+  // R2 fence: only a still-running session takes heartbeats (a recovered / ended row is never touched by its stale worker).
+  await (c ?? db!).execute({ sql: `UPDATE author_sessions SET last_beat_at=? WHERE id=? AND status='running'`, args: [Date.now(), sessionId] })
 }
 
 // KLA-55: Stale-heartbeat reaper — sweeps rows whose heartbeat is older than thresholdMs.
@@ -2246,16 +2325,13 @@ export async function sweepStaleWalks(c: Client, thresholdMs = DEFAULT_STALE_MS)
 }
 
 export async function sweepStaleAuthorSessions(c: Client, thresholdMs = DEFAULT_STALE_MS): Promise<{ swept: number }> {
-  const cutoff = Date.now() - thresholdMs
-  const now = Date.now()
-  const r = await c.execute({
-    sql: `UPDATE author_sessions SET status='failed', updated_at=?,
-            stall_reason='stale heartbeat — process may have crashed, please retry'
-          WHERE status='running' AND last_beat_at IS NOT NULL AND last_beat_at < ?`,
-    args: [now, cutoff],
+  // R1 (A1): usable checkpoint (shared rule) -> 'stalled' (resumable); otherwise 'failed'.
+  const swept = await endRunningAuthorSessions(c, "(last_beat_at IS NOT NULL AND last_beat_at < ?)", [Date.now() - thresholdMs], {
+    resumable: "stale heartbeat - process may have crashed. Resume to continue from the last checkpoint",
+    failed: "stale heartbeat — process may have crashed, please retry",
   })
-  const swept = Number(r.rowsAffected ?? 0)
-  if (swept) console.log(`[author-sessions] stale reaper swept ${swept} session(s) → failed`)
+  if (swept) console.log(`[author-sessions] stale reaper swept ${swept} session(s) → stalled/failed`)
+  await recoverOrphanedResumeClaims(c)
   return { swept }
 }
 
@@ -4135,6 +4211,9 @@ export const NOTIFY_ASSIGNEE_TYPES = new Set([
   "ticket_commented", "ticket_label_added", "ticket_label_removed", "ticket_description_changed",
 ])
 
+// KD-3134: updates the ticket's reporter hears about too (besides the assignee).
+export const REPORTER_NOTIFY_TYPES = new Set(["ticket_status_changed", "ticket_priority_changed"])
+
 const _notifEmail = (v: unknown): string | null => {
   const e = v == null ? "" : String(v).trim().toLowerCase()
   return e && e.includes("@") ? e : null
@@ -4162,9 +4241,17 @@ export async function notifyAssigneeOfTicketUpdate(a: ActivityInsert): Promise<n
   if (a.type === "ticket_assignee_changed") {
     for (const e of [a.meta?.to, a.meta?.from]) { const r = _notifEmail(e); if (r) recipients.push(r) }
   } else {
-    const r = await db.execute({ sql: "SELECT assignee FROM feedback WHERE id=? AND project_id=?", args: [a.feedbackId, a.projectId] })
-    const assignee = _notifEmail(r.rows[0]?.assignee)
+    const r = await db.execute({ sql: "SELECT assignee, contact_email, actor_email FROM feedback WHERE id=? AND project_id=?", args: [a.feedbackId, a.projectId] })
+    const row: any = r.rows[0] || {}
+    const assignee = _notifEmail(row.assignee)
     if (assignee) recipients.push(assignee)
+    // KD-3134: a status or priority change also notifies the ticket's REPORTER (the "Reporter" shown on the ticket:
+    // the composer's contact email, else whoever filed it), matching who the status-change email goes to. Before,
+    // only the assignee heard, so a change to an unassigned ticket, or by its assignee, put nothing in anyone's bell.
+    if (REPORTER_NOTIFY_TYPES.has(a.type)) {
+      const reporter = _notifEmail(row.contact_email) || _notifEmail(row.actor_email)
+      if (reporter) recipients.push(reporter)
+    }
   }
   const uniq = [...new Set(recipients)].filter(e => e !== actor)
   for (const to of uniq) {
@@ -9129,8 +9216,10 @@ export async function listTicketsPaginated(
 
   const search = opts.search?.trim()
   if (search) {
-    // Treat %, _, and backslash as literal user input rather than LIKE wildcards.
-    const escaped = search.replace(/[\\%_]/g, "\\\\$&")
+    // Treat %, _, and backslash as literal user input rather than LIKE wildcards. ONE backslash per char (ESCAPE '\'):
+    // KD-3139 — this used to insert TWO ("\\\\$&"), so the pattern demanded a literal backslash and any search
+    // containing "_" or "%" (e.g. "user_id", "50%") found nothing in the List while the Board still matched it.
+    const escaped = search.replace(/[\\%_]/g, "\\$&")
     const pattern = `%${escaped}%`
     // Titles and descriptions generated by Sims live in suggested_bug_json; manual-ticket
     // descriptions live in observation, while notes are the editable ticket description. #543: a

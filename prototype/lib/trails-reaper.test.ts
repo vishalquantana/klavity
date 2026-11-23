@@ -103,6 +103,93 @@ test("sweepOrphanedAuthorSessions: running sessions become failed on boot", asyn
   expect(String((r.rows[0] as any).stall_reason)).toContain("restart")
 })
 
+// R1 (A1/A4): a checkpointed session must stay resumable; a live peer's session must not be swept.
+// A real legacy-format (KLA-57, six required fields) checkpoint - the shared rule in lib/author-checkpoint.ts accepts it.
+const USABLE_CP = JSON.stringify({ traj: [{ action: "navigate", actionValue: "https://x.test", url: "https://x.test", domHash: "h" }], history: ["navigate"], stepIdx: 0, llmCalls: 1, costUsd: 0, lastUrl: "https://x.test" })
+async function setSession(id: string, patch: { checkpoint?: string; beat?: number }) {
+  if (patch.checkpoint !== undefined) await testDb.execute({ sql: `UPDATE author_sessions SET checkpoint_json=? WHERE id=?`, args: [patch.checkpoint, id] })
+  if (patch.beat !== undefined) await testDb.execute({ sql: `UPDATE author_sessions SET last_beat_at=? WHERE id=?`, args: [patch.beat, id] })
+}
+
+test("R1 sweepOrphanedAuthorSessions: running session WITH checkpoint becomes stalled (resumable)", async () => {
+  const sid = await insertRunningAuthorSession("proj_r1a")
+  await setSession(sid, { checkpoint: USABLE_CP })
+  await sweepOrphanedAuthorSessions(testDb)
+  expect(await sessionStatus(sid)).toBe("stalled")
+})
+
+test("R1 sweepOrphanedAuthorSessions: session WITHOUT checkpoint still becomes failed", async () => {
+  const sid = await insertRunningAuthorSession("proj_r1b")
+  await sweepOrphanedAuthorSessions(testDb)
+  expect(await sessionStatus(sid)).toBe("failed")
+})
+
+test("R1 sweepOrphanedAuthorSessions: fresh heartbeat (other blue/green slot) is NOT swept", async () => {
+  const sid = await insertRunningAuthorSession("proj_r1c")
+  await setSession(sid, { beat: Date.now() - 5_000 })
+  await sweepOrphanedAuthorSessions(testDb)
+  expect(await sessionStatus(sid)).toBe("running")
+})
+
+test("R1 sweepOrphanedAuthorSessions: stale heartbeat IS swept", async () => {
+  const sid = await insertRunningAuthorSession("proj_r1d")
+  await setSession(sid, { beat: Date.now() - 60 * 60 * 1000 })
+  await sweepOrphanedAuthorSessions(testDb)
+  expect(await sessionStatus(sid)).toBe("failed")
+})
+
+test("R1 sweepStaleAuthorSessions: stale session WITH checkpoint becomes stalled, without becomes failed", async () => {
+  const a = await insertRunningAuthorSession("proj_r1e")
+  const b = await insertRunningAuthorSession("proj_r1e")
+  const old = Date.now() - 60 * 60 * 1000
+  await setSession(a, { checkpoint: USABLE_CP, beat: old })
+  await setSession(b, { beat: old })
+  await sweepStaleAuthorSessions(testDb, 3 * 60 * 1000)
+  expect(await sessionStatus(a)).toBe("stalled")
+  expect(await sessionStatus(b)).toBe("failed")
+})
+
+// R1: a fresh heartbeat is protected at boot, and the SAME session is recovered by the stale reaper once it ages out.
+test("R1 lifecycle: fresh heartbeat survives boot sweep, then the stale reaper recovers it as stalled with checkpoint intact", async () => {
+  const sid = await insertRunningAuthorSession("proj_r1life")
+  const cp = JSON.stringify({ traj: [{ action: "navigate", actionValue: "https://x.test", url: "https://x.test", domHash: "h" }], history: ["navigate"], stepIdx: 1, llmCalls: 1, costUsd: 0, lastUrl: "https://x.test" })
+  await setSession(sid, { checkpoint: cp })
+  await touchAuthorHeartbeat(sid, testDb)                       // heartbeat "now" (live peer)
+  await sweepOrphanedAuthorSessions(testDb, 5_000)              // boot sweep of a restarting sibling: must leave it alone
+  expect(await sessionStatus(sid)).toBe("running")
+  await new Promise((r) => setTimeout(r, 350))                  // the peer dies; its heartbeat ages
+  await sweepStaleAuthorSessions(testDb, 200)                   // reaper tick with a (test-sized) stale threshold
+  expect(await sessionStatus(sid)).toBe("stalled")
+  const row = (await testDb.execute({ sql: `SELECT checkpoint_json, stall_reason FROM author_sessions WHERE id=?`, args: [sid] })).rows[0] as any
+  expect(String(row.checkpoint_json)).toBe(cp)                  // checkpoint untouched by the sweep
+  expect(String(row.stall_reason)).toMatch(/Resume/)
+})
+
+test("R1 lifecycle: boot sweep keeps checkpoint contents when it stalls a session", async () => {
+  const sid = await insertRunningAuthorSession("proj_r1keep")
+  const cp = JSON.stringify({ traj: [{ action: "click", url: "https://x.test/p", domHash: "h" }], history: ["click"], stepIdx: 3, llmCalls: 2, costUsd: 0.5, lastUrl: "https://x.test/p" })
+  await setSession(sid, { checkpoint: cp })
+  await sweepOrphanedAuthorSessions(testDb)
+  expect(await sessionStatus(sid)).toBe("stalled")
+  const row = (await testDb.execute({ sql: `SELECT checkpoint_json FROM author_sessions WHERE id=?`, args: [sid] })).rows[0] as any
+  expect(String(row.checkpoint_json)).toBe(cp)
+})
+
+// R1: a checkpoint that is not valid JSON is not resumable -> the sweeps must not leave such a session 'stalled'.
+test("R1 sweeps: corrupt (non-JSON) checkpoint is failed, not stalled - boot sweep and stale reaper", async () => {
+  const a = await insertRunningAuthorSession("proj_r1corrupt")
+  const b = await insertRunningAuthorSession("proj_r1corrupt")
+  await setSession(a, { checkpoint: "{not json" })
+  await setSession(b, { checkpoint: "{not json", beat: Date.now() - 60 * 60 * 1000 })
+  await sweepOrphanedAuthorSessions(testDb)        // boot sweep: a has no heartbeat -> swept; b has a stale one -> swept
+  expect(await sessionStatus(a)).toBe("failed")
+  expect(await sessionStatus(b)).toBe("failed")
+  const c = await insertRunningAuthorSession("proj_r1corrupt")
+  await setSession(c, { checkpoint: "garbage", beat: Date.now() - 60 * 60 * 1000 })
+  await sweepStaleAuthorSessions(testDb, 3 * 60 * 1000)
+  expect(await sessionStatus(c)).toBe("failed")
+})
+
 // ── Heartbeat: touches ────────────────────────────────────────────────────────────────────────────
 
 test("touchWalkHeartbeat sets last_beat_at on the walk row", async () => {

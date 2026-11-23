@@ -1321,6 +1321,10 @@ export function buildModal(
     @keyframes kl-rise{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
     .kl-side>.klavity-toggle,.kl-side>.klavity-page,.kl-side>.klavity-proof,.kl-hero>.klavity-strip,.kl-side>.klavity-actions,.kl-side>.klavity-desc,.kl-side>.klavity-remail-label,.kl-side>.klavity-remail-wrap,.kl-side>.klavity-submit{animation:kl-rise .5s cubic-bezier(.16,1,.3,1) both;}
     .kl-side>.klavity-toggle{animation-delay:.05s}.kl-side>.klavity-page{animation-delay:.09s}.kl-side>.klavity-proof{animation-delay:.11s}.kl-hero>.klavity-strip{animation-delay:.12s}.kl-side>.klavity-actions{animation-delay:.15s}.kl-side>.klavity-desc{animation-delay:.18s}.kl-side>.klavity-remail-label{animation-delay:.20s}.kl-side>.klavity-remail-wrap{animation-delay:.21s}.kl-side>.klavity-submit{animation-delay:.23s}
+    /* KD-3087: fill-mode BOTH kept kl-rise's final opacity:1 applied forever, overriding .klavity-submit:disabled
+       {opacity:.5} -- a disabled Submit looked fully clickable. BACKWARDS still hides it during the delay, then
+       hands opacity back to the normal cascade once the entrance ends. */
+    .kl-side>.klavity-submit{animation-fill-mode:backwards}
     .klavity-modal.kl-closing{animation:kl-genie-out .5s cubic-bezier(.55,0,.85,.25) both;}
     .klavity-toggle{display:flex;gap:8px;margin-bottom:16px;padding-right:34px;}
     .klavity-toggle button{flex:1;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600;background:var(--kl-chip);color:var(--kl-fg);line-height:1;}
@@ -3785,7 +3789,13 @@ export function buildModal(
   // and reintroduce the empty gap. Kept as a named no-op so the prefill path (widget.ts dispatches an 'input'
   // event) still funnels through refreshSubmit + the live Markdown render without duplicating layout math.
   const autosizeDesc = () => { /* intentionally empty — flex:1 owns the sizing now */ }
+  // KD-3087: true from the first Submit click until the submit fails (success never re-opens the composer).
+  // Many async paths call refreshSubmit() -- a background full-page render swapping in, voice stopping,
+  // capture/compression settling -- and without this they re-enabled Submit mid-upload, inviting a
+  // duplicate submission. Declared here (before refreshSubmit) so it is never read in its TDZ.
+  let submitInFlight = false
   const refreshSubmit = () => {
+    if (submitInFlight) { submitBtn.disabled = true; return }
     const noDesc = desc.value.trim() === ''
     submitBtn.disabled = (noDesc && !hasEvidence()) || !emailValid()
     // Hint appears only when evidence is present but nothing has been typed ("we'll title it from your shot").
@@ -4508,7 +4518,11 @@ export function buildModal(
   }
 
   submitBtn.addEventListener('click', async () => {
-    if (busy || submitBtn.disabled) return // re-entrancy: ignore double-clicks / clicks while a capture runs
+    if (submitInFlight || busy || submitBtn.disabled) return // re-entrancy: ignore double-clicks / clicks while a capture runs
+    // KD-3087: disable Submit SYNCHRONOUSLY on the first click, before any await below, so the button is
+    // never clickable again for this report (refreshSubmit honours submitInFlight until a failure clears it).
+    submitInFlight = true
+    submitBtn.disabled = true
     // KLAVITYKLA-497: Submit is NEVER blocked by report clarity. The old gate here surfaced the pre-submit
     // nudge and RETURNED — forcing a SECOND click on "Submit anyway". That two-step WAS the block users hit.
     // A weak / vague / empty description now submits on the FIRST click, always. The passive inline warning
@@ -4629,6 +4643,7 @@ export function buildModal(
       errEl.textContent = cfg.debug ? `Couldn't submit your report — ${raw}` : "Couldn't submit your report. Please check your connection and try again."
       errEl.style.display = 'block'
       submitBtn.textContent = 'Submit'
+      submitInFlight = false // KD-3087: a FAILED submit may be retried -- let refreshSubmit re-enable Submit
       lockComposer(false) // re-enable capture buttons + Submit (Submit only if still valid)
     }
   })

@@ -4754,6 +4754,170 @@
       color: var(--paper-dim)
     }
 
+    /* KD-3138: Tickets List view as aligned columns — Ticket · Status · Priority · Assignee · Source · Created.
+       Scoped to .tl-grid so other .tkt-list-row users (e.g. Page bugs) keep their layout. Narrower screens drop the
+       least important columns rather than squeezing the title. */
+    .tkt-list-row.tl-grid {
+      display: grid;
+      /* Ticket gets every spare pixel: the detail columns are sized to their content (Status fits the longest
+         pill, "READY FOR DEPLOYMENT" ≈ 146px; Priority "Medium" + dot ≈ 50px; Source badge ≈ 50px; Created fits
+         "reported 23 hrs ago" ≈ 104px and is right-aligned so it sits flush with the row's right edge). */
+      grid-template-columns: 15px minmax(0, 1fr) 148px 72px 72px 64px 76px;
+      column-gap: 10px
+    }
+
+    /* Title cell: #id · title (shortens with …) · badges/labels stay on the SAME line, so every row is one line tall. */
+    .tkt-list-row.tl-grid .tl-title {
+      display: flex;
+      align-items: center;
+      gap: 6px
+    }
+
+    /* Badges / labels after the title may shrink (and clip) — the title keeps a readable minimum. */
+    .tkt-list-row.tl-grid .tl-title > * {
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow: hidden
+    }
+
+    .tkt-list-row.tl-grid .tl-title > .tkt-seq {
+      flex: none
+    }
+
+    .tkt-list-row.tl-grid .tl-title .tl-ttl {
+      flex: 0 1 auto;
+      min-width: min(96px, 100%);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    .tkt-list-row.tl-grid .tl-title .lbl-chips {
+      display: inline-flex;
+      flex-wrap: nowrap;
+      flex: 0 1 auto;
+      min-width: 0;
+      max-width: 45%;
+      overflow: hidden
+    }
+
+    .tkt-list-row.tl-grid .tkt-pill {
+      white-space: nowrap
+    }
+
+    .tkt-list-row.tl-grid.tl-colhead {
+      cursor: default;
+      padding-top: 8px;
+      padding-bottom: 8px;
+      border-top: none;
+      border-bottom: 1px solid var(--line);
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--paper-faint)
+    }
+
+    .tkt-list-row.tl-grid.tl-colhead:hover {
+      background: none;
+      transform: none
+    }
+
+    .tkt-list-row.tl-grid .tl-cell {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      font-size: 12px;
+      color: var(--paper-dim)
+    }
+
+    .tkt-list-row.tl-grid .tl-c-age {
+      color: var(--paper-faint);
+      font-size: 11.5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      justify-content: flex-end;
+      text-align: right
+    }
+
+    .tkt-list-row.tl-grid.tl-colhead .tl-c-age {
+      text-align: right
+    }
+
+    .tkt-list-row.tl-grid .tl-ellip {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0
+    }
+
+    .tkt-list-row.tl-grid .tl-muted {
+      color: var(--paper-faint)
+    }
+
+    /* Assignee avatar (email on hover). */
+    .tkt-list-row.tl-grid .tl-av {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      flex: none;
+      font-family: var(--mono);
+      font-size: 9.5px;
+      font-weight: 600;
+      letter-spacing: .02em;
+      color: #fff;
+      cursor: default
+    }
+
+    /* (not ".empty" — that's the dashboard-wide empty-state block style and would stretch this circle) */
+    .tkt-list-row.tl-grid .tl-av.tl-av-none {
+      background: transparent;
+      border: 1px dashed var(--line);
+      color: var(--paper-faint)
+    }
+
+    /* Breakpoints follow the LIST's own width (it sits beside the sidebar, so the window width overstates it):
+       the least important columns drop first so the Ticket title always keeps real room. */
+    #tktListView {
+      container-type: inline-size;
+      container-name: tktlist
+    }
+
+    @container tktlist (max-width: 1050px) {
+      .tkt-list-row.tl-grid {
+        grid-template-columns: 15px minmax(0, 1fr) 148px 72px 72px 76px
+      }
+
+      .tkt-list-row.tl-grid .tl-c-src {
+        display: none
+      }
+    }
+
+    @container tktlist (max-width: 850px) {
+      .tkt-list-row.tl-grid {
+        grid-template-columns: 15px minmax(0, 1fr) 148px 72px 76px
+      }
+
+      .tkt-list-row.tl-grid .tl-c-asg {
+        display: none
+      }
+    }
+
+    @container tktlist (max-width: 680px) {
+      .tkt-list-row.tl-grid {
+        grid-template-columns: 15px minmax(0, 1fr) 148px 76px
+      }
+
+      .tkt-list-row.tl-grid .tl-c-pri {
+        display: none
+      }
+    }
+
     .pri-dot-urgent {
       background: var(--rose)
     }
@@ -20685,6 +20849,11 @@
           transform: var(--mi-press)
         }
 
+        .pb-page.pb-page-on {
+          border-color: var(--indigo);
+          background: rgba(99, 102, 241, .1)
+        }
+
         .pb-page-url {
           font-family: var(--mono);
           font-size: 12.5px;
@@ -29809,6 +29978,10 @@
                 else document.body.setAttribute("data-view", "tickets")
               }
             }
+            // KD-3147: a RE-render of the ticket already on screen (the cache→fresh second render, a merge re-open)
+            // must keep the reader where they are. Before, every render ended with scroll-to-top, so a user who had
+            // scrolled down (often to the bottom) while the fresh /api/feedback/:id was loading got thrown back up.
+            const _keepY = tktScrollToKeep(single, id, panel)
             single.innerHTML = ""
             if (panel) {
               // Panel mode: board/list/toolbar STAY visible behind a fixed right-side panel + scrim.
@@ -30128,9 +30301,42 @@
             } catch (e) { }
             // Move focus into the surface for keyboard users (a11y §10). Panel = Close; page = Back.
             try { if (single.__focusTarget) single.__focusTarget.focus({ preventScroll: true }) } catch (e) { }
-            // Panel scrolls itself to top; the dedicated page scrolls the window.
-            if (panel) { try { single.scrollTop = 0 } catch (e) { } }
+            single.setAttribute("data-tkt-id", String(id))
+            single.setAttribute("data-tkt-mode", panel ? "panel" : "full")
+            // A NEW ticket (or panel → full page) starts at the top; a re-render of the same one keeps the scroll.
+            // Panel scrolls itself; the dedicated page scrolls the window.
+            if (_keepY > 0) restoreTktScroll(single, panel, _keepY)
+            else if (panel) { try { single.scrollTop = 0 } catch (e) { } }
             else { try { window.scrollTo(0, 0) } catch (e) { } }
+          }
+          // KD-3147: scroll offset to restore when this render replaces the SAME ticket in the SAME mode (0 otherwise).
+          function tktScrollToKeep(single, id, panel) {
+            try {
+              if (!single || single.classList.contains("hide") || !single.children.length) return 0
+              if (single.getAttribute("data-tkt-id") !== String(id)) return 0
+              if (single.getAttribute("data-tkt-mode") !== (panel ? "panel" : "full")) return 0
+              return panel ? (single.scrollTop || 0) : (window.scrollY || window.pageYOffset || 0)
+            } catch (e) { return 0 }
+          }
+          // Put the reader back at y. Sections below (timeline, evidence) fill in asynchronously, so until they do
+          // the page may be too short to reach y; re-apply for a short while as it grows — but stop the moment the
+          // user scrolls themselves, so we never fight them.
+          function restoreTktScroll(single, panel, y) {
+            const apply = () => { try { if (panel) single.scrollTop = y; else window.scrollTo({ top: y, behavior: "instant" }) } catch (e) { try { window.scrollTo(0, y) } catch (e2) { } } }
+            const cur = () => panel ? single.scrollTop : (window.scrollY || window.pageYOffset || 0)
+            let userMoved = false
+            const stop = () => { userMoved = true }
+            const target = panel ? single : window
+            const evs = ["wheel", "touchmove", "keydown", "mousedown"]
+            evs.forEach(ev => target.addEventListener(ev, stop, { passive: true, once: true }))
+            apply()
+            const started = Date.now()
+            const tick = () => {
+              if (userMoved || Date.now() - started > 2000) { evs.forEach(ev => target.removeEventListener(ev, stop)); return }
+              if (Math.abs(cur() - y) > 2) apply()
+              requestAnimationFrame(tick)
+            }
+            requestAnimationFrame(tick)
           }
           // KLA-562 Stage 2: lazily create the panel scrim (click-to-close) once, and a single Esc handler.
           function ensurePanelScrim() {
@@ -30628,7 +30834,7 @@
           }
 
           // ── KD-221: Notifications bell (top bar) ──────────────────────────────────────────────────────────────
-          // Updates on tickets assigned to you (status, priority, comments, labels, description, assignment…), made
+          // Updates on tickets assigned to you, plus status/priority changes on tickets you reported (KD-3134) (status, priority, comments, labels, description, assignment…), made
           // by someone else. Polls /api/notifications (every 60s + when the tab regains focus); opening the panel
           // shows the latest 30; clicking one marks it read and opens the ticket.
           function ntfText(n) {
@@ -30671,7 +30877,7 @@
               if (markAll) markAll.disabled = unread <= 0
             }
             const paintList = () => {
-              if (!items.length) { list.innerHTML = '<div class="ntf-empty">You\'re all caught up — updates on tickets assigned to you show up here.</div>'; return }
+              if (!items.length) { list.innerHTML = '<div class="ntf-empty">You\'re all caught up — updates on tickets assigned to you, and status or priority changes on tickets you reported, show up here.</div>'; return }
               list.innerHTML = items.map(n => `<button type="button" class="ntf-item${n.readAt ? "" : " unread"}" data-id="${esc(n.id)}"${n.readAt ? "" : ' aria-describedby="ntfUnreadHint"'}>
           <span class="ntf-dot" aria-hidden="true"></span>
           <span class="ntf-body">
@@ -30946,6 +31152,20 @@
           // JTBD 2.14: board selection UI sync — reassigned each render (see renderTicketsKanban).
           let syncKbSelectionUi = () => { }
           let _tktView = "board" // "list" | "board"
+          // KD-3146: remember Board vs List across a refresh — in the URL (?tview=list, so a reload or a shared link keeps it)
+          // and in this browser (so coming back to Tickets later reopens the last view). Board is the default.
+          const TKT_VIEW_KEY = "klav.tktView"
+          function setTktView(v) {
+            _tktView = v === "list" ? "list" : "board"
+            try { localStorage.setItem(TKT_VIEW_KEY, _tktView) } catch (e) { }
+            try { const u = new URL(location.href); if (_tktView === "list") u.searchParams.set("tview", "list"); else u.searchParams.delete("tview"); history.replaceState(history.state, "", u.toString()) } catch (e) { }
+          }
+          function savedTktView(sp) {
+            const v = sp && sp.get("tview")
+            if (v === "list" || v === "board") return v
+            try { const ls = localStorage.getItem(TKT_VIEW_KEY); if (ls === "list" || ls === "board") return ls } catch (e) { }
+            return "board"
+          }
           let _tktFbBound = false
           // KLA-178: multi-select set for bulk actions in list view
           let _bulkSelected = new Set()
@@ -30963,6 +31183,7 @@
               }
               Object.entries(params).forEach(([key, value]) => value ? u.searchParams.set(key, value) : u.searchParams.delete(key))
               u.searchParams.delete("page")
+              if (_tktView === "list") u.searchParams.set("tview", "list"); else u.searchParams.delete("tview")   // KD-3146
               history.replaceState(null, "", u.toString())
             } catch (e) { }
           }
@@ -30975,6 +31196,7 @@
                   _tktFilters[key] = val ? val.split(",").map(s => s.trim()).filter(Boolean) : []
                 })
               _tktFilters.search = sp.get("q") || ""
+              _tktView = savedTktView(sp)   // KD-3146: a refresh keeps List view
               // KD-223: "Closed" (= Done + Dismissed) was dropped from the Status filter — it isn't a real status.
               // An old link carrying ?status=closed falls back to All statuses instead of matching nothing.
               _tktFilters.status = _tktFilters.status.filter(s => s !== "closed")
@@ -31010,13 +31232,16 @@
           function hasActiveTktFilters() {
             const f = _tktFilters || {}
             const any = v => Array.isArray(v) ? v.length > 0 : !!v
-            return any(f.status) || any(f.priority) || any(f.label) || any(f.assignee) || any(f.source) || !!(f.search && String(f.search).trim())
+            // KD-3139: an Overview KPI-card filter (_kbFilter, e.g. "Open" / "Recurring") also narrows the board, so it
+            // counts as active — otherwise it was invisible and un-clearable and silently hid tickets on the board.
+            return any(f.status) || any(f.priority) || any(f.label) || any(f.assignee) || any(f.source) || !!(f.search && String(f.search).trim()) || !!_kbFilter
           }
           function syncTktClearBtn() {
             const fbClear = document.getElementById("fbClearBtn")
             if (fbClear) fbClear.classList.toggle("hide", !hasActiveTktFilters())
           }
           function applyQuickChip(q) {
+            _kbFilter = null   // KD-3139: a chip is a fresh filter preset — drop any leftover Overview KPI-card filter
             _tktQuick = q
             tktQuickToFilters(q)
             syncTktClearBtn()
@@ -31235,6 +31460,8 @@
             _tktFbBound = true
 
             loadTicketFiltersFromUrl()
+            if (listBtn) listBtn.classList.toggle("active", _tktView === "list")
+            if (boardBtn) boardBtn.classList.toggle("active", _tktView !== "list")
             refreshAssigneeOptions()
             refreshTicketLabelOptions()
             TKT_MS_CONFIGS.forEach(initTktMultiSelect)
@@ -31244,8 +31471,18 @@
             syncTktClearBtn()
 
             // View toggle
-            if (listBtn) listBtn.addEventListener("click", () => { _tktView = "list"; listBtn.classList.add("active"); boardBtn && boardBtn.classList.remove("active"); renderTicketsView() })
-            if (boardBtn) boardBtn.addEventListener("click", () => { _tktView = "board"; boardBtn.classList.add("active"); listBtn && listBtn.classList.remove("active"); renderTicketsView() })
+            // KD-3139: the List is server-filtered and can't apply an Overview KPI-card filter, so switching to it drops
+            // that filter (otherwise the Board and List disagreed on the same visible filters).
+            if (listBtn) listBtn.addEventListener("click", () => { setTktView("list"); _kbFilter = null; syncTktClearBtn(); listBtn.classList.add("active"); boardBtn && boardBtn.classList.remove("active"); renderTicketsView() })
+            // KD-3139: the board's cached full set goes stale while the List is showing (the live poll only refreshes
+            // the visible view), so tickets filed/reassigned meanwhile were missing on the board. Paint the cache at
+            // once, then revalidate in the background (warm cache → no 'Loading…' flash).
+            if (boardBtn) boardBtn.addEventListener("click", () => {
+              setTktView("board"); boardBtn.classList.add("active"); listBtn && listBtn.classList.remove("active")
+              renderTicketsView()
+              const pid = state && state.active && state.active.id
+              if (pid && _tktBoardLoadedPid === pid) fetchAndRenderTktBoard()
+            })
 
             // KLA-562: wire the quick-filter chips + the "Filters" (advanced dropdowns) toggle.
             const chipRow = document.getElementById("tktQuickChips")
@@ -31265,6 +31502,7 @@
 
             fbClear.addEventListener("click", () => {
               _tktFilters = { status: [], priority: [], label: [], assignee: [], source: [], search: "" }
+              _kbFilter = null   // KD-3139: Clear also drops an Overview KPI-card filter
               if (searchEl) searchEl.value = ""
               updateAllTktMultiSelects()
               fbClear.classList.add("hide")
@@ -31330,8 +31568,14 @@
             if (f.source && f.source.length) {
               const wantS = Array.isArray(f.source) ? f.source : String(f.source).split(",").filter(Boolean)
               if (wantS.length) {
-                const tSource = ticketSourceKind(t)
-                const match = wantS.some(s => s === tSource || s === t.source)
+                // KD-3139: mirror the SERVER's source rules exactly (listTicketsPaginated) so the Board and the List
+                // agree: "sim" = a Sim is attached; "manual" = source manual; "human" = neither. ticketSourceKind()
+                // (the badge) files AutoSim tickets under their own "autosim" kind, so they used to match NEITHER
+                // "Sim / AI" nor "Human report" on the Board while the List counted them.
+                const hasSim = !!t.simId
+                const isManual = !hasSim && t.source === "manual"
+                const kinds = { sim: hasSim, manual: isManual, human: !hasSim && !isManual }
+                const match = wantS.some(s => !!kinds[s] || s === t.source)
                 if (!match) return false
               }
             }
@@ -32089,13 +32333,22 @@
             hdr.appendChild(cbAll); hdr.appendChild(hdrLabel)
             wrap.appendChild(hdr)
 
+            // KD-3138: column headings — every row lays its details out in the same columns (.tl-grid), so Status,
+            // Priority, Assignee, Source and Created line up down the list instead of floating at the row's end.
+            const colHead = document.createElement("div")
+            colHead.className = "tkt-list-row tl-grid tl-colhead"
+            colHead.setAttribute("aria-hidden", "true")
+            colHead.innerHTML = '<span></span><span>Ticket</span><span>Status</span><span class="tl-c-pri">Priority</span>' +
+              '<span class="tl-c-asg">Assignee</span><span class="tl-c-src">Source</span><span class="tl-c-age">Created</span>'
+            wrap.appendChild(colHead)
+
             const listDiv = document.createElement("div")
             listDiv.className = "tkt-list"
 
             // #720: build ONE row. Rows are appended in batches (below) so a big list never blocks the open.
             function makeTktListRow(t) {
               const row = document.createElement("div")
-              row.className = "tkt-list-row" + (_bulkSelected.has(t.id) ? " tl-selected" : "")
+              row.className = "tkt-list-row tl-grid" + (_bulkSelected.has(t.id) ? " tl-selected" : "")
               row.setAttribute("data-id", t.id)
 
               // Checkbox
@@ -32116,22 +32369,32 @@
               row.appendChild(cb)
 
               const pri = t.priority || "medium"   // KD-236: unset = the canonical default, same as the detail page
-              const srcLabel = t.simName ? t.simName : (t.source === "human" ? "Human" : "Report")
-              const sub = [t.urlPath ? esc(t.urlPath) : "", ticketAgo(t)].filter(Boolean).join(" · ")
+              const priLabel = pri.charAt(0).toUpperCase() + pri.slice(1)
+              const asg = String(t.assignee || "").trim()
+              let createdFull = ""
+              try { if (t.createdAt) createdFull = "Created " + exactCreatedWhen(t.createdAt) } catch (e) { createdFull = "" }   // same format as the board (KD-160)
 
               const lblChipsHtml = (t.labels || []).map(l => `<span class="lbl-chip" style="background:${esc(l.color)}22;color:${esc(l.color)};border-color:${esc(l.color)}44">${esc(l.name)}</span>`).join("")
               const rowInner = document.createElement("span")
               rowInner.style.cssText = "display:contents"
+              // KD-3138: one cell per column (see the .tl-colhead headings). The page path that used to follow the
+              // source badge (e.g. "/vishal-s-workspace/KD-3095") is no longer shown in the list — it read like a
+              // second ticket ID; the ticket page still shows where the report came from.
               rowInner.innerHTML =
-                '<span class="tl-pri ' + priDotClass(pri) + '" title="Priority: ' + esc(pri || "none") + '"></span>' +
-                '<div class="tl-title">' + (showsSimSeq(t) ? '<span class="tkt-seq">SIM-' + simLabelNum(t) + '</span> ' : (t.seqNum ? '<span class="tkt-seq">#' + t.seqNum + '</span> ' : '')) + esc(t.title || "Untitled report") + (lblChipsHtml ? ' <span class="lbl-chips" style="margin-left:6px">' + lblChipsHtml + '</span>' : '') + '</div>' +
-                '<div class="tl-meta">' +
-                statusPillHtml(t.status) +
-                dupAckHtml(t, { badge: true }) +
-                srcChipHtml(t) +
-                (t.simName ? '<span class="tl-src">' + esc(t.simName) + '</span>' : '') +
-                '<span>' + sub + '</span>' +
-                '</div>'
+                '<div class="tl-title">' + (showsSimSeq(t) ? '<span class="tkt-seq">SIM-' + simLabelNum(t) + '</span>' : (t.seqNum ? '<span class="tkt-seq">#' + t.seqNum + '</span>' : '')) + '<span class="tl-ttl" title="' + esc(t.title || "Untitled report") + '">' + esc(t.title || "Untitled report") + '</span>' + dupAckHtml(t, { badge: true }) + (lblChipsHtml ? '<span class="lbl-chips">' + lblChipsHtml + '</span>' : '') + '</div>' +
+                '<div class="tl-cell tl-c-status">' + statusPillHtml(t.status) + '</div>' +
+                '<div class="tl-cell tl-c-pri" title="Priority: ' + esc(priLabel) + '"><span class="tl-pri ' + priDotClass(pri) + '"></span><span>' + esc(priLabel) + '</span></div>' +
+                // Assignee = the person's avatar (same coloured initials as the Team page: col()/initials()); the
+                // email shows on hover. Unassigned = a faint dashed "?" avatar.
+                '<div class="tl-cell tl-c-asg">' +
+                  (asg ? '<span class="tl-av" style="background:' + col(asg) + '" title="' + esc(asg) + '" aria-label="Assignee: ' + esc(asg) + '">' + esc(initials(asg)) + '</span>'
+                       : '<span class="tl-av tl-av-none" title="Unassigned" aria-label="Unassigned">?</span>') +
+                '</div>' +
+                // Source shows just the badge (compact column); a Sim ticket names its Sim on hover.
+                '<div class="tl-cell tl-c-src"' + (t.simName ? ' title="Sim: ' + esc(t.simName) + '"' : '') + '>' + srcChipHtml(t) + '</div>' +
+                // The Created column shows when the ticket was CREATED (ticketAgo() would show "reported …" = last seen
+                // for recurring tickets; the "Known issue ×N" badge already marks those).
+                '<div class="tl-cell tl-c-age"' + (createdFull ? ' title="' + esc(createdFull) + '"' : '') + '>' + esc(t.createdAt ? ago(t.createdAt) : "") + '</div>'
               row.appendChild(rowInner)
 
               row.addEventListener("click", (ev) => {
@@ -32258,8 +32521,9 @@
           // Jump to the Tickets board with a card-driven filter applied (used by the overview KPI cards).
           function goToTicketsFiltered(filter) {
             _kbFilter = filter || null
+            if (typeof syncTktClearBtn === "function") syncTktClearBtn()   // KD-3139: show "Clear filters" for it
             // Card-driven filters apply to the kanban board — switch to board view first
-            _tktView = "board"
+            setTktView("board")
             const listBtn = document.getElementById("tktListBtn"), boardBtn = document.getElementById("tktBoardBtn")
             if (listBtn) listBtn.classList.remove("active")
             if (boardBtn) boardBtn.classList.add("active")
@@ -32598,7 +32862,10 @@
             // observation/notes/suggested-bug text too so description-only search hits are NOT dropped), in
             // addition to the card-driven KPI filter (kbMatchesFilter).
             const tickets = sourceTickets.filter(t => kbMatchesFilter(t) && tktMatchesSelectFilters(t))
-            $("ticketKanbanCount").textContent = tickets.length ? tickets.length : ""
+            // KD-3139: this render also runs while the LIST is showing (after a ticket edit, status change, …). The
+            // header count then belongs to the list (server total); writing the board's possibly-stale client count
+            // here made the header disagree with "Showing … of N" (e.g. 14 vs 15).
+            if (_tktView !== "list") $("ticketKanbanCount").textContent = tickets.length ? tickets.length : ""
             if (!tickets.length) {
               board.innerHTML = emptyState(kicon('bug', { size: 32 }), "No tickets match these filters.", "")
               return
@@ -36143,14 +36410,80 @@
           // openSingleTicket drawer and klavToast — no new auth (the view is already team-gated).
           function pbProjId() { return (state && state.active && state.active.id) || null }
 
+          // KD-3135: the search box filters the reported-pages list as you type, and "Show bugs" accepts any part of a
+          // page address ("klavity.in/abc", "yoursite.com/pricing", with or without https://). Before, the list never
+          // filtered and only an exact full URL with https:// loaded bugs; anything else failed quietly below the
+          // full list, so the page looked unchanged.
+          var _pbPages = []
+          var _pbReq = 0
+          // "https://www.Site.com/a/?x=1#y" -> "site.com/a" (comparison key: no scheme, www., query, hash or trailing /).
+          function pbKey(raw) {
+            var k = String(raw || "").trim().toLowerCase()
+            k = k.replace(/^[a-z][a-z0-9+.-]*:\/\//, "").replace(/^www\./, "").replace(/[?#].*$/, "")
+            return k.length > 1 ? k.replace(/\/+$/, "") : k
+          }
+          function pbPageKey(p) { return pbKey((p.host || "") + (p.path || "")) }
+          function pbMatchingPages(q) {
+            var k = pbKey(q)
+            if (!k) return _pbPages.slice()
+            return _pbPages.filter(function (p) { return pbPageKey(p).indexOf(k) >= 0 })
+          }
+          function pbResetResults() {
+            var headRow = document.getElementById("pbHeadRow"); if (headRow) headRow.style.display = "none"
+            var listEl = document.getElementById("pbList"); if (listEl) listEl.innerHTML = ""
+          }
+          function pbRenderPages(pages, activeUrl) {
+            var host = document.getElementById("pbPagesList"); if (!host) return
+            if (!_pbPages.length) { host.innerHTML = '<div class="tkt-list-empty">No reported pages yet. Reports filed from your site will show up here.</div>'; return }
+            if (!pages.length) { host.innerHTML = '<div class="tkt-list-empty">No reported pages match “' + esc((document.getElementById("pbUrl") || {}).value || "") + '”.</div>'; return }
+            host.innerHTML = pages.map(function (p) {
+              return '<button type="button" class="pb-page' + (activeUrl && p.url === activeUrl ? " pb-page-on" : "") + '" data-url="' + esc(p.url) + '">' +
+                '<span class="pb-page-url">' + esc((p.host || "") + (p.path || "")) + '</span>' +
+                '<span class="pb-page-n">' + (p.count || 0) + " report" + (p.count === 1 ? "" : "s") + "</span></button>"
+            }).join("")
+            host.querySelectorAll(".pb-page").forEach(function (b) {
+              b.addEventListener("click", function () {
+                var u = b.getAttribute("data-url")
+                var inp = document.getElementById("pbUrl"); if (inp) inp.value = u
+                pbShowBugs(u)
+              })
+            })
+          }
+          // "Show bugs" / Enter / a page click: narrow the list to the matching page(s) and load the bugs.
+          function pbShowBugs(raw) {
+            var q = String(raw || "").trim()
+            if (!q) { _pbReq++; pbRenderPages(_pbPages); pbResetResults(); return }
+            var k = pbKey(q)
+            var matches = pbMatchingPages(q)
+            var exact = matches.filter(function (p) { return pbPageKey(p) === k })[0]
+            var target = exact || (matches.length === 1 ? matches[0] : null)
+            if (target) { pbRenderPages([target], target.url); loadPageBugs(target.url); return }
+            pbRenderPages(matches)
+            if (matches.length > 1) {
+              _pbReq++ // drop any bug list still loading for an earlier search
+              var headRow = document.getElementById("pbHeadRow"); if (headRow) headRow.style.display = "none"
+              var listEl = document.getElementById("pbList")
+              if (listEl) listEl.innerHTML = '<div class="tkt-list-empty">' + matches.length + ' pages match — pick one above to see its reports.</div>'
+              return
+            }
+            // No listed page matches: still ask the server (the list holds only the 200 most recent pages), adding https:// if missing.
+            loadPageBugs(/^[a-z][a-z0-9+.-]*:\/\//i.test(q) ? q : "https://" + q)
+          }
+
           function renderPageBugsView() {
             var input = document.getElementById("pbUrl")
             if (input && !input.dataset.bound) {
               input.dataset.bound = "1"
-              var go = function () { var u = (input.value || "").trim(); if (u) loadPageBugs(u) }
+              var go = function () { pbShowBugs(input.value) }
               var btn = document.getElementById("pbLoadBtn")
               if (btn) btn.addEventListener("click", go)
               input.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); go() } })
+              // Live filter while typing; the bug list for an older search is cleared so it can't contradict the box.
+              input.addEventListener("input", function () {
+                _pbReq++
+                pbRenderPages(pbMatchingPages(input.value))
+                pbResetResults()
+              })
             }
             loadReportedPages()
           }
@@ -36164,21 +36497,14 @@
             // 'Loading pages…', then revalidate. applyPages() runs on both the cached snapshot and fresh data.
             var ck = "reported-pages:" + pid
             var applyPages = function (pages) {
-              pages = pages || []
-              if (dl) dl.innerHTML = pages.map(function (p) { return '<option value="' + esc(p.url) + '"></option>' }).join("")
-              if (!pages.length) { host.innerHTML = '<div class="tkt-list-empty">No reported pages yet. Reports filed from your site will show up here.</div>'; return }
-              host.innerHTML = pages.map(function (p) {
-                return '<button type="button" class="pb-page" data-url="' + esc(p.url) + '">' +
-                  '<span class="pb-page-url">' + esc((p.host || "") + (p.path || "")) + '</span>' +
-                  '<span class="pb-page-n">' + (p.count || 0) + " report" + (p.count === 1 ? "" : "s") + "</span></button>"
-              }).join("")
-              host.querySelectorAll(".pb-page").forEach(function (b) {
-                b.addEventListener("click", function () {
-                  var u = b.getAttribute("data-url")
-                  var inp = document.getElementById("pbUrl"); if (inp) inp.value = u
-                  loadPageBugs(u)
-                })
-              })
+              _pbPages = pages || []
+              if (dl) dl.innerHTML = _pbPages.map(function (p) { return '<option value="' + esc(p.url) + '"></option>' }).join("")
+              // Keep what the search box currently narrows to (re-entering the view or a background refresh).
+              var activeEl = host.querySelector(".pb-page-on")
+              var activeUrl = activeEl ? activeEl.getAttribute("data-url") : null
+              var inp = document.getElementById("pbUrl")
+              var shown = activeUrl ? _pbPages.filter(function (p) { return p.url === activeUrl }) : pbMatchingPages(inp ? inp.value : "")
+              pbRenderPages(shown, activeUrl)
             }
             var cached = swrRead(ck)
             if (cached != null) { try { applyPages(cached) } catch (e) { } }
@@ -36198,17 +36524,19 @@
             var listEl = document.getElementById("pbList")
             var headRow = document.getElementById("pbHeadRow")
             if (!pid || !listEl) return
+            var my = ++_pbReq // latest search wins: a slower earlier response must not overwrite this one
+            if (headRow) headRow.style.display = "none"
             listEl.innerHTML = '<div class="tkt-list-empty">Loading…</div>'
             try {
               var res = await fetch("/api/projects/" + encodeURIComponent(pid) + "/page-bugs?url=" + encodeURIComponent(rawUrl))
               var data = await res.json().catch(function () { return {} })
+              if (my !== _pbReq) return
               if (!res.ok) {
-                if (headRow) headRow.style.display = "none"
-                listEl.innerHTML = '<div class="tkt-list-empty">' + esc((data && data.error) || "Could not load bugs for this page.") + "</div>"
+                listEl.innerHTML = '<div class="tkt-list-empty">' + esc(res.status === 400 ? "Enter a page address, e.g. yoursite.com/pricing" : ((data && data.error) || "Could not load bugs for this page.")) + "</div>"
                 return
               }
               renderPageBugList(data)
-            } catch (e) { listEl.innerHTML = '<div class="tkt-list-empty">Failed to load bugs.</div>' }
+            } catch (e) { if (my === _pbReq) listEl.innerHTML = '<div class="tkt-list-empty">Failed to load bugs.</div>' }
           }
 
           function pbCountsHtml(c) {
@@ -39674,7 +40002,7 @@
                 if (s.status === "running") {
                   var ntElapsed = s.createdAt ? fmtSec(Math.floor((Date.now() - s.createdAt) / 1000)) : "";
                   var ntLimit = s.limitMs ? fmtSec(Math.round(s.limitMs / 1000)) : "";
-                  var ntTimeStr = ntElapsed ? (ntElapsed + (ntLimit ? " / " + ntLimit + " max" : "")) : "";
+                  var ntTimeStr = ntElapsed || "";
                   box.innerHTML = html
                     + liveViewHtml(sessionId)
                     + '<div class="nt-live">' + (_ntVerifying ? 'AutoSim is verifying…' : 'AutoSim is driving…') + (ntTimeStr ? ' <span class="muted" style="font-size:11px">(' + esc(ntTimeStr) + ')</span>' : '') + '</div>'
@@ -39855,7 +40183,7 @@
                 if (s.status === "running") {
                   var wzElapsed = s.createdAt ? fmtSec(Math.floor((Date.now() - s.createdAt) / 1000)) : "";
                   var wzLimit = s.limitMs ? fmtSec(Math.round(s.limitMs / 1000)) : "";
-                  var wzTimeStr = wzElapsed ? (wzElapsed + (wzLimit ? " / " + wzLimit + " max" : "")) : "";
+                  var wzTimeStr = wzElapsed || "";
                   box.innerHTML = html
                     + liveViewHtml(sessionId)
                     + '<div class="nt-live">' + (_ntVerifying ? 'AutoSim is verifying…' : 'AutoSim is driving…') + (wzTimeStr ? ' <span class="muted" style="font-size:11px">(' + esc(wzTimeStr) + ')</span>' : '') + '</div>'
