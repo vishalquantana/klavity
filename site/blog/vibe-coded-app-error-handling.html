@@ -1,0 +1,194 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vibe Coded App Error Handling: Fix Blank Screen Bugs · Klavity</title>
+<meta name="description" content="Vibe coded app error handling usually fails silently: no loading state, no empty state, no error message. Here's how to find and fix every gap.">
+<link rel="canonical" href="https://klavity.in/blog/vibe-coded-app-error-handling">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Vibe Coded App Error Handling: Fix Blank Screen Bugs"><meta property="og:description" content="Vibe coded app error handling usually fails silently: no loading state, no empty state, no error message. Here's how to find and fix every gap.">
+<meta property="og:url" content="https://klavity.in/blog/vibe-coded-app-error-handling"><meta property="og:image" content="https://klavity.in/blog/vibe-coded-app-error-handling.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Vibe Coded App Error Handling: Fix Blank Screen Bugs"><meta name="twitter:description" content="Vibe coded app error handling usually fails silently: no loading state, no empty state, no error message. Here's how to find and fix every gap."><meta name="twitter:image" content="https://klavity.in/blog/vibe-coded-app-error-handling.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Vibe Coded App Error Handling: Fix Blank Screen Bugs","description":"Vibe coded app error handling usually fails silently: no loading state, no empty state, no error message. Here's how to find and fix every gap.","datePublished":"2026-11-23","dateModified":"2026-11-23","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/vibe-coded-app-error-handling.svg"}},"mainEntityOfPage":"https://klavity.in/blog/vibe-coded-app-error-handling","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Vibe Coded App Error Handling: Fix Blank Screen Bugs","item":"https://klavity.in/blog/vibe-coded-app-error-handling"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/vibe-coded-app-error-handling"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Why does my vibe coded app show a blank white screen?","acceptedAnswer":{"@type":"Answer","text":"Most often an uncaught error during render. In React, an error thrown while rendering unmounts the component tree unless an error boundary catches it, so a single broken widget takes the whole page with it. The other common causes are reading a property off undefined and rendering a response that was actually an error, because the Fetch API resolves normally on a 404 or 500 instead of throwing."}},{"@type":"Question","name":"Why does my spinner never stop?","acceptedAnswer":{"@type":"Answer","text":"Because the loading flag is only reset in the success branch. If setLoading(false) lives inside the try block or after the successful response, any failure leaves it true forever. Move it into a finally block so it runs on every path."}},{"@type":"Question","name":"What is the fastest way to test error handling by hand?","acceptedAnswer":{"@type":"Answer","text":"Four checks in browser devtools, each under a minute: switch the Network tab to Offline and click through your flows; block your API URL pattern to simulate a server failure; sign up as a brand-new user in a private window to see your empty states; and clear your auth token in Application storage to simulate an expired session."}},{"@type":"Question","name":"Should error messages show the technical error?","acceptedAnswer":{"@type":"Answer","text":"No. Stack traces and database errors can expose table names, file paths and query structure, and they tell the user nothing useful. Log the technical detail on the server and show a plain-language message that says what happened and offers a retry or a way back."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-11-23</div>
+    <h1>Vibe Coded App Error Handling: Fix Blank Screen Bugs</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Diagram showing a blank browser screen with an error on the left and four handled UI states on the right: loading skeleton, empty state, error message and success">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="56" y="34" width="72" height="6" rx="3" fill="#6366f1"/>
+  <rect x="432" y="34" width="72" height="6" rx="3" fill="#6366f1" opacity="0.45"/>
+
+  <rect x="56" y="70" width="300" height="286" rx="13" fill="none" stroke="#f5f0e8" stroke-width="1.4" opacity="0.26"/>
+  <line x1="56" y1="104" x2="356" y2="104" stroke="#f5f0e8" stroke-width="1.2" opacity="0.18"/>
+  <circle cx="76" cy="87" r="3.8" fill="#f87171" opacity="0.85"/>
+  <circle cx="90" cy="87" r="3.8" fill="#f5f0e8" opacity="0.26"/>
+  <circle cx="104" cy="87" r="3.8" fill="#f5f0e8" opacity="0.26"/>
+  <rect x="124" y="82" width="120" height="10" rx="5" fill="#f5f0e8" opacity="0.12"/>
+
+  <circle cx="206" cy="206" r="40" fill="none" stroke="#f87171" stroke-width="2.2" opacity="0.9"/>
+  <line x1="190" y1="190" x2="222" y2="222" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="222" y1="190" x2="190" y2="222" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="146" y="272" width="120" height="8" rx="4" fill="#f5f0e8" opacity="0.1"/>
+  <rect x="170" y="290" width="72" height="8" rx="4" fill="#f5f0e8" opacity="0.07"/>
+
+  <polyline points="372,213 410,213" stroke="#6366f1" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path d="M404 206 L412 213 L404 220" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="432" y="70" width="312" height="62" rx="10" fill="none" stroke="#f5f0e8" stroke-width="1.2" opacity="0.22"/>
+  <rect x="452" y="88" width="150" height="9" rx="4.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="452" y="105" width="104" height="9" rx="4.5" fill="#f5f0e8" opacity="0.13"/>
+  <circle cx="716" cy="101" r="8" fill="none" stroke="#6366f1" stroke-width="2.2" stroke-dasharray="26 12"/>
+
+  <rect x="432" y="146" width="312" height="62" rx="10" fill="none" stroke="#f5f0e8" stroke-width="1.2" stroke-dasharray="7 6" opacity="0.3"/>
+  <line x1="704" y1="177" x2="728" y2="177" stroke="#6366f1" stroke-width="2.2" stroke-linecap="round"/>
+  <line x1="716" y1="165" x2="716" y2="189" stroke="#6366f1" stroke-width="2.2" stroke-linecap="round"/>
+  <rect x="452" y="171" width="128" height="9" rx="4.5" fill="#f5f0e8" opacity="0.16"/>
+
+  <rect x="432" y="222" width="312" height="62" rx="10" fill="none" stroke="#f87171" stroke-width="1.5" opacity="0.7"/>
+  <path d="M464 268 L480 238 L496 268 Z" fill="none" stroke="#f87171" stroke-width="2.2" stroke-linejoin="round"/>
+  <line x1="480" y1="248" x2="480" y2="257" stroke="#f87171" stroke-width="2.2" stroke-linecap="round"/>
+  <rect x="516" y="240" width="140" height="9" rx="4.5" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="672" y="243" width="56" height="20" rx="10" fill="none" stroke="#6366f1" stroke-width="1.6"/>
+
+  <rect x="432" y="298" width="312" height="58" rx="10" fill="none" stroke="#4ade80" stroke-width="1.5" opacity="0.8"/>
+  <path d="M466 328 L476 338 L496 316" fill="none" stroke="#4ade80" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="516" y="315" width="180" height="9" rx="4.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="516" y="332" width="120" height="9" rx="4.5" fill="#f5f0e8" opacity="0.13"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Vibe coded app error handling is usually missing rather than wrong: AI tools build the happy path your prompt described and skip the failure branches. Every screen that loads data needs four states — loading, empty, error and success — and the fastest way to find the gaps is to force failures in devtools: go offline, block the API request, sign up as a brand-new user and let the session expire.</div>
+    <div class="prose"><p><strong>Vibe coded app error handling is usually missing rather than wrong.</strong> AI coding tools generate the happy path described in your prompt, so the app works when the network works, the database has rows and the user types valid input. The moment a request fails, a list comes back empty or a session expires, there is no code to handle it &mdash; so the user gets a blank screen, a spinner that never stops, or a raw error dumped on the page. Fixing it means deliberately building four states for every screen that loads data: loading, empty, error and success.</p>
+
+<h2>Why does vibe coded app error handling break so often?</h2>
+<p>Because of how the code gets written. You prompt for an outcome &mdash; &ldquo;show the user's invoices in a table&rdquo; &mdash; and the model produces code that does exactly that, assuming the fetch succeeds and returns rows. Nothing in the prompt describes what should happen when the API returns a 500, so nothing in the output handles it.</p>
+<p>Three things make the gap easy to miss:</p>
+<ul>
+  <li><strong>The preview always works.</strong> You test on your own machine, logged into your own account, with seeded data and a fast connection. That is the one environment where the happy path is the only path.</li>
+  <li><strong>Failure states are invisible until they fire.</strong> A missing empty state looks identical to a working screen right up to the day a real user signs up and has no data yet.</li>
+  <li><strong>Each state is separate code.</strong> Loading, empty and error are not variations of one thing. They are three extra branches per data-loading component, and AI-generated code rarely writes branches you did not ask for.</li>
+</ul>
+<p>This is the same root cause behind most <a href="/blog/ai-generated-code-bugs">AI-generated code bugs</a>: the model optimises for the described case, and silence about everything else reads as permission to skip it.</p>
+
+<h2>What are the four states every screen needs?</h2>
+<p>Use this as the specification for every component that loads data. If a screen cannot render all four, it is incomplete.</p>
+<table>
+  <thead>
+    <tr><th>State</th><th>When it fires</th><th>What the user should see</th><th>Common vibe-coded failure</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Loading</td><td>Request in flight</td><td>Skeleton or spinner, with the page shell already visible</td><td>Blank white area, or a spinner that never clears because the error path never sets loading to false</td></tr>
+    <tr><td>Empty</td><td>Request succeeded, zero results</td><td>A sentence explaining there is nothing yet, plus the action that creates the first item</td><td>An empty table with headers only, or a bare page that looks broken</td></tr>
+    <tr><td>Error</td><td>Request failed, or returned a non-2xx status</td><td>Plain-language message and a retry button</td><td>Nothing at all, a raw stack trace, or <em>[object Object]</em></td></tr>
+    <tr><td>Success</td><td>Data returned</td><td>The content</td><td>Usually fine &mdash; this is the only state that was built</td></tr>
+  </tbody>
+</table>
+
+<h2>Where do the blank screens actually come from?</h2>
+<p>Blank screens are the signature symptom, and in AI-generated front-end code they have a short list of causes worth checking by hand:</p>
+<h3>1. <code>fetch</code> does not throw on 4xx or 5xx</h3>
+<p>This trips up generated code constantly. The browser Fetch API only rejects on a network-level failure; a 404 or a 500 resolves normally with <code>response.ok</code> set to false. Code that wraps a fetch in <code>try/catch</code> and nothing else will sail straight past a server error and then try to read <code>.map()</code> off an error object. Check <code>response.ok</code> explicitly, or use a client that throws on non-2xx.</p>
+<h3>2. An ignored <code>error</code> field in the client response</h3>
+<p>Database and backend SDKs commonly return a result shape like <code>{ data, error }</code> rather than throwing. Generated code frequently destructures <code>data</code> and never looks at <code>error</code>, so a permission failure or a bad query silently becomes <code>data: null</code> &mdash; and the component renders nothing. Grep your project for destructured results and confirm every single one checks the error.</p>
+<h3>3. An uncaught error during render</h3>
+<p>In React, an error thrown while rendering unmounts the component tree above it unless an error boundary catches it. That is literally how you get a white page instead of a broken widget. One top-level error boundary turns a total blackout into a contained &ldquo;something went wrong, retry&rdquo; panel. AI-generated scaffolds rarely include one.</p>
+<h3>4. Reading a property off undefined</h3>
+<p>Generated code tends to assume nested data is present: <code>user.profile.name</code>, <code>order.items[0].price</code>. Any one missing link throws. Optional chaining and a sensible fallback value are cheap; finding the crash in production is not.</p>
+<h3>5. A loading flag that is never reset</h3>
+<p>If <code>setLoading(false)</code> lives only in the success branch, every failure leaves the spinner on screen forever. Put it in a <code>finally</code> block.</p>
+
+<h2>How do you test error handling without a QA team?</h2>
+<p>You cannot find these states by using the app normally, because normal use is the happy path. You have to force the failures. Each of these takes under a minute in browser devtools:</p>
+<ol>
+  <li><strong>Go offline.</strong> Network tab &rarr; Offline, then click through your main flows. Every screen should say something, not freeze.</li>
+  <li><strong>Block one request.</strong> Use request blocking on your API URL pattern, or set throttling to a slow profile. This separates &ldquo;slow&rdquo; from &ldquo;broken&rdquo; &mdash; and slow is where missing loading states show up.</li>
+  <li><strong>Sign up as a brand-new user.</strong> A fresh account with zero data is the only reliable way to see your empty states. Do this in a private window so you are not reusing your seeded account.</li>
+  <li><strong>Submit bad input.</strong> Empty required fields, a 500-character name, an email with no domain, a negative quantity, an emoji in a number field.</li>
+  <li><strong>Double-click every submit button.</strong> Unguarded handlers create duplicate records &mdash; a data bug, not just a UI one.</li>
+  <li><strong>Let the session expire.</strong> Clear your auth cookie or token in Application storage, then interact with the page. A good app routes you to login; a vibe-coded one often renders an empty shell.</li>
+</ol>
+<p>Write the results down as test cases rather than fixing them ad hoc. Once you have the list, the next step is making it repeatable &mdash; see <a href="/blog/how-to-add-tests-to-a-vibe-coded-app">how to add tests to a vibe-coded app</a> for turning a manual pass like this into checks that run on every deploy.</p>
+
+<h2>What should an error message actually say?</h2>
+<p>A good error message answers three questions in plain language: what happened, whether the user can do anything about it, and what to do next. &ldquo;We couldn't load your invoices. Check your connection and try again&rdquo; with a retry button beats both silence and <code>TypeError: Cannot read properties of undefined</code>.</p>
+<p>Two rules worth enforcing project-wide:</p>
+<ul>
+  <li><strong>Never render a raw exception to the user.</strong> Stack traces and database errors can expose table names, file paths and query structure. Log the detail; show the human a summary.</li>
+  <li><strong>Always offer a way forward.</strong> Retry, go back, or contact support. A dead end with no action is the state people screenshot and send to you &mdash; or abandon.</li>
+</ul>
+
+<h2>How can AI QA catch error-handling gaps before clients do?</h2>
+<p>The manual pass above works, but it only covers the screens you remembered to check, on the day you checked them. Automating the forced-failure pass is what keeps it honest as the app grows.</p>
+<p>That is the job Klavity does. <a href="/sims">Sims</a> runs AI personas through your real flows the way an unfamiliar user would &mdash; including the awkward paths, blank forms and dead ends that hand-written tests skip. <a href="/autosim">AutoSim</a> turns the flows that matter into self-healing end-to-end tests, so a missing error state that gets fixed today does not quietly reappear after next week's AI-assisted refactor. And <a href="/snap">Snap</a> gives clients and teammates a right-click bug report that carries the console error, network log and screenshot with it, so a &ldquo;the page is just blank&rdquo; message arrives with the evidence you need to fix it attached.</p>
+<p>If you want the broader picture of how this fits together, start with our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>. If slowness is the complaint rather than crashes, <a href="/blog/vibe-coded-app-performance-issues">vibe coded app performance issues</a> covers the other half of the problem.</p>
+
+<h2>The shortest version</h2>
+<p>Every screen that loads data needs four states, not one. Check <code>response.ok</code>, check the <code>error</code> field, add an error boundary, reset loading in a <code>finally</code>. Then force the failures &mdash; offline, blocked request, fresh account, expired session &mdash; before a client does it for you.</p>
+<p><strong><a href="/onboarding">Try Klavity free</a></strong> and let AI personas hunt the blank screens in your app before your users find them.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Build four states per data screen: loading, empty, error, success.</li><li>Check response.ok — fetch does not throw on 4xx or 5xx.</li><li>Add one top-level error boundary to stop blank-screen blackouts.</li><li>Force failures: offline, blocked request, new account, expired session.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Why does my vibe coded app show a blank white screen?</summary><p>Most often an uncaught error during render. In React, an error thrown while rendering unmounts the component tree unless an error boundary catches it, so a single broken widget takes the whole page with it. The other common causes are reading a property off undefined and rendering a response that was actually an error, because the Fetch API resolves normally on a 404 or 500 instead of throwing.</p></details><details><summary>Why does my spinner never stop?</summary><p>Because the loading flag is only reset in the success branch. If setLoading(false) lives inside the try block or after the successful response, any failure leaves it true forever. Move it into a finally block so it runs on every path.</p></details><details><summary>What is the fastest way to test error handling by hand?</summary><p>Four checks in browser devtools, each under a minute: switch the Network tab to Offline and click through your flows; block your API URL pattern to simulate a server failure; sign up as a brand-new user in a private window to see your empty states; and clear your auth token in Application storage to simulate an expired session.</p></details><details><summary>Should error messages show the technical error?</summary><p>No. Stack traces and database errors can expose table names, file paths and query structure, and they tell the user nothing useful. Log the technical detail on the server and show a plain-language message that says what happened and offers a retry or a way back.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

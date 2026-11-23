@@ -1125,5 +1125,12 @@
     "excerpt": "AI localization testing runs your flows in every language you ship, catching text overflow, broken RTL layouts and untranslated strings before clients do.",
     "category": "Guides",
     "date": "2026-11-22"
+  },
+  {
+    "slug": "vibe-coded-app-error-handling",
+    "title": "Vibe Coded App Error Handling: Fix Blank Screen Bugs",
+    "excerpt": "Vibe coded app error handling usually fails silently: no loading state, no empty state, no error message. Here's how to find and fix every gap.",
+    "category": "Guides",
+    "date": "2026-11-23"
   }
 ]
