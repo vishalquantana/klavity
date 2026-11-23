@@ -31152,6 +31152,20 @@
           // JTBD 2.14: board selection UI sync — reassigned each render (see renderTicketsKanban).
           let syncKbSelectionUi = () => { }
           let _tktView = "board" // "list" | "board"
+          // KD-3146: remember Board vs List across a refresh — in the URL (?tview=list, so a reload or a shared link keeps it)
+          // and in this browser (so coming back to Tickets later reopens the last view). Board is the default.
+          const TKT_VIEW_KEY = "klav.tktView"
+          function setTktView(v) {
+            _tktView = v === "list" ? "list" : "board"
+            try { localStorage.setItem(TKT_VIEW_KEY, _tktView) } catch (e) { }
+            try { const u = new URL(location.href); if (_tktView === "list") u.searchParams.set("tview", "list"); else u.searchParams.delete("tview"); history.replaceState(history.state, "", u.toString()) } catch (e) { }
+          }
+          function savedTktView(sp) {
+            const v = sp && sp.get("tview")
+            if (v === "list" || v === "board") return v
+            try { const ls = localStorage.getItem(TKT_VIEW_KEY); if (ls === "list" || ls === "board") return ls } catch (e) { }
+            return "board"
+          }
           let _tktFbBound = false
           // KLA-178: multi-select set for bulk actions in list view
           let _bulkSelected = new Set()
@@ -31169,6 +31183,7 @@
               }
               Object.entries(params).forEach(([key, value]) => value ? u.searchParams.set(key, value) : u.searchParams.delete(key))
               u.searchParams.delete("page")
+              if (_tktView === "list") u.searchParams.set("tview", "list"); else u.searchParams.delete("tview")   // KD-3146
               history.replaceState(null, "", u.toString())
             } catch (e) { }
           }
@@ -31181,6 +31196,7 @@
                   _tktFilters[key] = val ? val.split(",").map(s => s.trim()).filter(Boolean) : []
                 })
               _tktFilters.search = sp.get("q") || ""
+              _tktView = savedTktView(sp)   // KD-3146: a refresh keeps List view
               // KD-223: "Closed" (= Done + Dismissed) was dropped from the Status filter — it isn't a real status.
               // An old link carrying ?status=closed falls back to All statuses instead of matching nothing.
               _tktFilters.status = _tktFilters.status.filter(s => s !== "closed")
@@ -31444,6 +31460,8 @@
             _tktFbBound = true
 
             loadTicketFiltersFromUrl()
+            if (listBtn) listBtn.classList.toggle("active", _tktView === "list")
+            if (boardBtn) boardBtn.classList.toggle("active", _tktView !== "list")
             refreshAssigneeOptions()
             refreshTicketLabelOptions()
             TKT_MS_CONFIGS.forEach(initTktMultiSelect)
@@ -31455,12 +31473,12 @@
             // View toggle
             // KD-3139: the List is server-filtered and can't apply an Overview KPI-card filter, so switching to it drops
             // that filter (otherwise the Board and List disagreed on the same visible filters).
-            if (listBtn) listBtn.addEventListener("click", () => { _tktView = "list"; _kbFilter = null; syncTktClearBtn(); listBtn.classList.add("active"); boardBtn && boardBtn.classList.remove("active"); renderTicketsView() })
+            if (listBtn) listBtn.addEventListener("click", () => { setTktView("list"); _kbFilter = null; syncTktClearBtn(); listBtn.classList.add("active"); boardBtn && boardBtn.classList.remove("active"); renderTicketsView() })
             // KD-3139: the board's cached full set goes stale while the List is showing (the live poll only refreshes
             // the visible view), so tickets filed/reassigned meanwhile were missing on the board. Paint the cache at
             // once, then revalidate in the background (warm cache → no 'Loading…' flash).
             if (boardBtn) boardBtn.addEventListener("click", () => {
-              _tktView = "board"; boardBtn.classList.add("active"); listBtn && listBtn.classList.remove("active")
+              setTktView("board"); boardBtn.classList.add("active"); listBtn && listBtn.classList.remove("active")
               renderTicketsView()
               const pid = state && state.active && state.active.id
               if (pid && _tktBoardLoadedPid === pid) fetchAndRenderTktBoard()
@@ -32505,7 +32523,7 @@
             _kbFilter = filter || null
             if (typeof syncTktClearBtn === "function") syncTktClearBtn()   // KD-3139: show "Clear filters" for it
             // Card-driven filters apply to the kanban board — switch to board view first
-            _tktView = "board"
+            setTktView("board")
             const listBtn = document.getElementById("tktListBtn"), boardBtn = document.getElementById("tktBoardBtn")
             if (listBtn) listBtn.classList.remove("active")
             if (boardBtn) boardBtn.classList.add("active")
