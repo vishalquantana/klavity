@@ -763,6 +763,52 @@ export async function applySchema(c: Client) {
        created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
     `CREATE INDEX IF NOT EXISTS atc_group_ap_idx ON autosim_test_case_groups (project_id, autosim_project_id)`,
     `CREATE INDEX IF NOT EXISTS atc_case_ap_idx ON autosim_test_cases (project_id, autosim_project_id)`,
+    // ── F-01 Requirements-driven validation: an uploaded requirements document → its requirements
+    //    (REQ-001…) → generated test scenarios (TS-001…, each linked to requirement(s) and, once created,
+    //    to a test case) → requirement runs (a queue of test cases executed one after another) whose
+    //    items hold the validation result (actual vs expected) + evidence. Tenant-scoped by project_id. ──
+    `CREATE TABLE IF NOT EXISTS autosim_requirement_docs (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, autosim_project_id TEXT NOT NULL,
+       filename TEXT NOT NULL, content_type TEXT, size_bytes INTEGER NOT NULL DEFAULT 0,
+       source_key TEXT,                      -- stored original document (object storage), NULL if not kept
+       title TEXT NOT NULL DEFAULT '', start_url TEXT,
+       features_json TEXT, workflows_json TEXT, issues_json TEXT, clarifications_json TEXT,
+       created_by TEXT, created_at INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS areqdoc_ap_idx ON autosim_requirement_docs (project_id, autosim_project_id)`,
+    `CREATE TABLE IF NOT EXISTS autosim_requirements (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, doc_id TEXT NOT NULL, autosim_project_id TEXT NOT NULL,
+       ref TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0,
+       title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', type TEXT NOT NULL DEFAULT 'functional',
+       feature TEXT NOT NULL DEFAULT '', section TEXT NOT NULL DEFAULT '', quote TEXT NOT NULL DEFAULT '',
+       preconditions TEXT NOT NULL DEFAULT '', expected_result TEXT NOT NULL DEFAULT '',
+       ambiguous INTEGER NOT NULL DEFAULT 0, clarification TEXT NOT NULL DEFAULT '',
+       created_at INTEGER NOT NULL, UNIQUE(doc_id, ref))`,
+    `CREATE INDEX IF NOT EXISTS areq_doc_idx ON autosim_requirements (project_id, doc_id)`,
+    `CREATE TABLE IF NOT EXISTS autosim_req_scenarios (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, doc_id TEXT NOT NULL,
+       ref TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0, title TEXT NOT NULL,
+       requirement_ids_json TEXT NOT NULL DEFAULT '[]',
+       preconditions TEXT NOT NULL DEFAULT '', steps TEXT NOT NULL DEFAULT '', expected_result TEXT NOT NULL DEFAULT '',
+       start_url TEXT, needs_login INTEGER NOT NULL DEFAULT 0, missing_json TEXT NOT NULL DEFAULT '[]',
+       status TEXT NOT NULL DEFAULT 'ready',
+       test_case_id TEXT,                    -- set once the user creates a test case from it
+       created_at INTEGER NOT NULL, UNIQUE(doc_id, ref))`,
+    `CREATE INDEX IF NOT EXISTS areqsc_doc_idx ON autosim_req_scenarios (project_id, doc_id)`,
+    `CREATE TABLE IF NOT EXISTS autosim_requirement_runs (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, autosim_project_id TEXT NOT NULL, doc_id TEXT,
+       status TEXT NOT NULL DEFAULT 'queued',  -- queued | running | cancelling | done | cancelled
+       created_by TEXT, created_at INTEGER NOT NULL, started_at INTEGER, finished_at INTEGER)`,
+    `CREATE INDEX IF NOT EXISTS areqrun_ap_idx ON autosim_requirement_runs (project_id, autosim_project_id)`,
+    `CREATE TABLE IF NOT EXISTS autosim_requirement_run_items (
+       id TEXT PRIMARY KEY, run_id TEXT NOT NULL, project_id TEXT NOT NULL, position INTEGER NOT NULL,
+       test_case_id TEXT NOT NULL,
+       status TEXT NOT NULL DEFAULT 'queued',  -- queued | running | passed | failed | blocked | error | cancelled
+       mode TEXT,                              -- record (no AutoSim yet) | replay
+       author_session_id TEXT, trail_id TEXT, walk_run_id TEXT,
+       expected_result TEXT NOT NULL DEFAULT '', observed TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '',
+       evidence_json TEXT, started_at INTEGER, finished_at INTEGER)`,
+    `CREATE INDEX IF NOT EXISTS areqitem_run_idx ON autosim_requirement_run_items (run_id, position)`,
+    `CREATE INDEX IF NOT EXISTS areqitem_tc_idx ON autosim_requirement_run_items (project_id, test_case_id)`,
     // ── AutoSim auth setup (AT3): short-lived write-only setup token + encrypted login config. ──
     `CREATE TABLE IF NOT EXISTS autosim_auth_setup_tokens (
        id TEXT PRIMARY KEY,
@@ -1149,6 +1195,8 @@ export async function applySchema(c: Client) {
     "feedback_occurrences",
     // KD-2255: test_accounts gains autosim_project_id; autosim_test_cases gains test_account_id/start_url.
     "test_accounts", "autosim_test_cases",
+    // F-01: autosim_projects gains setup_steps (common steps run before every test case, e.g. PX4 login).
+    "autosim_projects",
   ]
   const _cols = await loadTableColumns(c, ALTERED_TABLES)
   const needCol = (table: string, col: string) => !(_cols.get(table)?.has(col) ?? false)
@@ -1489,6 +1537,14 @@ export async function applySchema(c: Client) {
     console.warn("autosim_test_cases.test_account_id ALTER skipped:", e?.message || e))
   if (needCol("autosim_test_cases", "start_url")) await c.execute("ALTER TABLE autosim_test_cases ADD COLUMN start_url TEXT").catch((e: any) =>
     console.warn("autosim_test_cases.start_url ALTER skipped:", e?.message || e))
+  // F-01: common setup steps per AutoSim project (login / security code / pick company …) prepended to test cases.
+  if (needCol("autosim_projects", "setup_steps")) await c.execute("ALTER TABLE autosim_projects ADD COLUMN setup_steps TEXT").catch((e: any) =>
+    console.warn("autosim_projects.setup_steps ALTER skipped:", e?.message || e))
+  // F-01: test cases carry their own preconditions + expected result and the requirement they verify.
+  for (const col of ["preconditions", "expected_result", "requirement_id"]) {
+    if (needCol("autosim_test_cases", col)) await c.execute(`ALTER TABLE autosim_test_cases ADD COLUMN ${col} TEXT`).catch((e: any) =>
+      console.warn(`autosim_test_cases.${col} ALTER skipped:`, e?.message || e))
+  }
   if (needCol("test_accounts", "autosim_project_id")) await c.execute("ALTER TABLE test_accounts ADD COLUMN autosim_project_id TEXT").catch((e: any) =>
     console.warn("test_accounts.autosim_project_id ALTER skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS trail_tc_idx ON trails(project_id, test_case_id)").catch((e: any) =>
