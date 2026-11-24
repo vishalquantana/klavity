@@ -451,6 +451,10 @@ export interface ShotPageMeta {
 // collapsing to a full-screen grab. A region shot re-crops its rect; a picked-element shot re-crops that
 // element (re-resolved live from its selector); a viewport/full shot redoes that same sharp mode. Carried
 // index-aligned with screenshots[] and threaded to onRetakeSharp so the host knows exactly what to redo.
+/** KD-3088: where a shot's numbers were on the page at capture time (+ how it was captured), so "Mask numbers"
+ *  can still be applied to it after Minimize → Resume. JSON-safe: hosts persist it next to the shot. */
+export interface ShotNumberMask { geo: NumberGeo; capture?: ShotCapture }
+
 export interface ShotCapture {
   kind: 'region' | 'element' | 'viewport' | 'full' | 'other'
   /** Region/element bounding rect in CSS viewport px at capture time (fallback if a selector re-resolve fails). */
@@ -746,7 +750,12 @@ export interface ModalCallbacks {
   // (Full Page / Screen / Region / Upload / paste / auto-capture). NOT fired for shots seeded via the
   // controller's addScreenshot() (the host already knows those). The host uses it to append the shot,
   // tagged with the current page URL, to the evidence session. Absent => nothing extra happens.
-  onShotAdded?: (dataUrl: string, quality: CaptureQuality | undefined) => void
+  // KD-3088: `numberMask` (when the page had numbers) is where they were at capture time — persist it with the
+  // shot and pass it back to addScreenshot() on resume so "Mask numbers" still works on the restored shot.
+  onShotAdded?: (dataUrl: string, quality: CaptureQuality | undefined, numberMask?: ShotNumberMask) => void
+  // KD-3088: the reporter ticked/unticked "Mask numbers". The host persists it and re-opens the composer with
+  // the same state (config.maskNumbers) after Minimize → Resume. Absent => no-op.
+  onMaskNumbersChange?: (on: boolean) => void
   // Fired when an in-place capture (e.g. background full-page render) swaps out a fast preview.
   onShotReplaced?: (index: number, dataUrl: string, quality: CaptureQuality | undefined) => void
   // Fired when the reporter removes a thumbnail, with its strip index, so the host can drop the matching
@@ -778,7 +787,9 @@ export interface ModalController {
   // so Retake redoes that exact selection instead of a full-frame grab. Backward compatible.
   // KLA-772: an optional 6th arg re-seeds the shot's saved annotation overlay ({ w, h, shapes }) so a report
   // restored after navigation repaints the shapes the reporter drew. Absent => the shot seeds with no overlay.
-  addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture, annotations?: any) => void
+  // KD-3088: an optional 7th arg re-seeds the shot's number positions (from onShotAdded) so Mask numbers can
+  // mask a restored shot; if masking is on, the restored shot is masked right away.
+  addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture, annotations?: any, numberMask?: ShotNumberMask) => void
   // Like addScreenshot, but treats the shot as a GENUINE user capture: it becomes the ACTIVE/selected hero
   // (activeIndex → the new last shot, scrolled into view) AND fires onShotAdded (so the host persists it to
   // any evidence session). Use for a shot the reporter just captured — e.g. a right-click-drag region shot
@@ -2215,7 +2226,7 @@ export function buildModal(
     shadowRoot,
     // Host seeds shots it already tracks (evidence-session restore, region-initial): fireAdded=false so
     // onShotAdded does NOT re-fire (which would double-persist). Page metadata is carried through as-is.
-    addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture, annotations?: any) => addScreenshot(dataUrl, quality, pageMeta, false, !!suggestSharp, capture, annotations),
+    addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture, annotations?: any, numberMask?: ShotNumberMask) => addScreenshot(dataUrl, quality, pageMeta, false, !!suggestSharp, capture, annotations, numberMask),
     // fireAdded=true: select the new shot as the active hero + fire onShotAdded (persist). See interface doc.
     addCapturedShot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => addScreenshot(dataUrl, quality, pageMeta, true, !!suggestSharp, capture),
     close,
@@ -2592,7 +2603,7 @@ export function buildModal(
     }
   }
 
-  function addScreenshot(dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, fireAdded = true, suggestSharp = false, capture?: ShotCapture, annotations?: any) {
+  function addScreenshot(dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, fireAdded = true, suggestSharp = false, capture?: ShotCapture, annotations?: any, numberMask?: ShotNumberMask) {
     // Hard cap — every capture/upload/paste path funnels through here, so the limit holds everywhere.
     if (screenshots.length >= MAX_IMAGES) { showError(`You can attach up to ${MAX_IMAGES} images.`); return }
     clearError()
@@ -2621,7 +2632,13 @@ export function buildModal(
     // A genuine new capture becomes the hero — drop any video/recording hero selection so the fresh image shows.
     if (fireAdded) { activeIndex = screenshots.length - 1; activeVideoIndex = null; activeRecordingIndex = null }
     updateStrip()
-    if (fireAdded) { try { callbacks.onShotAdded?.(dataUrl, quality) } catch { /* host persistence best-effort */ } }
+    // KD-3088: a restored shot brings back where its numbers were, so Mask numbers works on it after Resume
+    // (masking it straight away when the toggle is on). A fresh capture already recorded this in noteNumberGeo.
+    if (numberMask && numberMask.geo && Array.isArray(numberMask.geo.rects) && !numberGeoByUrl.has(dataUrl)) {
+      numberGeoByUrl.set(dataUrl, { geo: numberMask.geo, capture: numberMask.capture })
+      if (maskOn && !fireAdded) scheduleNumberMask()
+    }
+    if (fireAdded) { try { callbacks.onShotAdded?.(dataUrl, quality, numberGeoByUrl.get(dataUrl)) } catch { /* host persistence best-effort */ } }
   }
 
   // KD-3088: start a capture. The page the user is looking at is NEVER modified for masking — masking happens
@@ -5434,7 +5451,11 @@ export function buildModal(
       // drives the same `maskOn` flag consumed by every capture path, AND (KD-3088) applies to the shots
       // already taken: it used to only affect the NEXT capture, so toggling it while marking up did nothing.
       const maskCb = tools.querySelector('.kl-hmask-cb') as HTMLInputElement | null
-      if (maskCb) maskCb.addEventListener('change', () => { maskOn = maskCb.checked; trackMaskPass(applyNumberMask()) })
+      if (maskCb) maskCb.addEventListener('change', () => {
+        maskOn = maskCb.checked
+        trackMaskPass(applyNumberMask())
+        try { callbacks.onMaskNumbersChange?.(maskOn) } catch { /* host persistence best-effort */ }   // KD-3088
+      })
       tools.querySelectorAll('[data-outline]').forEach(b => b.addEventListener('click', () => {
         textOutline = (b as HTMLElement).dataset.outline as 'black' | 'white' | 'none'
         tools.querySelectorAll<HTMLElement>('[data-outline]').forEach(el => el.classList.toggle('kl-on', el === b))
