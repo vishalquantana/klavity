@@ -221,7 +221,9 @@
     .wrap {
       margin-left: 214px;
       padding: 36px 32px 72px;
-      max-width: 1380px;
+      /* KD-3149: no fixed cap — the page fills the screen next to the sidebar on large displays (it was capped at
+         1380px, leaving a wide blank strip on the right). Tickets/New reports already ran full width. */
+      max-width: none;
       transition: margin-left .2s ease
     }
 
