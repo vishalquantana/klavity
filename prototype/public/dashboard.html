@@ -30858,6 +30858,7 @@
               case "ticket_attachment_removed": return `${who} removed an attachment`
               case "ticket_screenshot_annotated": return `${who} annotated the screenshot`
               case "ticket_qa_closed": return `${who} closed the ticket after QA`
+              case "ticket_deleted": return `${who} deleted this ticket`
               default: return `${who} updated the ticket`
             }
           }
@@ -30919,7 +30920,8 @@
               const n = items.find(x => x.id === it.getAttribute("data-id")); if (!n) return
               if (!n.readAt) { n.readAt = Date.now(); unread = Math.max(0, unread - 1); paintBadge(); markRead({ ids: [n.id] }) }
               close(false)
-              if (!n.feedbackId) return
+              // KD-3134: a deleted ticket can't be opened (it would land on "Ticket unavailable") — just mark it read.
+              if (!n.feedbackId || n.type === "ticket_deleted") return
               if (state && state.active && state.active.id === n.projectId && typeof openSingleTicket === "function") openSingleTicket(n.feedbackId, "full")
               else location.href = "/t/" + encodeURIComponent(n.feedbackId)
             })
