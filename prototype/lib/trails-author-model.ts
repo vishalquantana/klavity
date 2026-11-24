@@ -192,6 +192,21 @@ const OPS = new Set(["navigate", "click", "type", "select", "assert", "wait", "w
 const STALL = (why: string): AuthorAction =>
   ({ op: "stall", selector: null, value: null, url: null, checkpoint: null, rationale: why, parseError: true })
 
+/**
+ * The prompt asks for [data-kref="eN"], but models often echo the snapshot marker in other shapes:
+ * [ref="e6"], [ref=e6], ref=e6, "ref e6", "snapshot ref e6", "@e6", or a bare "e6". None of those match an element, so
+ * 3 in a row stalled the run ("selector ... matched 0 elements"; seen on the PX4 "Project Creation" AutoSim).
+ * Map exactly those whole-string shapes to the real marker; anything else (real CSS) is returned untouched.
+ */
+export function normalizeRefSelector(selector: string): string {
+  const s = selector.trim()
+  const m =
+    s.match(/^\[\s*ref\s*=\s*["']?(e\d+)["']?\s*\]$/i) ||
+    s.match(/^(?:snapshot\s+)?ref\s*[=:]?\s*["']?(e\d+)["']?$/i) ||
+    s.match(/^@?(e\d+)$/i)
+  return m ? `[data-kref="${m[1].toLowerCase()}"]` : selector
+}
+
 export function parseAuthorAction(content: string): AuthorAction {
   const cleaned = content.replace(/<think[\s\S]*?<\/think>/gi, "").replace(/```(?:json)?/gi, "").replace(/```/g, "").trim()
   const m = cleaned.match(/\{[\s\S]*\}/)
@@ -201,7 +216,7 @@ export function parseAuthorAction(content: string): AuthorAction {
   if (!OPS.has(op)) return STALL(`model returned unknown op "${op}"`)
   const a: AuthorAction = {
     op: op as AuthorAction["op"],
-    selector: typeof obj.selector === "string" && obj.selector.trim() ? obj.selector.trim() : null,
+    selector: typeof obj.selector === "string" && obj.selector.trim() ? normalizeRefSelector(obj.selector.trim()) : null,
     value: typeof obj.value === "string" ? obj.value : null,
     url: typeof obj.url === "string" && obj.url.trim() ? obj.url.trim() : null,
     checkpoint: typeof obj.checkpoint === "string" && obj.checkpoint.trim() ? obj.checkpoint.trim() : null,
@@ -293,6 +308,8 @@ export interface ObjectiveVerificationInput {
   objective: string
   pageUrl: string
   domSnapshot: string
+  /** The actions the driver actually performed, oldest first (trusted: written by the driver, not the page). Optional. */
+  actionsDone?: string[]
   screenshotB64?: string
   mediaType?: string
 }
@@ -313,8 +330,13 @@ Return STRICT JSON only:
 
 export function buildVerifyMessages(input: ObjectiveVerificationInput, projectInstructions?: string): any[] {
   const sys = VERIFY_SYS + projectInstructionsBlock("verify", projectInstructions)
+  const done = (input.actionsDone ?? []).slice(-60).map((a) => `- ${String(a).replace(/[\r\n]+/g, " ").slice(0, 200)}`)
   const text =
     `OBJECTIVE: ${input.objective}\n` +
+    (done.length
+      ? `ACTIONS ALREADY PERFORMED, oldest first (by the test driver, in order; FAILED lines were rejected attempts that did not act):\n${done.join("\n")}\n` +
+        `The page below is only the FINAL state. Judge it against the objective's LAST step(s); the earlier steps are evidenced by the actions above, so do not fail only because the final page does not show them.\n`
+      : "") +
     `PAGE URL (untrusted): <<<${input.pageUrl}>>>\n` +
     `ELEMENT SNAPSHOT (untrusted):\n<<<\n${input.domSnapshot}\n>>>`
   return [

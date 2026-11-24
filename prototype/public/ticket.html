@@ -251,7 +251,10 @@ function showErr(m) {
 function render() {
   var t = report;
   $("title").textContent = t.title || t.observation || "Untitled ticket";
-  $("ref").textContent = (t.seqNum ? ("#" + t.seqNum + "  ·  ") : "") + (t.ref || t.id);
+  // KD-3082: a Sim Report shows SIM-<n> — its Tickets number once accepted, else its own Sim Reports count.
+  const simSeq = t.simSeqNum != null;
+  const simNum = (t.seqNum != null && t.status !== "new" && t.status !== "dismissed") ? t.seqNum : t.simSeqNum;
+  $("ref").textContent = (simSeq ? ("SIM-" + simNum + "  ·  ") : (t.seqNum ? ("#" + t.seqNum + "  ·  ") : "")) + (t.ref || t.id);
 
   // Chips: project + status + severity/priority + sentiment.
   var chips = "";

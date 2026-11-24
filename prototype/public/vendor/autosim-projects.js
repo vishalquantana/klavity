@@ -29,6 +29,9 @@
     '.asp-switch{padding:18px 26px 0}',
     '#aspRoot .asp-crumbs{font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--paper-faint);margin-bottom:14px;display:flex;flex-wrap:wrap;gap:6px}',
     '#aspRoot .asp-crumbs a{color:var(--indigo);text-decoration:none}',
+    '#aspRoot .asp-back{display:inline-flex;align-items:center;gap:4px;margin-bottom:10px;color:var(--paper-dim);font:600 12.5px var(--body);text-decoration:none;cursor:pointer;transition:color .15s}',
+    '#aspRoot .asp-back:hover,#aspRoot .asp-back:focus-visible{color:var(--indigo);outline:none}',
+    '#aspRoot .asp-back svg{flex-shrink:0}',
     '#aspRoot .head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}',
     '#aspRoot .lead{color:var(--paper-dim);font-size:14px;margin-top:4px;max-width:70ch;white-space:pre-wrap}',
     '#aspRoot .actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}',
@@ -198,6 +201,12 @@
     '#aspRoot .asp-val{display:grid;gap:3px;font-size:13px;padding:8px 0;border-bottom:1px solid var(--line)}#aspRoot .asp-val:last-child{border-bottom:0}',
     '#aspRoot .asp-ev{font-size:12.5px;color:var(--paper-faint)}#aspRoot .asp-ev a{color:var(--indigo);text-decoration:none;font-weight:600}',
     '@media (max-width:760px){#aspRoot .asp-reqtiles{grid-template-columns:repeat(3,1fr)}}',
+    // KD-3106: loading state while a form submits (spinner in the primary button, form locked).
+    '#aspModalBg .asp-spin{display:inline-block;width:13px;height:13px;margin-right:7px;vertical-align:-2px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:asp-spin .7s linear infinite}',
+    '@keyframes asp-spin{to{transform:rotate(360deg)}}',
+    '#aspModalBg .modal[aria-busy=true] #aspModalBody{opacity:.6;pointer-events:none}',
+    '#aspModalBg .modal[aria-busy=true] #aspModalOk{cursor:progress;opacity:1}',
+    '@media (prefers-reduced-motion:reduce){#aspModalBg .asp-spin{animation-duration:2s}}',
     '@media (max-width:640px){#aspRoot .kv{grid-template-columns:1fr}.asp-switch{padding:14px 16px 0}}',
   ].join('\n')
   document.head.appendChild(css)
@@ -225,6 +234,7 @@
 
   // ── Modal form (dashboard .modal-bg/.modal) + confirm (dashboard klavConfirm) ──
   var modalSubmit = null
+  var modalBusy = false   // KD-3106: true while a form submit is in flight — the modal can't be closed mid-save
   function ensureModal() {
     if ($('aspModalBg')) return
     var bg = document.createElement('div')
@@ -234,13 +244,29 @@
       '<div class="acts"><button type="button" class="btn btn-ghost" id="aspModalCancel">Cancel</button><button type="submit" class="btn btn-indigo" id="aspModalOk">Save</button></div></form></div>'
     document.body.appendChild(bg)
     $('aspModalForm').addEventListener('submit', function (e) { e.preventDefault(); if (modalSubmit) modalSubmit() })
-    $('aspModalCancel').addEventListener('click', closeModal)
-    bg.addEventListener('click', function (e) { if (e.target === bg) closeModal() })
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && bg.classList.contains('show')) closeModal() })
+    $('aspModalCancel').addEventListener('click', function () { if (!modalBusy) closeModal() })
+    bg.addEventListener('click', function (e) { if (e.target === bg && !modalBusy) closeModal() })
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && bg.classList.contains('show') && !modalBusy) closeModal() })
+  }
+  // KD-3106: show/hide the submit loading state — spinner + busy label, fields and Cancel disabled.
+  function setModalBusy(on, busyLabel, idleLabel) {
+    modalBusy = !!on
+    var ok = $('aspModalOk'), modal = ok && ok.closest('.modal')
+    if (!ok) return
+    ok.disabled = !!on
+    $('aspModalCancel').disabled = !!on
+    if (modal) modal.setAttribute('aria-busy', on ? 'true' : 'false')
+    $('aspModalBody').querySelectorAll('input,textarea,select').forEach(function (el) {
+      if (on) { el.dataset.aspWasDisabled = el.disabled ? '1' : ''; el.disabled = true }
+      else { el.disabled = el.dataset.aspWasDisabled === '1'; delete el.dataset.aspWasDisabled }
+    })
+    if (on) ok.innerHTML = '<span class="asp-spin" aria-hidden="true"></span>' + esc(busyLabel || 'Saving…')
+    else ok.textContent = idleLabel || 'Save'
   }
   function closeModal() { var bg = $('aspModalBg'); if (bg) bg.classList.remove('show'); modalSubmit = null }
   function openForm(opts) {
     ensureModal()
+    setModalBusy(false, '', opts.okLabel)   // never open a new form in a stale loading state
     $('aspModalTitle').textContent = opts.title
     $('aspModalErr').textContent = ''
     $('aspModalOk').textContent = opts.okLabel || 'Save'
@@ -272,10 +298,10 @@
         if (f.pattern && v && !f.pattern.test(v)) { $('aspModalErr').textContent = f.patternMsg; el.focus(); return }
         vals[f.key] = v
       }
-      $('aspModalOk').disabled = true
-      try { await opts.submit(vals); closeModal() }
-      catch (e) { $('aspModalErr').textContent = e.message }
-      finally { $('aspModalOk').disabled = false }
+      $('aspModalErr').textContent = ''
+      setModalBusy(true, opts.busyLabel, opts.okLabel)
+      try { await opts.submit(vals); setModalBusy(false, '', opts.okLabel); closeModal() }
+      catch (e) { setModalBusy(false, '', opts.okLabel); $('aspModalErr').textContent = e.message }
     }
     $('aspModalBg').classList.add('show')
     var first = $('aspModalBody').querySelector('input:not([type=radio]),textarea,select'); if (first) first.focus()
@@ -308,8 +334,17 @@
   })
   window.addEventListener('popstate', function () { if (document.body.getAttribute('data-view') === 'autosims') sync() })
 
-  function crumbs(items) {
+  // back = { to: <state for go(); null = the AutoSims sub-tab>, label } — every level gets a "← <parent>"
+  // button above the breadcrumb, so the flow never relies on the breadcrumb or the browser's Back alone.
+  function crumbs(items, back) {
     $('aspCrumbs').innerHTML = items.join('<span aria-hidden="true">/</span>')
+    var b = $('aspBack')
+    if (!b) { b = document.createElement('div'); b.id = 'aspBack'; $('aspCrumbs').parentNode.insertBefore(b, $('aspCrumbs')) }
+    b.innerHTML = back
+      ? '<a class="asp-back" href="' + esc(urlFor(back.to)) + '" data-asp-nav="' + esc(JSON.stringify(back.to)) + '">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>' +
+        esc(back.label) + '</a>'
+      : ''
   }
   function setSwitch(on) {
     var c = card(); if (!c) return
@@ -351,7 +386,7 @@
   function bindPager(key, fn) { document.querySelectorAll('[data-pg-' + key + ']').forEach(function (b) { b.onclick = function () { fn(Number(b.getAttribute('data-pg-' + key))) } }) }
 
   async function renderList() {
-    crumbs(['<span>Projects</span>'])
+    crumbs(['<span>Projects</span>'])   // top level: the AUTOSIMS tab above already goes back, no back link
     var d = await api('GET', '/api/autosim-projects')
     role = d.role; listData = d.projects
     $('aspMain').innerHTML =
@@ -428,7 +463,7 @@
   async function renderProject(apId, tab) {
     await loadProject(apId)
     var p = cur.project
-    crumbs([navLink({ asp: 'list' }, 'Projects'), '<span>' + esc(p.name) + '</span>'])
+    crumbs([navLink({ asp: 'list' }, 'Projects'), '<span>' + esc(p.name) + '</span>'], { to: { asp: 'list' }, label: 'Back to Projects' })
     var TABS = [['overview', 'Overview'], ['credentials', 'Credentials'], ['groups', 'Test Case Groups'], ['test-cases', 'Test Cases']]
     if (tab === 'requirements') tab = 'test-cases'   // the Requirements tab was removed: extracted test cases live under Test Cases
     if (!TABS.some(function (t) { return t[0] === tab })) tab = 'overview'
@@ -571,7 +606,7 @@
   function testCaseForm(tc) {
     var apBase = '/api/autosim-projects/' + encodeURIComponent(cur.project.id)
     var accs = cur.accounts, curCred = credOf(tc)
-    openForm({ title: tc ? 'Edit test case' : 'New test case', okLabel: tc ? 'Save' : 'Create test case',
+    openForm({ title: tc ? 'Edit test case' : 'New test case', okLabel: tc ? 'Save' : 'Create test case', busyLabel: tc ? 'Saving…' : 'Creating test case…',
       fields: [
         { key: 'name', label: 'Test case name', required: true, max: 120, value: tc && tc.name, placeholder: 'e.g. Valid login' },
         { key: 'start_url', label: 'Start URL', required: true, type: 'url', max: 500, value: tc && tc.startUrl, placeholder: 'https://app.example.com/login',
@@ -598,7 +633,8 @@
         v.test_account_id = v.exec === 'creds' ? v.test_account_id : null
         delete v.exec
         if (tc) await api('PATCH', apBase + '/test-cases/' + encodeURIComponent(tc.id), v); else await api('POST', apBase + '/test-cases', v)
-        toast(tc ? 'Test case updated' : 'Test case created'); sync()
+        await sync()   // keep the spinner until the list shows the new/updated test case
+        toast(tc ? 'Test case updated' : 'Test case created')
       } })
   }
   function deleteTestCaseConfirm(tc, after) {
@@ -670,6 +706,17 @@
     green: ['Passed', 'green'], amber: ['Passed with fixes', 'draft'], red: ['Failed', 'red'],
     running: ['Running', 'draft'], paused: ['Waiting for input', 'draft'], needs_auth: ['Needs login', 'red'], skip: ['Skipped', ''],
   }
+  // KD-3107: who/what started the run — readable label + tooltip instead of the raw enum.
+  var TRIGGER = {
+    manual: ['You', 'Started from the dashboard'],
+    scheduled: ['Schedule', 'Started automatically by this AutoSim’s schedule'],
+    ci: ['CI pipeline', 'Started automatically by your CI pipeline'],
+    api: ['API', 'Started through the Klavity API'],
+  }
+  function triggerCell(t) {
+    var v = TRIGGER[t] || [t || '–', '']
+    return '<td class="muted"' + (v[1] ? ' title="' + esc(v[1]) + '"' : '') + '>' + esc(v[0]) + '</td>'
+  }
   function fmtDur(ms) { if (ms == null) return '…'; var s = Math.round(ms / 1000); return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's' }
   function fmtWhen(ms) { try { return new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) } catch (e) { return '' } }
   var pollTimer = null
@@ -716,7 +763,7 @@
     var tc = cur.testCases.find(function (t) { return t.id === tcId })
     if (!tc) { var e = new Error('This test case no longer exists.'); e.status = 404; throw e }
     var p = cur.project, P = encodeURIComponent(cur.projectId)
-    crumbs([navLink({ asp: 'list' }, 'Projects'), navLink({ asp: p.id }, p.name), navLink({ asp: p.id, tab: 'test-cases' }, 'Test Cases'), '<span>' + esc(tc.name) + '</span>'])
+    crumbs([navLink({ asp: 'list' }, 'Projects'), navLink({ asp: p.id }, p.name), navLink({ asp: p.id, tab: 'test-cases' }, 'Test Cases'), '<span>' + esc(tc.name) + '</span>'], { to: { asp: p.id, tab: 'test-cases' }, label: 'Back to Test Cases' })
     var auto = cur.trails.filter(function (t) { return t.testCaseId === tc.id })[0] || null
     var cred = credOf(tc)
     var tcBase = '/api/autosim-projects/' + encodeURIComponent(p.id) + '/test-cases/' + encodeURIComponent(tc.id)
@@ -827,6 +874,19 @@
   }
 
   // Execution results: summary strip + one row per run. Polls while a run is in progress.
+  // "12/12 executed" + "9 passed · 3 fixed · 3 failed · 1 needs review · 1 not run" (parts with 0 are left out).
+  function runStepsSummary(r) {
+    var executed = r.executed != null ? r.executed : (r.passed + r.healed + (r.review || 0) + r.failed)
+    var notRun = r.notRun != null ? r.notRun : Math.max(0, r.steps - executed)
+    var parts = []
+    if (r.passed) parts.push(r.passed + ' passed')
+    if (r.healed) parts.push(r.healed + ' fixed')
+    if (r.failed) parts.push('<span style="color:var(--rose)">' + r.failed + ' failed</span>')
+    if (r.review) parts.push(r.review + ' needs review')
+    if (notRun) parts.push('<span class="muted">' + notRun + ' not run</span>')
+    var tip = 'Executed ' + executed + ' of ' + r.steps + ' steps. Fixed = ran and passed after Klavity repaired a changed selector (counts as executed).'
+    return '<span title="' + esc(tip) + '"><b>' + executed + '/' + r.steps + ' executed</b>' + (parts.length ? '<div class="muted" style="font-size:12px">' + parts.join(' · ') + '</div>' : '') + '</span>'
+  }
   async function drawRuns(tc, tcBase) {
     clearTimeout(pollTimer)
     var self = function () { return drawRuns(tc, tcBase) }
@@ -845,16 +905,19 @@
       stat(runs.length, 'Runs') + stat(passed, 'Passed') + stat(done.length - passed, 'Failed') +
       stat(done.length ? Math.round(passed * 100 / done.length) + '%' : '–', 'Pass rate') +
       stat((RESULT[last.status] || [last.status])[0], 'Last result') + '</div></div>' +
-      '<div class="table-wrap"><table><thead><tr><th>When</th><th>Result</th><th>Steps</th><th>Duration</th><th>Mode</th><th>Trigger</th><th></th></tr></thead><tbody>' +
+      '<div class="table-wrap"><table><thead><tr><th>When</th><th>Result</th><th>Steps</th><th>Duration</th><th>Mode</th><th title="How the run started: by you, its schedule, your CI pipeline or the API">Started by</th><th></th></tr></thead><tbody>' +
       runs.map(function (r) {
         var res = RESULT[r.status] || [r.status, '']
-        var steps = r.steps ? (r.passed + '/' + r.steps + ' passed' + (r.failed ? ' · <span style="color:var(--rose)">' + r.failed + ' failed</span>' : '') + (r.healed ? ' · ' + r.healed + ' fixed' : '')) : '<span class="muted">–</span>'
+        // Agreed formula: executed / total steps. Every executed step is in exactly one bucket — passed, fixed
+        // (self-healed, then passed), needs review, failed — so the breakdown always adds up to "executed".
+        var steps = r.steps ? runStepsSummary(r) : '<span class="muted">–</span>'
         var mode = r.aiCalls === 0 ? 'Script replay' : 'Replay + AI fixes (' + r.aiCalls + ')'
         return '<tr><td>' + esc(fmtWhen(r.startedAt)) + (r.current ? '' : '<div class="muted">previous recording</div>') + '</td>' +
           '<td><span class="asp-pill ' + res[1] + '">' + esc(res[0]) + '</span>' + (r.findings ? '<div class="muted">' + plural(r.findings, 'finding') + '</div>' : '') + '</td>' +
-          '<td>' + steps + '</td><td>' + esc(fmtDur(r.durationMs)) + '</td><td class="muted">' + esc(mode) + '</td><td class="muted">' + esc(r.trigger) + '</td>' +
+          '<td>' + steps + '</td><td>' + esc(fmtDur(r.durationMs)) + '</td><td class="muted">' + esc(mode) + '</td>' + triggerCell(r.trigger) +
           '<td><div class="actions"><button class="btn btn-ghost btn-sm" data-steps="' + esc(r.runId) + '" aria-expanded="' + !!openRuns[r.runId] + '">' + (openRuns[r.runId] ? 'Hide steps' : 'Steps') + '</button>' +
-          '<a class="btn btn-ghost btn-sm" href="/autosims/walk/' + esc(encodeURIComponent(r.runId)) + '?project=' + P + '">Report</a>' +
+          // from= lets the report page offer "Back to test case" (it only accepts a /dashboard path).
+          '<a class="btn btn-ghost btn-sm" href="/autosims/walk/' + esc(encodeURIComponent(r.runId)) + '?project=' + P + '&from=' + encodeURIComponent(urlFor({ asp: cur.project.id, tc: tc.id })) + '">Report</a>' +
           (r.durationMs != null ? '<a class="btn btn-ghost btn-sm" href="/api/trails/walks/' + esc(encodeURIComponent(r.runId)) + '/report.pdf?project=' + P + '" target="_blank" rel="noopener">PDF</a>' : '') +
           '</div></td></tr>' +
           (openRuns[r.runId] ? '<tr class="asp-steps-row"><td colspan="7"><div id="aspSteps_' + esc(r.runId) + '" class="muted">Loading steps…</div></td></tr>' : '')

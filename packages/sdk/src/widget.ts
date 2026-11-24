@@ -3,6 +3,7 @@ import { injectSimStyles } from "@klavity/core/sim"
 import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage, safeToPngViewport, hasUncapturableEmbeds, fullPageCaptureSize } from "./capture"
 import { buildModal, installRegionDrag, isEditableTarget, isLinkTarget, createSharePickerHint, shareCaptureLikelyGranted, type ModalController, type PickedTarget, type CaptureQuality, type ShotCapture } from "@klavity/core/modal"
 import { safeRemove } from "@klavity/core"
+import { splitForLargeUpload, offloadLargeFiles, fetchTransport, LargeUploadError } from "@klavity/core/large-upload"
 import { cropDataUrl, cumulativeScrollForRect, type Rect } from "@klavity/core/crop"
 import {
   planScrollStitch,
@@ -33,6 +34,8 @@ import {
   getActiveSession, startOrContinue, addShot, removeShot, clear as clearEvidenceSession,
   makeShotId, pageCount, MAX_SHOTS, updateShotAnnotations, updateFields as updateEvidenceFields,
   setRecordings as setEvidenceRecordings,
+  setFiles as setEvidenceFiles,
+  setMulti as setEvidenceMulti,
   type EvidenceSession, type EvidenceShot,
 } from "./evidence-session"
 import { SimsLive, type LiveObservation } from "./sims-live"  // side-effecting: auto-installs window.KlavitySims on load
@@ -474,6 +477,40 @@ function hideFixedSticky(out: Array<{ el: HTMLElement; v: string }>) {
 // "Stop sharing" bar (the track's 'ended' event drops our handle so the next capture re-prompts cleanly).
 let _sharedDisplayStream: MediaStream | null = null
 let _sharedDisplayVideo: HTMLVideoElement | null = null
+// KD-3088: resolves once Chrome's "Sharing this tab" bar has settled after a NEW share (see acquireDisplayStream).
+let _shareBarSettled: Promise<void> = Promise.resolve()
+
+// KD-3088: right after a share starts, Chrome adds its "Sharing this tab" bar, which shrinks the page's viewport a
+// moment LATER. A frame grabbed before that is the old size (the page at the top, a black band below) and no longer
+// matches the page's layout, so Mask numbers can't place its boxes and the shot gets a black strip. Resolves on the
+// first resize after the share starts (plus a short layout beat), or after `maxMs` when no bar shows up.
+export function watchShareBarSettle(maxMs = 1200): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    let done = false
+    const finish = () => { if (done) return; done = true; window.removeEventListener("resize", onResize); clearTimeout(timer); resolve() }
+    const onResize = () => { setTimeout(finish, 120) }
+    const timer = setTimeout(finish, maxMs)
+    window.addEventListener("resize", onResize)
+  })
+}
+
+// KD-3088: wait (bounded) until the stream's frame has the page viewport's shape and the viewport height has stopped
+// changing, so the grabbed frame and the page layout (which Mask numbers measures) agree. Best-effort: on timeout the
+// caller grabs anyway, exactly as before.
+export async function waitForFrameToMatchViewport(video: HTMLVideoElement, maxMs = 1000, stepMs = 50): Promise<boolean> {
+  const deadline = Date.now() + maxMs
+  let lastH = -1
+  for (;;) {
+    const vw = Math.max(1, window.innerWidth), vh = Math.max(1, window.innerHeight)
+    const fw = video.videoWidth, fh = video.videoHeight
+    const shapeOk = fw > 0 && fh > 0 && Math.abs(fw / fh - vw / vh) / (vw / vh) < 0.01
+    if (shapeOk && vh === lastH) return true
+    lastH = vh
+    if (Date.now() >= deadline) return false
+    await _sleep(stepMs)
+  }
+}
 
 // Return the live shared stream, or null if none / it has ended (user stopped sharing). Self-heals a dead one.
 export function activeSharedStream(): MediaStream | null {
@@ -503,6 +540,7 @@ export async function acquireDisplayStream(): Promise<MediaStream> {
     preferCurrentTab: true,
   })
   _sharedDisplayStream = stream
+  _shareBarSettled = watchShareBarSettle()   // KD-3088: the first grab waits for Chrome's sharing bar to settle
   // snap-share-hint: the reporter just granted a screen-share — remember it so the "click Allow" hover hint on
   // the FAB stops showing (they know the flow now). Best-effort; private mode / disabled storage is fine.
   try { localStorage.setItem("klavity_share_ok", "1") } catch { /* noop */ }
@@ -531,6 +569,9 @@ async function grabDisplayViewportFrame(stream: MediaStream): Promise<{ dataUrl:
     const deadline = Date.now() + 3000
     while ((video.videoWidth === 0 || video.videoHeight === 0) && Date.now() < deadline) await _sleep(50)
     if (!video.videoWidth || !video.videoHeight) throw new Error("sharp viewport capture: no video frame")
+    // KD-3088: never grab before the sharing bar has settled and the frame matches the page's current shape.
+    await _shareBarSettled
+    await waitForFrameToMatchViewport(video)
     const vw = Math.max(1, window.innerWidth)
     const vh = Math.max(1, window.innerHeight)
     const scale = video.videoWidth / vw
@@ -613,6 +654,9 @@ async function captureSharpFullPage(): Promise<string> {
     const deadline = Date.now() + 3000
     while ((video.videoWidth === 0 || video.videoHeight === 0) && Date.now() < deadline) await _sleep(50)
     if (!video.videoWidth || !video.videoHeight) throw new Error("sharp capture: no video frame")
+    // KD-3088: same as the viewport grab — wait for the sharing bar to settle before measuring/stitching.
+    await _shareBarSettled
+    await waitForFrameToMatchViewport(video)
 
     const vw = Math.max(1, window.innerWidth)
     const vh = Math.max(1, window.innerHeight)
@@ -1088,7 +1132,51 @@ async function mount() {
   }
   function hasEvSessionContent(session: EvidenceSession | null): boolean {
     if (!session) return false
-    return session.shots.length > 0 || (session.recordings?.length ?? 0) > 0 || session.desc.trim().length > 0 || session.title.trim().length > 0
+    return session.shots.length > 0 || (session.recordings?.length ?? 0) > 0 || (session.files?.length ?? 0) > 0 || session.desc.trim().length > 0 || session.title.trim().length > 0
+  }
+  // ── Attached files across Minimize → Resume ──
+  // The composer's attached Files can't all go into IndexedDB (a multi-GB video would blow the quota), so the
+  // bytes stay in page memory and the session stores metadata — plus the bytes for small data-URL files, which
+  // therefore also survive a reload/navigation. A big file the page lost is reported on Resume, never dropped silently.
+  const EV_FILE_STORE_MAX_CHARS = 12 * 1024 * 1024 // ≈ an 8 MB file as a data URL
+  const evFileIds = new WeakMap<object, string>()
+  const evFilesMem = new Map<string, any>()
+  function evFileId(f: object): string {
+    let id = evFileIds.get(f)
+    if (!id) { id = "f_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); evFileIds.set(f, id) }
+    return id
+  }
+  function evPersistFiles(sessionId: string, files: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>) {
+    const keep = new Set<string>()
+    const rows = files.map((f) => {
+      const id = evFileId(f); keep.add(id); evFilesMem.set(id, f)
+      const dataUrl = f.dataUrl && f.dataUrl.length <= EV_FILE_STORE_MAX_CHARS ? f.dataUrl : ""
+      // Attached videos are kept as a Blob (never base64'd) → persist the Blob itself (IndexedDB stores it natively),
+      // so the video survives minimize + a navigation/reload instead of being dropped.
+      return { id, name: f.name, type: f.type, size: f.size, dataUrl, ...(!dataUrl && f.blob ? { blob: f.blob } : {}) }
+    })
+    for (const id of [...evFilesMem.keys()]) if (!keep.has(id)) evFilesMem.delete(id)
+    void queueEvWrite(async () => { evSession = await setEvidenceFiles(sessionId, rows) ?? evSession; updateEvDock() })
+  }
+  function evRestoreFiles(session: EvidenceSession): any[] {
+    const out: any[] = []
+    const lost: string[] = []
+    for (const row of session.files ?? []) {
+      const mem = evFilesMem.get(row.id)
+      if (mem) { out.push(mem); continue }
+      if (row.dataUrl || row.blob) {
+        const f: any = { name: row.name, type: row.type, size: row.size, dataUrl: row.dataUrl || "" }
+        if (!row.dataUrl && row.blob) f.blob = row.blob   // a stored video: the composer previews + uploads the Blob
+        evFileIds.set(f, row.id); evFilesMem.set(row.id, f); out.push(f)
+        continue
+      }
+      lost.push(row.name)
+    }
+    if (lost.length) {
+      try { evBanner(`${lost.join(", ")} couldn't be kept after the page reloaded — please attach ${lost.length === 1 ? "it" : "them"} again.`) } catch { /* best-effort */ }
+      evPersistFiles(session.id, out)
+    }
+    return out
   }
   function evCountText(): string {
     const n = evSession ? evSession.shots.length : 0
@@ -1096,6 +1184,8 @@ async function mount() {
     // KD-1074: a recording-only report (e.g. a walkthrough, whose default snap is dropped) still says what's saved.
     const r = evSession?.recordings?.length ?? 0
     if (n === 0 && r > 0) return `${r} recording${r === 1 ? "" : "s"} - not lost`
+    const f = evSession?.files?.length ?? 0
+    if (n === 0 && f > 0) return `${f} file${f === 1 ? "" : "s"} - not lost`
     if (n === 0) return "Bug report in progress - not lost"
     return `${n} shot${n === 1 ? "" : "s"} - ${m} page${m === 1 ? "" : "s"} - not lost`
   }
@@ -1192,6 +1282,7 @@ async function mount() {
   async function discardEvidence() {
     const s = evSession
     evSession = null
+    evFilesMem.clear()
     clearDraft(cfg.projectId, evOrigin)
     hideEvDock()
     if (s) { try { await clearEvidenceSession(s.id) } catch { /* best-effort */ } }
@@ -1448,7 +1539,11 @@ async function mount() {
     // `initialRecordings` keys in the buildModal options, so the later one silently dropped the arrived video.
     const arrivedNow = [...(opts?.initialRecordings || []), ...arrivedRecordings]
     arrivedRecordings = []
+    // KD-3080: a "Report Multiple Issues" walkthrough that finished after a page load — the composer analyses it.
+    const multiRecordingId = arrivedMultiId && arrivedNow.some((r) => r.id === arrivedMultiId) ? arrivedMultiId : undefined
+    if (multiRecordingId) arrivedMultiId = null
     const seedRecordings = mergeRecordings(ev?.recordings?.map((r) => ({ ...r })), arrivedNow)
+    const seedFiles = ev ? evRestoreFiles(ev) : []
     // The composer never echoes its seed back via onRecordingsChange, so persist an arrived video into the
     // session here — otherwise a later minimize/reload would lose it again.
     if (ev && arrivedNow.length) {
@@ -1492,9 +1587,22 @@ async function mount() {
       // so we skip the full-page auto-capture and let the zoomed-in region lead. KLA-412: also skip it when
       // resuming an evidence session that already holds shots (we seed those below); a BRAND-NEW session
       // (empty, no region shot) still auto-captures so the first shot lands + persists via onShotAdded.
-      autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0) && !opts?.initialRecordings?.length,
+      // Resuming a report that already holds a recording (incl. a "Report Multiple Issues" walkthrough, whose
+      // default snap is dropped) must NOT auto-capture again — that re-prompted for screen-share permission on
+      // every Resume. Check the merged seed list (session recordings + arrived ones), not just opts.
+      autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0) && !seedRecordings.length && !seedFiles.length && !(ev && ev.multi),
       // Saved session recordings + a "Record me" video that finished after the reporter navigated (see above).
       initialRecordings: seedRecordings.length ? seedRecordings : undefined,
+      // Files attached via Attach used to live ONLY in the open composer, so Minimize → Resume lost them.
+      initialFiles: seedFiles.length ? seedFiles : undefined,
+      onFilesChange: ev ? (files) => evPersistFiles(ev.id, files) : undefined,
+      initialMultiRecordingId: multiRecordingId,
+      // "Report Multiple Issues": keep the analysed ticket list (+ edits/selections) across Minimize → Resume.
+      // Only restored when its walkthrough clip is among the seeded recordings (else it would point at nothing).
+      initialMultiIssues: !multiRecordingId && ev?.multi && seedRecordings.some((r) => r.id === ev.multi!.recordingId) ? (ev.multi as any) : undefined,
+      onMultiIssuesChange: ev ? (snap) => {
+        void queueEvWrite(async () => { evSession = await setEvidenceMulti(ev.id, snap as any) ?? evSession; if (evSession) ev.multi = evSession.multi; updateEvDock() })
+      } : undefined,
       // #638: render the "Attach console logs" toggle (default OFF) in the composer. When the reporter enables
       // it, the submit payload carries attachConsole:true and onSubmit includes the captured console logs.
       consoleAttachToggle: true,
@@ -1663,7 +1771,7 @@ async function mount() {
       // (transcribe + AI issue extraction) and resolve the issues it found. Gated on the same reportClarity
       // toggle as Enhance (the server enforces it too). Long timeout: STT of a clip + an LLM call. Best-effort:
       // any failure resolves null so the composer keeps the single ticket.
-      onSplitRecording: (reportClarity && composerRecord) ? (async (audio: Blob, ctx?: { text?: string }) => {
+      onSplitRecording: (reportClarity && composerRecord) ? (async (audio: Blob, ctx?: { text?: string; frames?: Array<{ atSec: number; dataUrl: string }> }) => {
         try {
           const fd = new FormData()
           fd.append('projectId', cfg.projectId)
@@ -1671,6 +1779,8 @@ async function mount() {
           if (audio.type) fd.append('mime', audio.type)
           fd.append('pageUrl', location.href)
           if (ctx?.text) fd.append('text', ctx.text)
+          // KD-3080: screenshots sampled across the clip, so the analysis sees the screens being described.
+          if (ctx?.frames?.length) fd.append('frames', JSON.stringify(ctx.frames))
           const res = await fetchWithTimeout(cfg.backendUrl + '/api/report/split', { method: 'POST', body: fd }, 90000)
           if (!res.ok) return null
           const data = await res.json().catch(() => null)
@@ -1684,6 +1794,8 @@ async function mount() {
       // PX4 #411/#425: enhanced-composer opts from the project config (all default off → classic composer).
       showTitleField: composerShowTitle,
       allowFileAttachments: composerFileAttach,
+      // Files over the single-request caps upload in chunks before the report is sent (prepareSubmission).
+      largeFileUploads: true,
       // KLA-591: role-aware over-cap CTA. An identified reporter (first-party page / signed-in widget) is a
       // workspace member/owner → offer a direct upgrade link; an anonymous end-user on a customer's site is
       // never asked to pay → the composer shows "ask your team to upgrade / attach a smaller file". The
@@ -1703,9 +1815,9 @@ async function mount() {
       // Opted-in embeds (data-record-mode="window") record in the Klavity recorder WINDOW (record-bridge.ts) so it
       // survives full page loads; the in-page recordMe() overlay is the fallback when the popup is blocked.
       // Every other embed uses recordMe() exactly as before.
-      onRecord: composerRecord ? ((onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => {
+      onRecord: composerRecord ? ((onPhase?: (phase: 'consent' | 'recording' | 'preview') => void, recOpts?: { purpose?: 'multi' }) => {
         if (!recBridge) return recordMe({ onPhase })
-        const viaWindow = recBridge.start(onPhase)
+        const viaWindow = recBridge.start(onPhase, recOpts?.purpose)
         if (viaWindow) return viaWindow
         if (recordingSupported()) return recordMe({ onPhase })
         evBanner("Allow pop-ups for this site to use Record me.")
@@ -1817,6 +1929,7 @@ async function mount() {
             evMinimizing = false
             try { await clearEvidenceSession(ev.id) } catch { /* best-effort */ }
             evSession = null
+            evFilesMem.clear()
             hideEvDock()
           }
         }
@@ -1836,7 +1949,7 @@ async function mount() {
           const freshTurnstile = needsTurnstile ? () => getTurnstileToken(turnstileSiteKey) : undefined
           const attempt = (repair?: string[]) => {
             pill.uploading()
-            ;(preparedP ||= prepareSubmission(uploadCfg, uploadPayload).catch((e) => { preparedP = null; throw e }))
+            ;(preparedP ||= prepareSubmission(uploadCfg, uploadPayload, (sent, total) => pill.progress(Math.round((sent / total) * 90), sent, total)).catch((e) => { preparedP = null; throw e }))
               .then((prepared) => sendPrepared(prepared, uploadCfg, {
                 onProgress: (pct, loaded, total) => pill.progress(pct, loaded, total),
                 onRetry: (i) => i.pending ? pill.waiting(i.delayMs, i.waitedMs ?? 0) : pill.retrying(i.attempt, i.maxAttempts, i.error.userMessage),
@@ -1852,6 +1965,8 @@ async function mount() {
               .catch((e) => {
                 // Retry re-sends the SAME prepared body + key. Against a server that did not confirm idempotency support, a lost answer may
                 // mean the ticket already exists — say so, and name the button honestly ("Retry anyway").
+                // A large file that couldn't be uploaded: say which, and Retry starts that file's upload again (it is still held).
+                if (e instanceof LargeUploadError) { pill.failure(() => attempt(repair), e.message); return }
                 const copy = retryFailureCopy(e instanceof SubmitError ? e : null, serverIdempotent)
                 pill.failure(() => attempt(repair), copy.message, copy.retryLabel)
               })
@@ -1927,6 +2042,7 @@ async function mount() {
               if (latest) await clearEvidenceSession(latest.id)
               clearDraft(cfg.projectId, evOrigin)
               evSession = null
+              evFilesMem.clear()
               hideEvDock()
             }
           })
@@ -2665,12 +2781,14 @@ async function mount() {
   // original composer is gone reopens the report — with the in-progress evidence session + draft — attached.
   // Only for embeds that opted in to the recorder window — elsewhere no bridge exists and nothing changes.
   let arrivedRecordings: ReportRecording[] = []
+  let arrivedMultiId: string | null = null // KD-3080: the arrived clip that is a "Report Multiple Issues" walkthrough
   const recBridge = !useRecorderWindow ? null : createRecordBridge({
     backendUrl: cfg.backendUrl,
     projectId: cfg.projectId,
     notify: (text) => evBanner(text),
-    onRecordingArrived: (rec) => {
+    onRecordingArrived: (rec, purpose) => {
       arrivedRecordings.push(rec)
+      if (purpose === 'multi' && rec.id) arrivedMultiId = rec.id
       if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) {
         evBanner("Your recording is ready — it will be attached the next time you open the report.")
         return
@@ -2726,39 +2844,20 @@ async function mount() {
   await configReady
 }
 
-// ── Non-blocking background-upload pill ─────────────────────────────────────────────────────────
-// Lives at the WIDGET layer (its OWN shadow host on document.body) so it PERSISTS after the report
-// modal + backdrop dismiss on Submit — the page is never blocked while a (possibly 16MB+) recording
-// uploads; the user can scroll/click/file another report meanwhile. Three states:
+// ── Non-blocking background-upload REPORTS PANEL ──────────────────────────────────────────────────
+// Lives at the WIDGET layer (its OWN shadow host on document.body) so it PERSISTS after the report modal +
+// backdrop dismiss on Submit — the page is never blocked while a (possibly 16MB+) recording uploads; the user can
+// scroll/click/file another report meanwhile.
+// KD-3092: every report filed this session is a ROW inside ONE "Your reports" panel (bottom-right) instead of its
+// own auto-vanishing toast — the toast disappeared ~4s after "Report sent", so with several tickets (e.g. a
+// multi-issue report) the reporter could not see all the ticket IDs. The panel stays until the reporter closes it
+// with its × ; each row shows its ticket ID as a link straight to that ticket. Row states:
 //   • uploading — spinner + progress bar + "screenshot + recording · 9.8 / 16 MB" byte readout
-//   • success   — "Report sent" + quotable ref + optional "Open in Klavity" link; auto-dismiss ~4s
-//                 (hover/focus pauses — mirrors the modal's armAutodismiss / SUBMIT_AUTOCLOSE_MS)
+//   • success   — screenshot thumbnail + "Report sent" + ticket-ID link + "Open in Klavity"
 //   • failure   — "Upload didn't finish · Retry" (Retry re-sends the RETAINED payload — no re-capture)
-// A dismiss (×) is always present. Dynamic values go in via textContent/href (never innerHTML) — XSS-safe.
-const PILL_AUTODISMISS_MS = 4000
-// #475: failed pills persist far longer than success (so the user can read the error / hit Retry) but still
-// auto-clear so a string of failures never stacks up the screen forever.
-const PILL_FAIL_AUTODISMISS_MS = 30000
-
-// #475: vertical stacking geometry + a slot registry so concurrent upload pills never overlap. The old code
-// positioned each new pill by counting existing pills (querySelectorAll(...).length); once one dismissed, the
-// stale count let a new pill land on top of an existing one. Instead we keep an ordered registry: each pill
-// takes the next slot on creation, and REMOVAL reflows every remaining pill down to compact the stack — so the
-// lowest free slot is always reused and no two pills ever share a slot.
-const PILL_BASE_PX = 78
-const PILL_SLOT_PX = 58
-const pillStack: HTMLElement[] = []
-function reflowPillStack(): void {
-  // Prune any host that left the DOM out-of-band (defensive: a pill should always exit via remove(), but this
-  // keeps the slot math correct even if a host is torn down some other way) then position the survivors.
-  for (let i = pillStack.length - 1; i >= 0; i--) { if (!pillStack[i].isConnected) pillStack.splice(i, 1) }
-  pillStack.forEach((h, i) => { h.style.bottom = `${PILL_BASE_PX + i * PILL_SLOT_PX}px` })
-}
-function addPillToStack(host: HTMLElement): void { pillStack.push(host); reflowPillStack() }
-function removePillFromStack(host: HTMLElement): void {
-  const i = pillStack.indexOf(host)
-  if (i >= 0) { pillStack.splice(i, 1); reflowPillStack() }
-}
+// Closing the panel while a report is still uploading only hides it: it comes back when that report finishes, so a
+// ticket ID is never missed. Dynamic values go in via textContent/href (never innerHTML) — XSS-safe.
+const TRAY_BOTTOM_PX = 78   // clears the launcher button
 
 function pillDisplayRef(issueKey: string): string {
   const m = /^fb_([0-9a-f]{8})[0-9a-f-]+$/i.exec(issueKey)
@@ -2827,98 +2926,154 @@ export interface UploadPill {
   dismiss: () => void
 }
 
-export function createUploadPill(opts: { totalBytesHint?: number; label?: string; thumbnail?: string } = {}): UploadPill {
-  const host = document.createElement("div")
-  host.setAttribute("data-klavity-ui", "upload-pill")
-  // #475: register in the shared slot stack (takes the lowest free slot, reflows the rest on removal) so a
-  // second report filed mid-upload sits above — never on top of — the first. `bottom` is driven by
-  // reflowPillStack(), not a stale querySelectorAll count.
-  host.style.cssText = "position:fixed;right:18px;z-index:2147483646;pointer-events:none"
-  document.body.appendChild(host)
-  addPillToStack(host)
-  const root = host.attachShadow({ mode: "open" })
-  const style = document.createElement("style")
-  style.textContent = `
-    .pill{pointer-events:auto;position:relative;display:flex;align-items:center;gap:9px;background:#19140f;color:#fff;border-radius:12px;padding:9px 12px;box-shadow:0 10px 30px rgba(0,0,0,.28);min-width:210px;max-width:330px;font:13px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;animation:klp-in .22s cubic-bezier(.16,1,.3,1) both}
+type TrayRow = { el: HTMLElement; busy: () => boolean }
+type Tray = { host: HTMLElement; panel: HTMLElement; list: HTMLElement; summary: HTMLElement; rows: TrayRow[]; refresh: () => void }
+let _tray: Tray | null = null
+
+function trayCss(): string {
+  return `
+    .tray{pointer-events:auto;display:flex;flex-direction:column;width:360px;max-width:calc(100vw - 36px);max-height:min(70vh,560px);background:linear-gradient(180deg,#fbf7f0,#f2ece1);color:#2a2119;border:1px solid #e4dccd;border-radius:16px;box-shadow:0 22px 46px -16px rgba(40,30,20,.55);font:13px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;animation:klp-in .22s cubic-bezier(.16,1,.3,1) both;overflow:hidden}
+    .tray[hidden]{display:none}
     @keyframes klp-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
     @keyframes klp-sp{to{transform:rotate(360deg)}}
-    .pill.out{opacity:0;transform:translateY(8px);transition:opacity .25s ease,transform .25s ease}
-    .ic{width:20px;height:20px;flex:0 0 auto;display:grid;place-items:center}
-    .ic svg{width:18px;height:18px}
-    .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:klp-sp .8s linear infinite}
-    .tx{flex:1;min-width:0}
-    .tx b{font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .tx .sub{opacity:.72;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
-    .x{opacity:.6;cursor:pointer;font-size:15px;line-height:1;padding:0 2px;flex:0 0 auto;user-select:none}
-    .x:hover{opacity:1}
-    .prog{position:absolute;left:10px;right:10px;bottom:5px;height:3px;background:rgba(255,255,255,.18);border-radius:999px;overflow:hidden}
-    .prog>i{display:block;height:100%;background:#6366f1;width:0;border-radius:999px;transition:width .2s ease}
-    .pill.err{background:#4a1620}
-    a{color:#c7d2fe;text-decoration:none;font-weight:600}
-    a:hover{text-decoration:underline}
-    /* #651 — SUCCESS "Report sent" = Option D (warm cream card + screenshot thumbnail, text-link flavour). */
-    .pill.ok{background:linear-gradient(180deg,#fbf7f0,#f2ece1);color:#2a2119;border:1px solid #e4dccd;border-radius:16px;padding:14px;box-shadow:0 22px 46px -16px rgba(40,30,20,.55);align-items:center;gap:13px;max-width:360px}
-    .pill.ok .thumbwrap{position:relative;flex:0 0 auto;display:block}
-    .pill.ok .thumb{display:block;width:60px;height:46px;border-radius:9px;object-fit:cover;object-position:top left;border:1px solid #d9cfbc;background:#e9e1d2;box-shadow:0 2px 6px -2px rgba(40,30,20,.3)}
-    .pill.ok .thumb.kmark{display:grid;place-items:center;font-weight:800;color:#6366f1;background:#eef0ff;font-size:22px;line-height:1}
-    .pill.ok .badge{position:absolute;right:-6px;bottom:-6px;width:22px;height:22px;border-radius:50%;background:#16a34a;color:#fff;display:grid;place-items:center;border:2px solid #f7f2ea;box-shadow:0 1px 3px rgba(40,30,20,.35);animation:klp-pop .5s cubic-bezier(.16,1,.3,1) .12s both}
-    .pill.ok .badge svg{width:12px;height:12px;stroke:currentColor;stroke-width:2.4;fill:none;stroke-linecap:round;stroke-linejoin:round}
-    .pill.ok .tx b{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:800;letter-spacing:-.01em;white-space:nowrap;overflow:visible}
-    .pill.ok .klogo{width:19px;height:19px;flex:0 0 auto;border-radius:5px;background:#6366f1;color:#fff;display:inline-grid;place-items:center;font-weight:800;font-size:11px}
-    .pill.ok .tx .sub{opacity:1;color:#6b5f4e;font-size:12.5px;white-space:normal;margin-top:3px}
-    .pill.ok .refc{font-family:ui-monospace,Menlo,monospace;background:#eadfce;padding:1px 6px;border-radius:5px;color:#4a3f2e}
-    .pill.ok a.open{color:#6366f1;font-weight:700;white-space:nowrap}
-    .pill.ok .x{color:#a89a84;align-self:flex-start}
-    .pill.ok .x:hover{color:#5a4f3e}
-    .pill.ok .prog{background:rgba(0,0,0,.07);border-radius:999px}
-    .pill.ok .prog>i{background:linear-gradient(90deg,#6366f1,#818cf8)}
     @keyframes klp-pop{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
-    @keyframes klp-shrink{from{width:100%}to{width:0}}
-    @media (prefers-reduced-motion: reduce){.pill,.spin,.prog>i,.pill.ok .badge{animation:none!important;transition:none!important}}
+    .hd{display:flex;align-items:center;gap:9px;padding:12px 12px 10px 14px;border-bottom:1px solid #e6ddcd}
+    .klogo{width:20px;height:20px;flex:0 0 auto;border-radius:5px;background:#6366f1;color:#fff;display:inline-grid;place-items:center;font-weight:800;font-size:11px}
+    .hd .tt{flex:1;min-width:0}
+    .hd .tt b{display:block;font-size:14.5px;font-weight:800;letter-spacing:-.01em}
+    .hd .tt .sm{display:block;color:#6b5f4e;font-size:12px}
+    .tray-x{flex:0 0 auto;width:28px;height:28px;border-radius:8px;border:0;background:transparent;color:#8a7c66;cursor:pointer;display:grid;place-items:center;font-size:18px;line-height:1;padding:0}
+    .tray-x:hover{background:#eadfce;color:#2a2119}
+    .tray-x:focus-visible{outline:2px solid #6366f1;outline-offset:1px}
+    .rows{overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px}
+    .pill{position:relative;display:flex;align-items:center;gap:11px;background:#fffdf9;border:1px solid #e9e0d0;border-radius:12px;padding:10px 11px 12px}
+    .ic{width:22px;height:22px;flex:0 0 auto;display:grid;place-items:center;color:#6b5f4e}
+    .ic svg{width:18px;height:18px}
+    .spin{width:16px;height:16px;border:2px solid rgba(99,102,241,.25);border-top-color:#6366f1;border-radius:50%;animation:klp-sp .8s linear infinite}
+    .tx{flex:1;min-width:0}
+    .tx b{font-weight:700;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13.5px}
+    .tx .sub{color:#6b5f4e;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;margin-top:2px}
+    .prog{position:absolute;left:11px;right:11px;bottom:5px;height:3px;background:rgba(0,0,0,.07);border-radius:999px;overflow:hidden}
+    .prog>i{display:block;height:100%;background:linear-gradient(90deg,#6366f1,#818cf8);width:0;border-radius:999px;transition:width .2s ease}
+    .pill.err{background:#fff4f4;border-color:#f3c9c9}
+    .pill.err .ic{color:#b42318}
+    a{color:#6366f1;text-decoration:none;font-weight:700}
+    a:hover{text-decoration:underline}
+    .pill.ok .thumbwrap{position:relative;flex:0 0 auto;display:block}
+    .pill.ok .thumb{display:block;width:56px;height:42px;border-radius:8px;object-fit:cover;object-position:top left;border:1px solid #d9cfbc;background:#e9e1d2}
+    .pill.ok .thumb.kmark{display:grid;place-items:center;font-weight:800;color:#6366f1;background:#eef0ff;font-size:20px;line-height:1}
+    .pill.ok .badge{position:absolute;right:-6px;bottom:-6px;width:20px;height:20px;border-radius:50%;background:#16a34a;color:#fff;display:grid;place-items:center;border:2px solid #fffdf9;animation:klp-pop .5s cubic-bezier(.16,1,.3,1) .12s both}
+    .pill.ok .badge svg{width:11px;height:11px;stroke:currentColor;stroke-width:2.4;fill:none;stroke-linecap:round;stroke-linejoin:round}
+    .pill.ok .tx .sub{white-space:normal}
+    .refc{font-family:ui-monospace,Menlo,monospace;background:#eadfce;padding:1px 6px;border-radius:5px;color:#4a3f2e;font-weight:700}
+    a.refc{color:#3f3fbf}
+    a.refc:hover{background:#e0e1ff;text-decoration:none}
+    a.open{white-space:nowrap}
+    @media (prefers-reduced-motion: reduce){.tray,.spin,.prog>i,.pill.ok .badge{animation:none!important;transition:none!important}}
   `
-  root.appendChild(style)
+}
 
+// The single "Your reports" panel — created on the first report, reused by every later one.
+function getTray(): Tray {
+  if (_tray && _tray.host.isConnected) return _tray
+  const host = document.createElement("div")
+  host.setAttribute("data-klavity-ui", "report-tray")
+  host.style.cssText = `position:fixed;right:18px;bottom:${TRAY_BOTTOM_PX}px;z-index:2147483646;pointer-events:none`
+  document.body.appendChild(host)
+  const root = host.attachShadow({ mode: "open" })
+  const style = document.createElement("style"); style.textContent = trayCss(); root.appendChild(style)
+  const panel = document.createElement("div"); panel.className = "tray"
+  panel.setAttribute("role", "region"); panel.setAttribute("aria-label", "Your reports")
+  const hd = document.createElement("div"); hd.className = "hd"
+  const logo = document.createElement("span"); logo.className = "klogo"; logo.textContent = "K"
+  const tt = document.createElement("span"); tt.className = "tt"
+  const h = document.createElement("b"); h.textContent = "Your reports"
+  const summary = document.createElement("span"); summary.className = "sm"; summary.setAttribute("aria-live", "polite")
+  tt.append(h, summary)
+  const x = document.createElement("button"); x.type = "button"; x.className = "tray-x"; x.textContent = "×"
+  x.setAttribute("aria-label", "Close"); x.title = "Close"
+  hd.append(logo, tt, x)
+  const list = document.createElement("div"); list.className = "rows"
+  panel.append(hd, list)
+  root.appendChild(panel)
+  const tray: Tray = {
+    host, panel, list, summary, rows: [],
+    refresh: () => {
+      const n = tray.rows.length
+      if (!n) { safeRemove(host); if (_tray === tray) _tray = null; return }
+      const sent = tray.rows.filter((r) => r.el.dataset.sent === "1").length
+      const busy = tray.rows.filter((r) => r.busy()).length
+      const failed = n - sent - busy
+      const parts: string[] = []
+      parts.push(n === 1 ? (sent ? "1 sent" : busy ? "Sending…" : "Not sent yet") : `${sent} of ${n} sent`)
+      if (n > 1 && busy) parts.push(`${busy} uploading`)
+      if (failed) parts.push(`${failed} need${failed === 1 ? "s" : ""} attention`)
+      summary.textContent = parts.join(" · ")
+    },
+  }
+  // × : close the panel. Finished reports leave with it; one still uploading keeps going and brings the panel
+  // back when it finishes, so its ticket ID is never missed.
+  x.addEventListener("click", () => {
+    tray.rows = tray.rows.filter((r) => { if (r.busy()) return true; safeRemove(r.el); return false })
+    if (tray.rows.length) panel.hidden = true
+    tray.refresh()
+  })
+  _tray = tray
+  return tray
+}
+
+export function createUploadPill(opts: { totalBytesHint?: number; label?: string; thumbnail?: string } = {}): UploadPill {
   const pill = document.createElement("div"); pill.className = "pill"
   const ic = document.createElement("span"); ic.className = "ic"
   const tx = document.createElement("span"); tx.className = "tx"
   const title = document.createElement("b")
   const sub = document.createElement("span"); sub.className = "sub"
   tx.append(title, sub)
-  const x = document.createElement("span"); x.className = "x"; x.textContent = "×"; x.setAttribute("role", "button"); x.setAttribute("aria-label", "Dismiss"); x.title = "Dismiss"
   const prog = document.createElement("div"); prog.className = "prog"
   const progFill = document.createElement("i"); prog.appendChild(progFill)
-  pill.append(ic, tx, x, prog)
-  root.appendChild(pill)
+  pill.append(ic, tx, prog)
+
+  let busy = true
+  let removed = false
+  const row: TrayRow = { el: pill, busy: () => busy }
+  // A row changed state: make sure it is in the (possibly re-created) panel, show the panel when the row just
+  // FINISHED (it may have been closed while this was uploading) and refresh the summary.
+  const changed = (reveal: boolean) => {
+    if (removed) return
+    const t = getTray()
+    if (!t.rows.includes(row)) { t.rows.push(row); t.list.appendChild(pill) }
+    if (reveal) t.panel.hidden = false
+    t.refresh()
+    if (reveal && !busy) { try { pill.scrollIntoView({ block: "nearest" }) } catch { /* not in a layout engine */ } }
+  }
 
   let totalBytes = opts.totalBytesHint || 0
   const label = opts.label || "report"
-  // #651: the report's own captured screenshot (raw data URL), rendered as the success toast's thumbnail.
+  // #651: the report's own captured screenshot (raw data URL), rendered as the row's thumbnail once sent.
   // Only http(s)/data image URLs are honoured; anything else falls back to the Klavity 'K' mark tile.
   const thumbnail = pillSafeImageSrc(opts.thumbnail)
-  let dismissTimer: ReturnType<typeof setTimeout> | null = null
-  let armed = false
 
   const remove = () => {
-    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
-    removePillFromStack(host) // #475: free the slot + reflow remaining pills so the next one never overlaps
-    pill.classList.add("out")
-    setTimeout(() => safeRemove(host), 260)
+    removed = true
+    safeRemove(pill)
+    const t = _tray
+    if (t) { t.rows = t.rows.filter((r) => r !== row); t.refresh() }
   }
-  x.addEventListener("click", remove)
 
-  const setSpinner = () => { ic.textContent = ""; const s = document.createElement("span"); s.className = "spin"; ic.appendChild(s) }
-  const setIcon = (name: string) => { ic.innerHTML = icon(name, { size: 18 }) } // static icon SVG, no user data
+  const restoreIc = () => { const tw = pill.querySelector(".thumbwrap"); if (tw) pill.replaceChild(ic, tw) }
+  const setSpinner = () => { restoreIc(); ic.textContent = ""; const s = document.createElement("span"); s.className = "spin"; ic.appendChild(s) }
+  const setIcon = (name: string) => { restoreIc(); ic.innerHTML = icon(name, { size: 18 }) } // static icon SVG, no user data
 
   const uploading = () => {
-    pill.classList.remove("ok", "err")
-    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
-    armed = false
+    pill.classList.remove("ok", "err"); delete pill.dataset.sent
+    busy = true
     sub.style.whiteSpace = ""; sub.title = ""   // undo the wrapped, long failure explanation
     setSpinner()
     title.textContent = "Uploading your report…"
     sub.textContent = totalBytes ? `${label} · 0 / ${fmtMB(totalBytes)} MB` : label
     prog.style.display = ""
     progFill.style.width = "0"
+    changed(false)
   }
 
   const progress = (pct: number, loaded?: number, total?: number) => {
@@ -2927,10 +3082,19 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
     if (typeof loaded === "number" && totalBytes) sub.textContent = `${label} · ${fmtMB(loaded)} / ${fmtMB(totalBytes)} MB`
   }
 
+  // The ticket-ID chip — a link straight to that ticket when the server gave us its URL.
+  const refChip = (ref: string, linkUrl: string): HTMLElement => {
+    const r = linkUrl ? document.createElement("a") : document.createElement("span")
+    r.className = "refc"; r.textContent = ref
+    if (linkUrl) { const a = r as HTMLAnchorElement; a.href = linkUrl; a.target = "_blank"; a.rel = "noopener"; a.title = `Open ${ref}` }
+    return r
+  }
+
   const success = (issueKey: string, issueUrl: string) => {
-    pill.classList.remove("err"); pill.classList.add("ok")
-    // #651 Option D: replace the leading status icon with the captured-screenshot thumbnail (green 'sent'
-    // check badge overlapping it). If no shot is available, fall back to the Klavity 'K' mark tile.
+    busy = false
+    pill.classList.remove("err"); pill.classList.add("ok"); pill.dataset.sent = "1"
+    // #651 Option D: the captured-screenshot thumbnail (green 'sent' check badge overlapping it) replaces the
+    // status icon. No shot → the Klavity 'K' mark tile.
     const thumbWrap = document.createElement("span"); thumbWrap.className = "thumbwrap"
     let thumbEl: HTMLElement
     if (thumbnail) {
@@ -2943,41 +3107,22 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
     // static check glyph (no user data) — inline SVG, no emoji (CI emoji guard)
     badge.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
     thumbWrap.append(thumbEl, badge)
+    restoreIc()
     pill.replaceChild(thumbWrap, ic)
-
-    // Title: indigo 'K' logo chip + "Report sent".
-    title.textContent = ""
-    const logo = document.createElement("span"); logo.className = "klogo"; logo.textContent = "K"
-    title.append(logo, document.createTextNode("Report sent"))
-
-    // Sub: "Filed as <ref-mono-chip> · <Open in Klavity ↗>" — graceful "We filed it." when neither exists.
-    progFill.style.width = "100%"
+    title.textContent = "Report sent"
+    // Sub: "Filed as <ID link> · Open in Klavity ↗" — graceful "We filed it." when neither exists.
+    prog.style.display = "none"
     sub.textContent = ""
     const ref = pillFriendlyRef(issueKey, issueUrl)
     const linkUrl = pillSafeHttpUrl(issueUrl)
-    if (ref) {
-      sub.appendChild(document.createTextNode("Filed as "))
-      const r = document.createElement("span"); r.className = "refc"; r.textContent = ref; sub.appendChild(r)
-    }
+    if (ref) { sub.appendChild(document.createTextNode("Filed as ")); sub.appendChild(refChip(ref, linkUrl)) }
     if (linkUrl) {
       if (ref) sub.appendChild(document.createTextNode(" · "))
       const a = document.createElement("a"); a.className = "open"; a.href = linkUrl; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Open in Klavity ↗"
       sub.appendChild(a)
     }
     if (!ref && !linkUrl) sub.textContent = "We filed it."
-
-    // Slim indigo auto-dismiss bar: countdown-shrink over ~4s, paused/resumed in lockstep with the timer.
-    progFill.style.animation = `klp-shrink ${PILL_AUTODISMISS_MS}ms linear forwards`
-    // Auto-dismiss ~4s; hover/focus pauses and resumes with only the remaining time.
-    let remaining = PILL_AUTODISMISS_MS
-    let started = 0
-    const arm = () => { if (armed) return; armed = true; started = Date.now(); dismissTimer = setTimeout(remove, remaining); progFill.style.animationPlayState = "running" }
-    const pause = () => { if (!dismissTimer) return; clearTimeout(dismissTimer); dismissTimer = null; armed = false; remaining = Math.max(0, remaining - (Date.now() - started)); progFill.style.animationPlayState = "paused" }
-    pill.addEventListener("mouseenter", pause)
-    pill.addEventListener("mouseleave", arm)
-    pill.addEventListener("focusin", pause)
-    pill.addEventListener("focusout", arm)
-    arm()
+    changed(true)
   }
 
   const retrying = (attempt: number, maxAttempts: number, reason: string) => {
@@ -2995,52 +3140,36 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
 
   // The ticket was created, but some evidence didn't reach storage: warn (not "failed") and offer to re-send just the missing parts.
   const partial = (missing: number, onRetry: () => void) => {
-    pill.classList.remove("ok"); pill.classList.add("err")
-    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
-    armed = false
+    busy = false
+    pill.classList.remove("ok"); pill.classList.add("err"); pill.dataset.sent = "1"
     setIcon("triangle-alert")
     title.textContent = "Report sent — some files didn't upload"
     sub.textContent = ""
     const a = document.createElement("a"); a.href = "#"; a.textContent = "Retry"
-    a.addEventListener("click", (e) => { e.preventDefault(); if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null } armed = false; onRetry() })
+    a.addEventListener("click", (e) => { e.preventDefault(); onRetry() })
     sub.append(document.createTextNode(`${missing} file${missing === 1 ? "" : "s"} missing · `), a)
     prog.style.display = "none"
-    dismissTimer = setTimeout(remove, PILL_FAIL_AUTODISMISS_MS)   // same long window as a failure so it never lingers forever
+    changed(true)
   }
 
   const failure = (onRetry: () => void, message?: string, retryLabel?: string) => {
-    pill.classList.remove("ok"); pill.classList.add("err")
-    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
-    armed = false
+    busy = false
+    pill.classList.remove("ok"); pill.classList.add("err"); delete pill.dataset.sent
     setIcon("x-circle")
     title.textContent = "Upload didn't finish"
     sub.textContent = ""
     const a = document.createElement("a"); a.href = "#"; a.textContent = retryLabel || "Retry"
-    a.addEventListener("click", (e) => {
-      e.preventDefault()
-      if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null } // #475: clear the fail-timer on retry
-      armed = false
-      onRetry()
-    })
+    a.addEventListener("click", (e) => { e.preventDefault(); onRetry() })
     sub.append(document.createTextNode((message || "check your connection") + " · "), a)
     // A long, important explanation (e.g. "it may already have been created") must be READABLE, not cut off by the one-line ellipsis.
     if ((message || "").length > 70) { sub.style.whiteSpace = "normal"; sub.title = message || "" }
     prog.style.display = "none"
-    // #475: failed pills used to persist forever and stack up. Auto-dismiss after a long window (30s, well past
-    // the 4s success window so the user can read the error / retry); the × dismisses instantly, retry clears it.
-    // Hover/focus pauses and resumes with only the remaining time (same affordance as success).
-    let remaining = PILL_FAIL_AUTODISMISS_MS
-    let started = 0
-    const arm = () => { if (armed) return; armed = true; started = Date.now(); dismissTimer = setTimeout(remove, remaining) }
-    const pause = () => { if (!dismissTimer) return; clearTimeout(dismissTimer); dismissTimer = null; armed = false; remaining = Math.max(0, remaining - (Date.now() - started)) }
-    pill.addEventListener("mouseenter", pause)
-    pill.addEventListener("mouseleave", arm)
-    pill.addEventListener("focusin", pause)
-    pill.addEventListener("focusout", arm)
-    arm()
+    changed(true)
   }
 
+  // A new report always opens the panel (even if the reporter closed it earlier).
   uploading()
+  changed(true)
   return { uploading, progress, success, failure, retrying, waiting, partial, dismiss: remove }
 }
 
@@ -3061,7 +3190,25 @@ export function enhancePriorityToTicket(p: string | undefined | null): "urgent" 
 export async function prepareSubmission(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
   payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; annotations?: any; reporterEmail?: string; createContact?: boolean; turnstileToken?: string; submissionKey?: string; feedbackTarget?: 'project' | 'klavity'; suggestedPriority?: string },
+  // Progress of the large-file (chunked) uploads that run before the report is sent: bytes sent / total.
+  onLargeUploadProgress?: (sent: number, total: number) => void,
 ): Promise<PreparedSubmission> {
+  // Files over the single-request caps are uploaded first, in chunks (core/large-upload.ts), and the report
+  // carries a signed ref for each. Files that fit keep the existing multipart path. If one can't be uploaded
+  // this throws (LargeUploadError) — the caller shows a retryable failure and the file stays in the payload.
+  let inlineFiles = payload.files
+  let fileRefs: string[] = []
+  if (splitForLargeUpload(payload.files).large.length) {
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = "" }   // leaving now would lose the upload
+    try { window.addEventListener("beforeunload", warn) } catch { /* non-browser */ }
+    try {
+      const r = await offloadLargeFiles(payload.files, fetchTransport(cfg.backendUrl, { firstParty: cfg.firstParty, token: cfg.token }), { projectId: cfg.projectId, onProgress: onLargeUploadProgress })
+      inlineFiles = r.inline
+      fileRefs = r.refs
+    } finally {
+      try { window.removeEventListener("beforeunload", warn) } catch { /* non-browser */ }
+    }
+  }
   // Compress screenshots (PNG → JPEG, downscale very wide ones) so the upload is fast. Best-effort,
   // parallel; each falls back to its original on failure.
   const screenshots = await Promise.all(payload.screenshots.map((s) => compressScreenshot(s)))
@@ -3086,7 +3233,7 @@ export async function prepareSubmission(
     screenshots,
     screenshotThumbs,
     // PX4 #425: non-image file attachments carried through as their own multipart field.
-    files: payload.files,
+    files: inlineFiles,
     // KLAVITYKLA-438 "Record me": video recordings carried through as their own `recording` multipart field(s).
     recordings: payload.recordings,
     context: payload.context,
@@ -3118,6 +3265,8 @@ export async function prepareSubmission(
   // status 'new' — the server's priority-self-elevation guard is unaffected.
   const enhancedPriority = enhancePriorityToTicket(payload.suggestedPriority)
   if (enhancedPriority) fd.set("priority", enhancedPriority)
+  // Large files uploaded above, as signed refs (a plain text field, so repair/retry bodies carry it too).
+  if (fileRefs.length) fd.set("file_refs", JSON.stringify(fileRefs))
 
   // One idempotency key per prepared report, reused by EVERY attempt (the server returns the existing ticket for a repeat).
   const key = payload.submissionKey || newSubmissionKey()

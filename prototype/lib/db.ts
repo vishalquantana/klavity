@@ -1,5 +1,6 @@
 // Turso / libSQL access: users, email-OTP login, sessions, accounts, projects, memberships.
 import { createClient, type Client } from "@libsql/client"
+import { usableCheckpointFromJson, isNewerUsableCheckpoint } from "./author-checkpoint"
 import { insightsFromTraits, type Trait, type TraitKind, type TraitStatus, type TraitEventRow } from "./provenance"
 import { encryptSecret, sha256hex } from "./crypto"
 import type { SanitizedAttr } from "./attr"
@@ -1663,7 +1664,7 @@ export async function applySchema(c: Client) {
       WHERE f2.project_id = feedback.project_id
         AND (f2.created_at < feedback.created_at
           OR (f2.created_at = feedback.created_at AND f2.id <= feedback.id))
-    ) WHERE seq_num IS NULL
+    ) WHERE seq_num IS NULL AND sim_id IS NULL   -- KD-3082: a Sim Report gets its ticket number only when accepted
   `).catch((e: any) => console.warn("feedback.seq_num backfill skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS feedback_seq_idx ON feedback (project_id, seq_num)")
     .catch((e: any) => console.warn("feedback_seq_idx skipped:", e?.message || e))
@@ -1695,6 +1696,14 @@ export async function applySchema(c: Client) {
   // duplicates deterministically FIRST (renumber the affected projects by created_at,id), THEN
   // create the unique index and VERIFY it exists — an unrepairable failure is a loud CRITICAL.
   await dedupeAndIndexFeedbackSeq(c)
+  // KD-3082: while a Sim Report waits in Sim Reports it has its OWN per-project count (sim_seq_num from projects.sim_ticket_seq,
+  // shown <KEY>-SIM-<n>). When a person ACCEPTS it, it takes the next number of the Tickets sequence (seq_num from
+  // projects.ticket_seq) and shows <KEY>-SIM-<ticket number> on the Tickets board. Additive, idempotent.
+  if (needCol("feedback", "sim_seq_num")) await c.execute("ALTER TABLE feedback ADD COLUMN sim_seq_num INTEGER")
+    .catch((e: any) => console.warn("feedback.sim_seq_num ALTER skipped:", e?.message || e))
+  if (needCol("projects", "sim_ticket_seq")) await c.execute("ALTER TABLE projects ADD COLUMN sim_ticket_seq INTEGER NOT NULL DEFAULT 0")
+    .catch((e: any) => console.warn("projects.sim_ticket_seq ALTER skipped:", e?.message || e))
+  await backfillSimSeq(c)
   // Redirect map for renamed slugs/keys (never-404 contract). Populated by Phase-2 rename flows;
   // the resolver already consults it so an old handle 301s to the current pretty URL.
   await c.execute(`CREATE TABLE IF NOT EXISTS alias_redirects (
@@ -2234,17 +2243,94 @@ export async function backfillTrailStatus(c: Client): Promise<{ activated: numbe
 
 // Authoring runs in-process holding the walk slot; a service restart (the merge-train restarts on
 // every deploy) kills it mid-flight and leaves its author_sessions row 'running' forever — the UI
-// polls a zombie. At boot no authoring can legitimately be in flight (single-process design), so
-// mark every 'running' session failed with an honest reason. Observed live 2026-07-04.
-export async function sweepOrphanedAuthorSessions(c: Client): Promise<{ swept: number }> {
-  const r = await c.execute({
-    sql: `UPDATE author_sessions SET status='failed',
-            stall_reason='interrupted by a server restart - please retry', updated_at=?
-          WHERE status='running'`,
-    args: [Date.now()],
+// polls a zombie. Boot sweep: every 'running' session that is not demonstrably alive is ended. Observed live 2026-07-04.
+// R1 (A4): blue/green deploys run two processes against one DB, so a row with a FRESH heartbeat may belong to the other
+// slot - leave it to the stale reaper. Rows with no heartbeat (pre-KLA-55) are swept.
+// R1 (A1): a row with a USABLE checkpoint (the single shared rule in lib/author-checkpoint.ts) is resumable -> 'stalled';
+// anything else has nothing to resume -> 'failed'.
+async function endRunningAuthorSessions(
+  c: Client, beatSql: string, beatArgs: any[],
+  reasons: { resumable: string; failed: string },
+): Promise<number> {
+  const rows = await c.execute({ sql: `SELECT id, checkpoint_json FROM author_sessions WHERE status='running' AND ${beatSql}`, args: beatArgs })
+  let swept = 0
+  for (const row of rows.rows as any[]) {
+    const resumable = usableCheckpointFromJson(row.checkpoint_json) !== null
+    // Re-assert the 'running' + heartbeat predicate so a session that beats between the SELECT and this UPDATE is left alone.
+    const r = await c.execute({
+      sql: `UPDATE author_sessions SET status=?, stall_reason=?, updated_at=? WHERE id=? AND status='running' AND ${beatSql}`,
+      args: [resumable ? "stalled" : "failed", resumable ? reasons.resumable : reasons.failed, Date.now(), row.id, ...beatArgs],
+    })
+    swept += Number(r.rowsAffected ?? 0)
+  }
+  return swept
+}
+
+// R2: a prior session sits in `resuming` while a resume child owns it. If that child is gone, or ended in failure, nothing else would
+// ever move the prior again - its checkpoint would be unreachable. Runs after the child sweep, from BOTH the boot sweep and the
+// stale reaper, so it also sees the children those sweeps just ended. Idempotent: a crash part-way is simply redone next tick.
+//   - child row missing AND the claim older than the grace window   -> prior restored to 'stalled'
+//   - child 'failed' (retryable failure / process died)             -> prior restored to 'stalled', carrying the child's latest USABLE
+//                                                                      checkpoint if it is further along than the prior's (one transaction)
+//   - child 'failed' because the USER cancelled                     -> prior terminal 'failed' (never made resumable again; no transfer)
+//   - child running / crystallized / stalled / needs_auth           -> untouched (live, or the prior was consumed by progress)
+// Every UPDATE re-asserts `status='resuming' AND resumed_by=<that child>` (and the child's state), so it can never act on a claim a
+// newer attempt has since taken. Restoring never touches updated_at, so it cannot extend the seven-day retention window.
+//
+// BLUE/GREEN: an OLD (pre-R2) process claims with two statements (UPDATE prior, then INSERT child) and stamps updated_at=now when it
+// claims. A claim with no child row is therefore only provably orphaned once it is older than RESUME_CLAIM_GHOST_GRACE_MS; inside the
+// window the old process is (at most milliseconds) from inserting its child. New-code claims are one transaction and can never be
+// ghosts, so the window never delays recovery of anything R2 itself created. Needs clocks of the two slots to agree to within seconds.
+export const RESUME_CLAIM_GHOST_GRACE_MS = 5 * 60 * 1000
+export async function recoverOrphanedResumeClaims(c: Client, ghostGraceMs = RESUME_CLAIM_GHOST_GRACE_MS): Promise<number> {
+  const ghostCutoff = Date.now() - ghostGraceMs
+  const rows = await c.execute(`SELECT p.id AS pid, p.project_id AS proj, p.resumed_by AS rby, p.updated_at AS pupd, p.checkpoint_json AS pcp,
+                                       ch.id AS cid, ch.status AS cstatus, ch.stall_reason AS creason, ch.checkpoint_json AS ccp
+                                FROM author_sessions p LEFT JOIN author_sessions ch ON ch.id = p.resumed_by AND ch.project_id = p.project_id
+                                WHERE p.status='resuming'`)
+  let recovered = 0
+  for (const r of rows.rows as any[]) {
+    if (r.cid == null) {                                                         // ghost: claim without a child row
+      if (Number(r.pupd) >= ghostCutoff) continue                                // too fresh: an old process may be about to insert the child
+      const res = await c.execute({
+        sql: `UPDATE author_sessions SET status='stalled', resumed_by=NULL
+              WHERE id=? AND project_id=? AND status='resuming' AND resumed_by IS ? AND updated_at < ?
+                AND NOT EXISTS (SELECT 1 FROM author_sessions x WHERE x.id IS ?)`,
+        args: [r.pid, r.proj, r.rby ?? null, ghostCutoff, r.rby ?? null],
+      })
+      recovered += Number(res.rowsAffected ?? 0)
+      continue
+    }
+    if (String(r.cstatus) !== "failed") continue
+    const cancelled = String(r.creason) === "cancelled by user"
+    const stmts: Array<{ sql: string; args: any[] }> = []
+    if (!cancelled && r.ccp != null && isNewerUsableCheckpoint(usableCheckpointFromJson(r.ccp), usableCheckpointFromJson(r.pcp))) {
+      stmts.push({
+        sql: `UPDATE author_sessions SET checkpoint_json=?
+              WHERE id=? AND project_id=? AND status='resuming' AND resumed_by=?
+                AND EXISTS (SELECT 1 FROM author_sessions x WHERE x.id=? AND x.status='failed' AND x.checkpoint_json=?)`,
+        args: [String(r.ccp), r.pid, r.proj, r.rby, r.rby, String(r.ccp)],
+      })
+    }
+    stmts.push({
+      sql: `UPDATE author_sessions SET ${cancelled ? "status='failed', stall_reason='resume cancelled by user'" : "status='stalled', resumed_by=NULL"}
+            WHERE id=? AND project_id=? AND status='resuming' AND resumed_by=? AND EXISTS (SELECT 1 FROM author_sessions x WHERE x.id=? AND x.status='failed')`,
+      args: [r.pid, r.proj, r.rby, r.rby],
+    })
+    const rs = await c.batch(stmts, "write")
+    recovered += Number(rs[rs.length - 1].rowsAffected ?? 0)
+  }
+  if (recovered) console.log(`[author-sessions] recovered ${recovered} orphaned resume claim(s)`)
+  return recovered
+}
+
+export async function sweepOrphanedAuthorSessions(c: Client, freshMs = DEFAULT_STALE_MS): Promise<{ swept: number }> {
+  const swept = await endRunningAuthorSessions(c, "(last_beat_at IS NULL OR last_beat_at < ?)", [Date.now() - freshMs], {
+    resumable: "interrupted by a server restart - Resume to continue from the last checkpoint",
+    failed: "interrupted by a server restart - please retry",
   })
-  const swept = Number(r.rowsAffected ?? 0)
-  if (swept) console.log(`[author-sessions] swept ${swept} orphaned running session(s) → failed`)
+  if (swept) console.log(`[author-sessions] swept ${swept} orphaned running session(s) → stalled/failed`)
+  await recoverOrphanedResumeClaims(c)
   return { swept }
 }
 
@@ -2271,7 +2357,8 @@ export async function touchWalkHeartbeat(runId: string, c?: Client): Promise<voi
 }
 
 export async function touchAuthorHeartbeat(sessionId: string, c?: Client): Promise<void> {
-  await (c ?? db!).execute({ sql: `UPDATE author_sessions SET last_beat_at=? WHERE id=?`, args: [Date.now(), sessionId] })
+  // R2 fence: only a still-running session takes heartbeats (a recovered / ended row is never touched by its stale worker).
+  await (c ?? db!).execute({ sql: `UPDATE author_sessions SET last_beat_at=? WHERE id=? AND status='running'`, args: [Date.now(), sessionId] })
 }
 
 // KLA-55: Stale-heartbeat reaper — sweeps rows whose heartbeat is older than thresholdMs.
@@ -2294,16 +2381,13 @@ export async function sweepStaleWalks(c: Client, thresholdMs = DEFAULT_STALE_MS)
 }
 
 export async function sweepStaleAuthorSessions(c: Client, thresholdMs = DEFAULT_STALE_MS): Promise<{ swept: number }> {
-  const cutoff = Date.now() - thresholdMs
-  const now = Date.now()
-  const r = await c.execute({
-    sql: `UPDATE author_sessions SET status='failed', updated_at=?,
-            stall_reason='stale heartbeat — process may have crashed, please retry'
-          WHERE status='running' AND last_beat_at IS NOT NULL AND last_beat_at < ?`,
-    args: [now, cutoff],
+  // R1 (A1): usable checkpoint (shared rule) -> 'stalled' (resumable); otherwise 'failed'.
+  const swept = await endRunningAuthorSessions(c, "(last_beat_at IS NOT NULL AND last_beat_at < ?)", [Date.now() - thresholdMs], {
+    resumable: "stale heartbeat - process may have crashed. Resume to continue from the last checkpoint",
+    failed: "stale heartbeat — process may have crashed, please retry",
   })
-  const swept = Number(r.rowsAffected ?? 0)
-  if (swept) console.log(`[author-sessions] stale reaper swept ${swept} session(s) → failed`)
+  if (swept) console.log(`[author-sessions] stale reaper swept ${swept} session(s) → stalled/failed`)
+  await recoverOrphanedResumeClaims(c)
   return { swept }
 }
 
@@ -4044,16 +4128,19 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
   // (priority-self-elevation guard). The priority column below still stores f.priority verbatim.
   const status = f.forceNewStatus || f.simId ? "new" : initialFeedbackStatus(f.priority)
   const args = feedbackInsertArgs(f, id, now, status)
+  // KD-3082: a Sim Report numbers from its own Sim Reports count (sim_ticket_seq → sim_seq_num); every other report from the
+  // Tickets sequence (ticket_seq → seq_num). A Sim Report gets its Tickets number later, when it is accepted.
+  const sq = seqColsFor(f.simId)
   try {
     const rs = await db!.batch([
-      { sql: "UPDATE projects SET ticket_seq = ticket_seq + 1 WHERE id=?", args: [f.projectId] },
-      { sql: `INSERT INTO feedback (${FEEDBACK_INSERT_COLS},seq_num) VALUES (${qmarks(args.length)},(SELECT ticket_seq FROM projects WHERE id=?))`, args: [...args, f.projectId] },
+      { sql: `UPDATE projects SET ${sq.counter} = ${sq.counter} + 1 WHERE id=?`, args: [f.projectId] },
+      { sql: `INSERT INTO feedback (${FEEDBACK_INSERT_COLS},${sq.col}) VALUES (${qmarks(args.length)},(SELECT ${sq.counter} FROM projects WHERE id=?))`, args: [...args, f.projectId] },
     ], "write")
-    if (Number(rs[0]?.rowsAffected || 0) === 0) await allocTicketSeq(f.projectId, id, now)
+    if (Number(rs[0]?.rowsAffected || 0) === 0) await allocFeedbackSeq(f.projectId, id, now, !!f.simId)
   } catch (e: any) {
     try {
       await db!.execute({ sql: `INSERT INTO feedback (${FEEDBACK_INSERT_COLS}) VALUES (${qmarks(args.length)})`, args })
-      await allocTicketSeq(f.projectId, id, now)
+      await allocFeedbackSeq(f.projectId, id, now, !!f.simId)
     } catch (e2: any) {
       if (!/UNIQUE constraint failed: feedback\.id|PRIMARY KEY/i.test(String(e2?.message || e2))) throw e2
       // the batch above had in fact committed (ambiguous failure) — the row exists with its number
@@ -4080,15 +4167,16 @@ export async function insertFeedbackForSubmission(
   const status = f.forceNewStatus || f.simId ? "new" : initialFeedbackStatus(f.priority)
   const args = feedbackInsertArgs(f, id, now, status)
   const guard = "EXISTS (SELECT 1 FROM submission_keys WHERE project_id=? AND submission_key=? AND feedback_id=? AND state='done')"
+  const sq = seqColsFor(f.simId)   // KD-3082: Sim Reports use their own count until accepted
   const rs = await db!.batch([
     { sql: "UPDATE submission_keys SET state='done', feedback_id=?, deduped=0, evidence_json=?, updated_at=? WHERE project_id=? AND submission_key=? AND owner=? AND state='pending'",
       args: [id, sub.evidenceJson, now, sub.projectId, sub.key, sub.owner] },
-    { sql: `UPDATE projects SET ticket_seq = ticket_seq + 1 WHERE id=? AND ${guard}`, args: [f.projectId, sub.projectId, sub.key, id] },
-    { sql: `INSERT INTO feedback (${FEEDBACK_INSERT_COLS},seq_num) SELECT ${qmarks(args.length)},(SELECT ticket_seq FROM projects WHERE id=?) WHERE ${guard}`,
+    { sql: `UPDATE projects SET ${sq.counter} = ${sq.counter} + 1 WHERE id=? AND ${guard}`, args: [f.projectId, sub.projectId, sub.key, id] },
+    { sql: `INSERT INTO feedback (${FEEDBACK_INSERT_COLS},${sq.col}) SELECT ${qmarks(args.length)},(SELECT ${sq.counter} FROM projects WHERE id=?) WHERE ${guard}`,
       args: [...args, f.projectId, sub.projectId, sub.key, id] },
   ], "write")
   if (Number(rs[0]?.rowsAffected || 0) !== 1 || Number(rs[2]?.rowsAffected || 0) !== 1) return { lost: true }
-  if (Number(rs[1]?.rowsAffected || 0) === 0) await allocTicketSeq(f.projectId, id, now)   // no projects row → MAX+1 fallback
+  if (Number(rs[1]?.rowsAffected || 0) === 0) await allocFeedbackSeq(f.projectId, id, now, !!f.simId)   // no projects row → MAX+1 fallback
   invalidateDashboardCache(f.projectId)
   return { id }
 }
@@ -4141,7 +4229,11 @@ export async function advanceFeedbackToOpenIfNew(feedbackId: string, projectId: 
     sql: "UPDATE feedback SET status='open' WHERE id=? AND project_id=? AND status='new'",
     args: [feedbackId, projectId],
   })
-  if ((r.rowsAffected ?? 0) > 0) invalidateDashboardCache(projectId) // #722 (P2.2): status new→open
+  if ((r.rowsAffected ?? 0) > 0) {
+    // KD-3082: a Sim Report reaching the Tickets board takes the next Tickets number (no-op for everything else).
+    await assignTicketSeqOnAccept(projectId, feedbackId).catch((e: any) => console.warn("accept ticket number skipped:", e?.message || e))
+    invalidateDashboardCache(projectId) // #722 (P2.2): status new→open
+  }
   return (r.rowsAffected ?? 0) > 0
 }
 
@@ -4175,6 +4267,9 @@ export const NOTIFY_ASSIGNEE_TYPES = new Set([
   "ticket_commented", "ticket_label_added", "ticket_label_removed", "ticket_description_changed",
 ])
 
+// KD-3134: updates the ticket's reporter hears about too (besides the assignee).
+export const REPORTER_NOTIFY_TYPES = new Set(["ticket_status_changed", "ticket_priority_changed"])
+
 const _notifEmail = (v: unknown): string | null => {
   const e = v == null ? "" : String(v).trim().toLowerCase()
   return e && e.includes("@") ? e : null
@@ -4202,9 +4297,17 @@ export async function notifyAssigneeOfTicketUpdate(a: ActivityInsert): Promise<n
   if (a.type === "ticket_assignee_changed") {
     for (const e of [a.meta?.to, a.meta?.from]) { const r = _notifEmail(e); if (r) recipients.push(r) }
   } else {
-    const r = await db.execute({ sql: "SELECT assignee FROM feedback WHERE id=? AND project_id=?", args: [a.feedbackId, a.projectId] })
-    const assignee = _notifEmail(r.rows[0]?.assignee)
+    const r = await db.execute({ sql: "SELECT assignee, contact_email, actor_email FROM feedback WHERE id=? AND project_id=?", args: [a.feedbackId, a.projectId] })
+    const row: any = r.rows[0] || {}
+    const assignee = _notifEmail(row.assignee)
     if (assignee) recipients.push(assignee)
+    // KD-3134: a status or priority change also notifies the ticket's REPORTER (the "Reporter" shown on the ticket:
+    // the composer's contact email, else whoever filed it), matching who the status-change email goes to. Before,
+    // only the assignee heard, so a change to an unassigned ticket, or by its assignee, put nothing in anyone's bell.
+    if (REPORTER_NOTIFY_TYPES.has(a.type)) {
+      const reporter = _notifEmail(row.contact_email) || _notifEmail(row.actor_email)
+      if (reporter) recipients.push(reporter)
+    }
   }
   const uniq = [...new Set(recipients)].filter(e => e !== actor)
   for (const to of uniq) {
@@ -4453,7 +4556,7 @@ export type FeedbackRow = {
   planeIssueKey: string | null; planeIssueUrl: string | null; annotations: any | null
   reportIp: string | null; reportUrl: string | null; reportGeo: any | null
   reportEnv: string | null; reportOrg: string | null; reportServer: string | null
-  seqNum: number | null; createdAt: number
+  seqNum: number | null; simSeqNum: number | null; createdAt: number
   // KLA-780: set to the surviving ticket id when this row was folded into another by a merge; null otherwise.
   mergedInto: string | null
 }
@@ -4491,6 +4594,7 @@ function rowToFeedback(x: any): FeedbackRow {
     reportServer: x.report_server != null ? String(x.report_server) : null,
     // #745: per-project human sequence (KLA-200). Powers the pretty <KEY>-<n> permalink on the board.
     seqNum: x.seq_num != null ? Number(x.seq_num) : null,
+    simSeqNum: x.sim_seq_num != null ? Number(x.sim_seq_num) : null, // KD-1074: Sim Report number (<KEY>-SIM-<n>)
     createdAt: Number(x.created_at),
     // KLA-780: null on normal rows; a survivor id when this ticket was merged away.
     mergedInto: x.merged_into != null ? String(x.merged_into) : null,
@@ -7534,7 +7638,14 @@ export async function updateFeedbackMeta(
     sql: `UPDATE feedback SET ${sets.join(",")} WHERE project_id=? AND id=?`,
     args,
   })
-  if (Number(r.rowsAffected) > 0) invalidateDashboardCache(projectId) // #722 (P2.2): status/priority triage edit
+  if (Number(r.rowsAffected) > 0) {
+    // KD-3082: a Sim Report that is ACCEPTED (moved out of new/dismissed onto the Tickets board) takes the next Tickets number
+    // here — the single choke point every accept path (ticket page, bulk, triage, MCP) goes through.
+    if (meta.status !== undefined && !SIM_PRE_ACCEPT_STATUSES.has(meta.status)) {
+      await assignTicketSeqOnAccept(projectId, feedbackId).catch((e: any) => console.warn("accept ticket number skipped:", e?.message || e))
+    }
+    invalidateDashboardCache(projectId) // #722 (P2.2): status/priority triage edit
+  }
   return Number(r.rowsAffected) > 0
 }
 
@@ -7587,6 +7698,7 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     clientContext: x.client_context_json != null ? safeJsonParse(x.client_context_json) : null,
     contactEmail: x.contact_email != null ? String(x.contact_email) : null,
     seqNum: x.seq_num != null ? Number(x.seq_num) : null,
+    simSeqNum: x.sim_seq_num != null ? Number(x.sim_seq_num) : null, // KD-1074: Sim Report number (<KEY>-SIM-<n>)
     // Connector field mapping task 1: report kind chosen at submit ("bug" | "feature" | null on
     // older/manual rows). Exposed both camelCase (this API's convention) and snake_case
     // (feedbackToTicketPayload / raw-row callers reference fb.report_type directly).
@@ -7784,7 +7896,7 @@ export async function screenshotReferencedElsewhere(screenshotId: string, except
 // anyway). Returns the raw-ish columns the QA route needs; the route maps them to the client shape,
 // signs the screenshot link, and computes the counts summary. Newest report first.
 export type PageBugRow = {
-  id: string; seqNum: number | null; title: string | null; observation: string | null
+  id: string; seqNum: number | null; simSeqNum: number | null; title: string | null; observation: string | null
   status: string; priority: string | null; severity: string | null
   actorEmail: string | null; contactEmail: string | null
   screenshotId: string | null; urlHost: string | null; urlPath: string | null
@@ -7803,7 +7915,7 @@ export async function feedbackByPageUrl(
   if (!cands.length) return []
   const placeholders = cands.map(() => "?").join(",")
   const r = await db!.execute({
-    sql: `SELECT id, seq_num, title, observation, status, priority, severity, actor_email,
+    sql: `SELECT id, seq_num, sim_seq_num, title, observation, status, priority, severity, actor_email,
                  contact_email, screenshot_id, url_host, url_path, report_url, annotations_json, created_at
           FROM feedback
           WHERE project_id=? AND lower(url_host)=lower(?) AND lower(url_path) IN (${placeholders})
@@ -7814,6 +7926,7 @@ export async function feedbackByPageUrl(
   return r.rows.map((x: any) => ({
     id: String(x.id),
     seqNum: x.seq_num != null ? Number(x.seq_num) : null,
+    simSeqNum: x.sim_seq_num != null ? Number(x.sim_seq_num) : null, // KD-1074: Sim Report number (<KEY>-SIM-<n>)
     title: x.title != null ? String(x.title) : null,
     observation: x.observation != null ? String(x.observation) : null,
     status: x.status != null ? String(x.status) : "open",
@@ -8134,10 +8247,10 @@ export async function dedupeAndIndexFeedbackSeq(c: Client): Promise<void> {
     await c.execute({
       sql: `UPDATE feedback SET seq_num = (
               SELECT COUNT(*) FROM feedback f2
-              WHERE f2.project_id = feedback.project_id
+              WHERE f2.project_id = feedback.project_id AND f2.seq_num IS NOT NULL
                 AND (f2.created_at < feedback.created_at
                   OR (f2.created_at = feedback.created_at AND f2.id <= feedback.id))
-            ) WHERE project_id = ?`,
+            ) WHERE project_id = ? AND seq_num IS NOT NULL`,   // KD-3082: un-accepted Sim Reports stay un-numbered
       args: [pid],
     }).catch((e: any) => console.warn(`dedupe renumber skipped for ${pid}:`, e?.message || e))
     // Keep the atomic counter consistent with the renumbered max.
@@ -8152,6 +8265,90 @@ export async function dedupeAndIndexFeedbackSeq(c: Client): Promise<void> {
     // Truly unrepairable — make it LOUD so it surfaces in logs/monitoring, not a silent accept.
     console.error("[CRITICAL] #728 feedback_proj_seqnum_uidx could NOT be created — duplicate pretty ticket numbers may be silently accepted. Investigate feedback (project_id, seq_num) duplicates.")
   }
+}
+
+// KD-3082: which counter/column numbers a NEW report. A Sim Report → its own Sim Reports count (projects.sim_ticket_seq →
+// feedback.sim_seq_num, shown <KEY>-SIM-<n> in Sim Reports); every other report → the Tickets sequence (projects.ticket_seq →
+// feedback.seq_num, shown <KEY>-<n>). An accepted Sim Report additionally gets a Tickets number (see assignTicketSeqOnAccept).
+function seqColsFor(simId: string | null | undefined): { counter: "sim_ticket_seq" | "ticket_seq"; col: "sim_seq_num" | "seq_num" } {
+  return simId ? { counter: "sim_ticket_seq", col: "sim_seq_num" } : { counter: "ticket_seq", col: "seq_num" }
+}
+
+/** Number a just-inserted report from the right per-project sequence (fallback paths). */
+export async function allocFeedbackSeq(projectId: string, feedbackId: string, now: number, isSim: boolean): Promise<void> {
+  if (isSim) return allocSimTicketSeq(projectId, feedbackId)
+  return allocTicketSeq(projectId, feedbackId, now)
+}
+
+// KD-3082: atomic per-project allocation for feedback.sim_seq_num — mirrors allocTicketSeq (counter bump, MAX+1 fallback).
+export async function allocSimTicketSeq(projectId: string, feedbackId: string): Promise<void> {
+  const bump = await db!.execute({
+    sql: "UPDATE projects SET sim_ticket_seq = sim_ticket_seq + 1 WHERE id=? RETURNING sim_ticket_seq",
+    args: [projectId],
+  }).catch(() => ({ rows: [] as any[] }))
+  if (bump.rows && bump.rows.length) {
+    await db!.execute({
+      sql: "UPDATE feedback SET sim_seq_num=? WHERE id=? AND sim_seq_num IS NULL",
+      args: [Number((bump.rows[0] as any).sim_ticket_seq), feedbackId],
+    }).catch((e: any) => console.warn("sim_seq_num assign skipped:", e?.message || e))
+    return
+  }
+  await db!.execute({
+    sql: `UPDATE feedback SET sim_seq_num =
+            1 + COALESCE((SELECT MAX(sim_seq_num) FROM feedback f2 WHERE f2.project_id = ? AND f2.id <> ?), 0)
+          WHERE id = ? AND sim_seq_num IS NULL`,
+    args: [projectId, feedbackId, feedbackId],
+  }).catch((e: any) => console.warn("sim_seq_num assign (fallback) skipped:", e?.message || e))
+}
+
+// KD-3082: statuses in which a Sim Report is still waiting in Sim Reports. Any other status = a person accepted it.
+export const SIM_PRE_ACCEPT_STATUSES = new Set(["new", "dismissed"])
+
+/**
+ * KD-3082: when a Sim Report is ACCEPTED it takes the next number of the Tickets sequence (seq_num ← projects.ticket_seq), so
+ * on the Tickets board it shows <KEY>-SIM-<ticket number> and sorts in one sequence with manual / widget tickets. Its Sim
+ * Reports count (sim_seq_num) is kept. Idempotent: no-op for non-Sim rows, rows that already have a Tickets number (incl.
+ * legacy Sim Reports) and rows still waiting. Returns the row's seq_num (or null).
+ */
+export async function assignTicketSeqOnAccept(projectId: string, feedbackId: string): Promise<number | null> {
+  const read = async () => {
+    const r = await db!.execute({ sql: "SELECT sim_id, seq_num, status FROM feedback WHERE project_id=? AND id=?", args: [projectId, feedbackId] })
+    return r.rows.length ? (r.rows[0] as any) : null
+  }
+  const row = await read()
+  if (!row) return null
+  if (row.seq_num != null) return Number(row.seq_num)
+  if (row.sim_id == null || SIM_PRE_ACCEPT_STATUSES.has(String(row.status))) return null
+  await allocTicketSeq(projectId, feedbackId, Date.now())
+  const after = await read()
+  return after && after.seq_num != null ? Number(after.seq_num) : null
+}
+
+// KD-3082: one-time — number every existing Sim Report 1..N per project (by created_at, id) in sim_seq_num (its Sim Reports
+// count). Existing Sim Reports KEEP their seq_num, so already-shared links still resolve. Then (every boot, idempotent) keep
+// projects.sim_ticket_seq >= MAX(sim_seq_num) and install the uniqueness backstop.
+export async function backfillSimSeq(c: Client): Promise<void> {
+  const migKey = "sim_seq_backfill_2026_11_16"
+  const already = await c.execute({ sql: "SELECT key FROM schema_migrations WHERE key=?", args: [migKey] }).catch(() => ({ rows: [] as any[] }))
+  if (!(already.rows && already.rows.length)) {
+    // Dev DBs that ran an earlier build of this change may hold other sim_seq_num values / indexes: renumber ALL Sim Reports.
+    await c.execute("DROP INDEX IF EXISTS feedback_proj_simseq_uidx").catch(() => {})
+    await c.execute("DROP INDEX IF EXISTS feedback_proj_simseq_idx").catch(() => {})
+    const ok = await c.execute(`
+      UPDATE feedback SET sim_seq_num = (
+        SELECT COUNT(*) FROM feedback f2
+        WHERE f2.project_id = feedback.project_id AND f2.sim_id IS NOT NULL
+          AND (f2.created_at < feedback.created_at
+            OR (f2.created_at = feedback.created_at AND f2.id <= feedback.id))
+      ) WHERE sim_id IS NOT NULL
+    `).then(() => true).catch((e: any) => { console.warn("feedback.sim_seq_num backfill skipped:", e?.message || e); return false })
+    if (ok) await c.execute({ sql: "INSERT OR IGNORE INTO schema_migrations (key, applied_at) VALUES (?,?)", args: [migKey, Date.now()] }).catch(() => {})
+  }
+  await c.execute(`UPDATE projects SET sim_ticket_seq = (SELECT MAX(sim_seq_num) FROM feedback WHERE feedback.project_id = projects.id)
+     WHERE sim_ticket_seq < COALESCE((SELECT MAX(sim_seq_num) FROM feedback WHERE feedback.project_id = projects.id), 0)`)
+    .catch((e: any) => console.warn("projects.sim_ticket_seq seed skipped:", e?.message || e))
+  await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS feedback_proj_simseq_uidx ON feedback (project_id, sim_seq_num)")
+    .catch((e: any) => console.warn("feedback_proj_simseq_uidx skipped:", e?.message || e))
 }
 
 // Atomic per-project sequence allocation for feedback.seq_num. UPDATE…RETURNING on the single
@@ -8258,10 +8455,13 @@ export async function resolveWorkspaceTicket(slug: string, ref: string): Promise
     return { kind: "opaque", id: resolved.id, projectId: resolved.projectId }
   }
 
-  const m = rawRef.match(/^([A-Za-z][A-Za-z0-9]{1,9})-(\d+)$/)
+  // KD-1074: <KEY>-<n> is a ticket number (seq_num); <KEY>-SIM-<n> is a Sim Report number (sim_seq_num).
+  const m = rawRef.match(/^([A-Za-z][A-Za-z0-9]{1,9})-(?:(SIM)-)?(\d+)$/i)
   if (!m) return null
   const key = m[1].toUpperCase()
-  const seq = Number(m[2])
+  const isSimRef = !!m[2]
+  const seqCol = isSimRef ? "sim_seq_num" : "seq_num"
+  const seq = Number(m[3])
   if (!Number.isSafeInteger(seq) || seq < 1) return null
 
   // 1) Account: current slug, else a historical slug alias → the ORIGINAL owner (never another tenant).
@@ -8301,10 +8501,16 @@ export async function resolveWorkspaceTicket(slug: string, ref: string): Promise
 
   // 3) Existence: the ticket MUST exist. NEVER return a redirect for a nonexistent (project_id, seq)
   //    — that is the anti-enumeration guarantee (finding 2).
-  const fb = await db!.execute({
-    sql: "SELECT id FROM feedback WHERE project_id=? AND seq_num=? LIMIT 1",
-    args: [projectId, seq],
-  })
+  // KD-3082: <KEY>-SIM-<n> is an ACCEPTED Sim Report's Tickets number (seq_num) or a waiting Sim Report's own count
+  // (sim_seq_num). If both exist for the same n, the accepted one (on the Tickets board) wins.
+  const accepted = "(sim_id IS NOT NULL AND seq_num=? AND status NOT IN ('new','dismissed'))"
+  const fb = await db!.execute(isSimRef
+    ? {
+        sql: `SELECT id FROM feedback WHERE project_id=? AND (${accepted} OR sim_seq_num=?)
+              ORDER BY CASE WHEN ${accepted} THEN 0 ELSE 1 END LIMIT 1`,
+        args: [projectId, seq, seq, seq],
+      }
+    : { sql: `SELECT id FROM feedback WHERE project_id=? AND ${seqCol}=? LIMIT 1`, args: [projectId, seq] })
   if (!fb.rows.length) return null
   // KLA-780 round-2 (finding C2-resolvers): a pretty KEY-n permalink whose row was later folded resolves
   // to the canonical survivor (live root), not the hidden merged row.
@@ -8318,7 +8524,7 @@ export async function resolveWorkspaceTicket(slug: string, ref: string): Promise
     const curSlug = await currentSlugForAccount(accountId)
     const kr = await db!.execute({ sql: "SELECT ticket_key FROM projects WHERE id=? AND ticket_key IS NOT NULL LIMIT 1", args: [projectId] })
     const curKey = kr.rows.length ? String((kr.rows[0] as any).ticket_key) : null
-    if (curSlug && curKey) redirectTo = `/${curSlug}/${curKey}-${seq}`
+    if (curSlug && curKey) redirectTo = `/${curSlug}/${curKey}-${isSimRef ? "SIM-" : ""}${seq}`
   }
   return { kind: "pretty", id, projectId, redirectTo }
 }
@@ -8357,19 +8563,24 @@ export async function projectAliasInfo(projectId: string): Promise<{ slug: strin
 // backfill. Path only (no origin); callers prefix BASE. Used server-side to UPGRADE the widget-submit
 // issue_url, reporter-fix + assignment email links, and lead alerts (#727) to the pretty form.
 export async function prettyTicketPath(
-  input: { id: string; projectId: string; seqNum?: number | null },
+  input: { id: string; projectId: string; seqNum?: number | null; simSeqNum?: number | null },
 ): Promise<string> {
   const opaque = `/t/${input.id}`
   try {
     if (!input.id || !input.projectId) return opaque
-    let seq = input.seqNum
-    if (seq == null) {
-      const fr = await db!.execute({ sql: "SELECT seq_num FROM feedback WHERE id=? LIMIT 1", args: [input.id] })
-      seq = fr.rows.length && (fr.rows[0] as any).seq_num != null ? Number((fr.rows[0] as any).seq_num) : null
-    }
+    // KD-3082: a Sim Report links as <KEY>-SIM-<n> — n is its Tickets number once accepted, else its own Sim Reports count.
+    // A manual / widget ticket links as <KEY>-<n>.
+    const fr = await db!.execute({ sql: "SELECT sim_id, seq_num, sim_seq_num, status FROM feedback WHERE id=? LIMIT 1", args: [input.id] })
+    const row = fr.rows.length ? (fr.rows[0] as any) : null
+    const rowSeq = row ? (row.seq_num != null ? Number(row.seq_num) : null) : (input.seqNum ?? null)
+    const rowSim = row ? (row.sim_seq_num != null ? Number(row.sim_seq_num) : null) : (input.simSeqNum ?? null)
+    const isSim = row ? (row.sim_id != null || rowSim != null) : rowSim != null
+    const acceptedSim = isSim && rowSeq != null && !(row && SIM_PRE_ACCEPT_STATUSES.has(String(row.status)))
+    const simRef = isSim && (acceptedSim || rowSim != null)
+    const seq = !isSim ? rowSeq : (acceptedSim ? rowSeq : (rowSim ?? rowSeq))
     if (seq == null || !Number.isSafeInteger(seq) || seq < 1) return opaque
     const info = await projectAliasInfo(input.projectId)
-    if (info.slug && info.ticketKey) return `/${info.slug}/${info.ticketKey}-${seq}`
+    if (info.slug && info.ticketKey) return `/${info.slug}/${info.ticketKey}-${simRef ? "SIM-" : ""}${seq}`
   } catch { /* fall through to opaque */ }
   return opaque
 }
@@ -8797,6 +9008,7 @@ export async function listTriageFeedback(projectId: string): Promise<any[]> {
       planeIssueUrl: x.plane_issue_url != null ? String(x.plane_issue_url) : null,
       // KLA-200: human-readable sequential number
       seqNum: x.seq_num != null ? Number(x.seq_num) : null,
+      simSeqNum: x.sim_seq_num != null ? Number(x.sim_seq_num) : null, // KD-1074: Sim Report number (<KEY>-SIM-<n>)
       // JTBD 2.8: inline-evidence fields for the expandable triage row.
       hasReplay: replaySet.has(String(x.id)),
       clientContext: x.client_context_json != null ? safeJsonParse(x.client_context_json) : null,
@@ -8818,7 +9030,7 @@ export async function listInboxForProjects(
   projectId: string
   newReportCount: number
   regressionCount: number
-  topReports: Array<{ id: string; title: string; priority: string | null; createdAt: number; seqNum: number | null }>
+  topReports: Array<{ id: string; title: string; priority: string | null; createdAt: number; seqNum: number | null; simSeqNum?: number | null }>
 }[]> {
   if (!projectIds.length) return []
   const windowMs = opts?.windowMs ?? 48 * 3600 * 1000   // 48-hour default window
@@ -8857,7 +9069,7 @@ export async function listInboxForProjects(
   // We use a window-function approach: rank per project, take top N.
   // libSQL/SQLite supports ROW_NUMBER() so we use it.
   const topR = await db!.execute({
-    sql: `SELECT id, project_id, suggested_bug_json, observation, priority, severity, created_at, seq_num
+    sql: `SELECT id, project_id, suggested_bug_json, observation, priority, severity, created_at, seq_num, sim_seq_num
           FROM (
             SELECT *, ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY created_at DESC) AS rn
             FROM feedback
@@ -8867,7 +9079,7 @@ export async function listInboxForProjects(
           ) WHERE rn <= ?`,
     args: [...projectIds, since, topN],
   })
-  const topMap: Record<string, Array<{ id: string; title: string; priority: string | null; createdAt: number; seqNum: number | null }>> = {}
+  const topMap: Record<string, Array<{ id: string; title: string; priority: string | null; createdAt: number; seqNum: number | null; simSeqNum?: number | null }>> = {}
   for (const x of topR.rows) {
     const pid = String((x as any).project_id)
     let bug: any = null
@@ -8880,6 +9092,7 @@ export async function listInboxForProjects(
       priority: (x as any).priority ?? (x as any).severity != null ? String((x as any).priority ?? (x as any).severity) : null,
       createdAt: Number((x as any).created_at),
       seqNum: (x as any).seq_num != null ? Number((x as any).seq_num) : null,
+      simSeqNum: (x as any).sim_seq_num != null ? Number((x as any).sim_seq_num) : null, // KD-1074
     })
   }
 
@@ -9059,17 +9272,26 @@ export async function listTicketsPaginated(
 
   const search = opts.search?.trim()
   if (search) {
-    // Treat %, _, and backslash as literal user input rather than LIKE wildcards.
-    const escaped = search.replace(/[\\%_]/g, "\\\\$&")
+    // Treat %, _, and backslash as literal user input rather than LIKE wildcards. ONE backslash per char (ESCAPE '\'):
+    // KD-3139 — this used to insert TWO ("\\\\$&"), so the pattern demanded a literal backslash and any search
+    // containing "_" or "%" (e.g. "user_id", "50%") found nothing in the List while the Board still matched it.
+    const escaped = search.replace(/[\\%_]/g, "\\$&")
     const pattern = `%${escaped}%`
     // Titles and descriptions generated by Sims live in suggested_bug_json; manual-ticket
     // descriptions live in observation, while notes are the editable ticket description. #543: a
     // manual ticket's explicit Title now lives in the dedicated `title` column (no longer crammed
     // into observation), so search must cover it too or a title-only match is missed.
-    conditions.push(`(LOWER(COALESCE(f.title, '')) LIKE LOWER(?) ESCAPE '\\'
+    // KD-3095: a ticket ID typed into search ("109", "#109", "KD-109") must find that ticket by its
+    // number (feedback.seq_num) -- the ID is not part of any text column, so the LIKE match alone
+    // returned nothing. The key prefix is not checked: results are already project-scoped.
+    const idMatch = search.match(/^(?:#|[A-Za-z][A-Za-z0-9]{1,9}-)?(\d{1,15})$/)
+    const seq = idMatch ? Number(idMatch[1]) : NaN
+    const seqClause = Number.isSafeInteger(seq) && seq > 0 ? "f.seq_num = ? OR " : ""
+    conditions.push(`(${seqClause}LOWER(COALESCE(f.title, '')) LIKE LOWER(?) ESCAPE '\\'
                       OR LOWER(COALESCE(f.observation, '')) LIKE LOWER(?) ESCAPE '\\'
                       OR LOWER(COALESCE(f.notes, '')) LIKE LOWER(?) ESCAPE '\\'
                       OR LOWER(COALESCE(f.suggested_bug_json, '')) LIKE LOWER(?) ESCAPE '\\')`)
+    if (seqClause) args.push(seq)
     args.push(pattern, pattern, pattern, pattern)
   }
 
@@ -9134,6 +9356,7 @@ export async function listTicketsPaginated(
       source: x.source === "autosim" ? "autosim" : (x.sim_id != null ? "sim" : (x.source === "manual" ? "manual" : "human")),
       // KLA-200: human-readable sequential number
       seqNum: x.seq_num != null ? Number(x.seq_num) : null,
+      simSeqNum: x.sim_seq_num != null ? Number(x.sim_seq_num) : null, // KD-1074: Sim Report number (<KEY>-SIM-<n>)
     }
   })
 

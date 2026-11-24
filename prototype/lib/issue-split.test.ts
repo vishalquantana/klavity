@@ -10,7 +10,34 @@ import {
   parseSplitReply,
   splitTranscriptIntoIssues,
   narrationForSpan,
+  parseSplitFrames,
 } from "./issue-split"
+
+// KD-3080: frames sampled across the clip arrive as an untrusted JSON form field.
+describe("parseSplitFrames", () => {
+  const img = "data:image/jpeg;base64,QUJD"
+  test("keeps well-formed frames in time order and caps the count", () => {
+    const raw = JSON.stringify([{ atSec: 25, dataUrl: img }, { atSec: 5, dataUrl: img }, { atSec: 15, dataUrl: img }])
+    expect(parseSplitFrames(raw).map((f) => f.atSec)).toEqual([5, 15, 25])
+    expect(parseSplitFrames(raw, { maxFrames: 2 })).toHaveLength(2)
+  })
+  test("drops anything that is not a small image data URL with a valid time; never throws", () => {
+    expect(parseSplitFrames("not json")).toEqual([])
+    expect(parseSplitFrames(null)).toEqual([])
+    expect(parseSplitFrames(JSON.stringify({ atSec: 1, dataUrl: img }))).toEqual([])
+    expect(parseSplitFrames(JSON.stringify([
+      { atSec: 1, dataUrl: "https://evil.example/x.png" },
+      { atSec: 2, dataUrl: "data:text/html;base64,QUJD" },
+      { atSec: -1, dataUrl: img },
+      { atSec: "x", dataUrl: img },
+      { atSec: 3, dataUrl: img + "A".repeat(50) },
+    ]), { maxChars: 40 })).toEqual([])
+  })
+  test("the prompt tells the model to use the frames without inventing issues", () => {
+    expect(SPLIT_SYSTEM_PROMPT).toContain("VIDEO FRAMES")
+    expect(SPLIT_SYSTEM_PROMPT).toContain("never raise an issue the reporter did not mention")
+  })
+})
 
 const TWO = {
   issues: [

@@ -7,7 +7,25 @@ import {
   findTopFixedStickyHeaders,
   hideFixedStickyElements,
   restoreFixedStickyElements,
+  isViewportCover,
 } from "./sharp-capture"
+
+describe("isViewportCover (which fixed/sticky boxes stay visible in every stitched frame)", () => {
+  const vw = 1440, vh = 900
+
+  it("a full-height narrow left nav sidebar is NOT a cover, so it is hidden after frame 0 (KD-3120)", () => {
+    // prototype dashboard.html .side: position:fixed; height:100vh; width:214px
+    expect(isViewportCover({ width: 214, height: 900 }, vw, vh)).toBe(false)
+  })
+
+  it("a full-screen modal backdrop / app shell IS a cover", () => {
+    expect(isViewportCover({ width: 1440, height: 900 }, vw, vh)).toBe(true)
+  })
+
+  it("a short full-width top header is not a cover", () => {
+    expect(isViewportCover({ width: 1440, height: 64 }, vw, vh)).toBe(false)
+  })
+})
 
 describe("planScrollStitch", () => {
   it("steps by viewport height and clamps the last frame flush to the bottom", () => {

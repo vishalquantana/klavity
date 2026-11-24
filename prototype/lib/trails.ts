@@ -238,10 +238,13 @@ function rowToRunStep(r: any): RunStep {
   }
 }
 
+/** KD-3107: what started a Walk. manual = dashboard button; scheduled = cron; ci = CI token; api = public v1 API. */
+export type WalkTrigger = "manual" | "scheduled" | "ci" | "api"
+
 export async function startWalk(
   projectId: string,
   trailId: string,
-  trigger: "manual" = "manual",
+  trigger: WalkTrigger = "manual",
   /** KLA-93: optional named environment to run against. Recorded on the walk row; null = default baseUrl. */
   environmentName?: string | null,
 ): Promise<string> {
@@ -318,6 +321,18 @@ export async function finishWalk(projectId: string, runId: string, input: { stat
               replay_cost_usd = COALESCE((SELECT SUM(cost_usd) FROM ai_calls WHERE run_id=? AND type='reheal'), 0)
           WHERE project_id=? AND id=?`,
     args: [input.status, input.llmCalls, j(input.summary), Date.now(), runId, projectId, runId],
+  })
+}
+
+/**
+ * Re-arm a finished Walk row for a second attempt (browser died mid-replay): drop the first attempt's step rows and put the
+ * row back to 'running' so the caller's runId (which the UI is polling) ends up showing the retry, not the crashed attempt.
+ */
+export async function resetWalkForRetry(projectId: string, runId: string): Promise<void> {
+  await db!.execute({ sql: `DELETE FROM run_steps WHERE project_id=? AND run_id=?`, args: [projectId, runId] })
+  await db!.execute({
+    sql: `UPDATE trail_runs SET status='running', llm_calls=0, summary_json=NULL, finished_at=NULL WHERE project_id=? AND id=?`,
+    args: [projectId, runId],
   })
 }
 

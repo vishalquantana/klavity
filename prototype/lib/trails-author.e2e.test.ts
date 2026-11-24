@@ -156,8 +156,12 @@ test("runAuthorNow persists a pollable session that reaches crystallized", async
 test("runAuthorNow rejects a second active authoring session before creating another browser", async () => {
   let release!: () => void
   const gate = new Promise<void>((resolve) => { release = resolve })
-  const holdingAuthor: typeof authorTrail = async () => {
+  const holdingAuthor: typeof authorTrail = async (_projectId, _req, opts) => {
     await gate
+    // R1: like the real engine, persist a checkpoint before reporting a resumable (stalled) outcome. A stalled session
+    // with no checkpoint is now (correctly) recorded as failed because Resume would be impossible.
+    const u = fixtureUrl("author-mockup.html")
+    await opts?.onCheckpoint?.({ traj: [{ action: "navigate", actionValue: u, url: u, domHash: "h" }], history: ["navigate"], stepIdx: 0, llmCalls: 0, costUsd: 0, lastUrl: u })
     return {
       status: "stalled",
       trailId: null,

@@ -62,7 +62,8 @@ import { notifyStatusChange } from "./lib/status-notification"
 import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie, uidCookie, clearUidCookie, clearProjectCookie } from "./lib/auth"
-import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, objectExists, type UploadedScreenshot } from "./lib/s3"
+import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, objectExists, type UploadedScreenshot, putUploadPart, uploadPartSize, assembleUploadParts, attachmentObjectSize, largeAttachmentKey, sweepStaleUploadParts } from "./lib/s3"
+import { CHUNK_BYTES as LARGE_CHUNK_BYTES, largeUploadMaxBytes, newUploadId, signUploadToken, verifyUploadToken, signFileRef, chunkCount, chunkLength, validateStart as validateLargeUploadStart, parseFileRefs } from "./lib/large-upload"
 import { storeVerifiedScreenshot, type StoredScreenshot } from "./lib/sim-evidence"
 import { enrichQaPersona, normalizePersonaKind, isQaPersona, qaRunPrompt, type PersonaKind } from "./lib/sim-validations"
 import { elementListForPrompt, sanitizePageMeta, type PageMeta } from "./lib/sim-ui-identity"
@@ -146,7 +147,8 @@ import { buildAuthoredRunStatus } from "./lib/v1-authored"
 import { listRecentWalks } from "./lib/trails"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { startCrashReaper } from "./lib/trails-reaper"
-import { runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuthorSessions, listNeedsAuthSessionsForAutoResume, AUTOSIM_DEADLINE_MS_DEFAULT } from "./lib/trails-author"
+import { ResumeConflictError, runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuthorSessions, listNeedsAuthSessionsForAutoResume, AUTOSIM_DEADLINE_MS_DEFAULT } from "./lib/trails-author"
+import { isUsableCheckpoint, userFacingStallReason } from "./lib/author-checkpoint"
 import { WalkBusyError, cancelCurrentWalk, cancelCurrentAuthor, PdfBusyError, walkPoolStats } from "./lib/trails-browser"
 import { mintShareToken, resolveShareToken, renderWalkPdf, revokeShareToken, listShareTokens, extendShareToken, recordShareView, checkSharePasscode } from "./lib/trails-share"
 import { gatherWalkReport } from "./lib/trails-report"
@@ -171,7 +173,7 @@ import { extractKeyframes } from "./lib/keyframes"
 import { updateFeedbackTitle, updateFeedbackAnnotations } from "./lib/db"
 import { transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeAudioBytes, transcribeConfigured, TRANSCRIBE_MODEL, TRANSCRIBE_MAX_BYTES, activeTranscribeModel } from "./lib/transcribe"
 // KD-995: split one Record-me walkthrough into separate tickets (POST /api/report/split).
-import { splitTranscriptIntoIssues } from "./lib/issue-split"
+import { splitTranscriptIntoIssues, parseSplitFrames, SPLIT_MAX_FRAMES, SPLIT_FRAME_MAX_CHARS } from "./lib/issue-split"
 import { DeepgramRelay, deepgramConfigured, deepgramCostUsd, evaluateVoiceStreamUpgrade, createVoiceStreamWsHandlers, VOICE_STREAM_MAX_SESSION_MS, type VoiceStreamData } from "./lib/deepgram-stream"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
@@ -1420,6 +1422,10 @@ function isWidgetCorsPath(path: string): boolean {
     // KLA-612: the widget's guest "Request upgrade" button POSTs here cross-origin from the customer's site.
     case "/api/upgrade-request":
     case "/api/feedback":
+    // Large-file attachments: chunked upload that runs before the /api/feedback submit (same auth model).
+    case "/api/uploads/start":
+    case "/api/uploads/chunk":
+    case "/api/uploads/complete":
     case "/api/errors":
     case "/api/consent":
     case "/api/sim/review":
@@ -2443,10 +2449,15 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
     for (const a of fb.attachments) {
       try {
         if (!a || !a.key) continue
+        const filename = String(a.filename || "attachment")
+        // A large (chunk-uploaded) file is never read into memory for export: the ticket gets the link only.
+        if (Number(a.size) > LARGE_INLINE_READ_MAX_BYTES) {
+          try { lines.push(`Attachment (${filename}, ${Math.round(Number(a.size) / 1024 / 1024)} MB): ${presignGet(String(a.key), 7 * 24 * 3600)}`) } catch { /* link is best-effort */ }
+          continue
+        }
         const { bytes, contentType } = await getObjectBytes(String(a.key))
         let url = ""
         try { url = presignGet(String(a.key), 3600) } catch { /* link is best-effort */ }
-        const filename = String(a.filename || "attachment")
         if (url) lines.push(`Attachment (${filename}): ${url}`)
         attachments.push({ filename, contentType: String(a.contentType || contentType || "application/octet-stream"), bytes, url })
       } catch (e: any) { console.warn("file attachment fetch failed for ticket (non-fatal):", e?.message || e) }
@@ -3329,6 +3340,14 @@ const FEEDBACK_ANON_WINDOW = 60 * 60 * 1000
 const FEEDBACK_ANON_PER_IP = 20
 const FEEDBACK_ANON_PER_PROJECT = 200
 const FEEDBACK_PK_PER_KEY = 200 // per publishable key, per FEEDBACK_ANON_WINDOW (mobile SDK)
+// Large-file uploads started per hour (each one file of up to LARGE_UPLOAD_MAX_BYTES).
+const LARGE_UPLOAD_ANON_PER_IP = 20
+const LARGE_UPLOAD_PER_USER = 60
+// Files above this are never read whole into memory (export to trackers, transcription): the 1GB box can't
+// hold a multi-GB file. The existing single-request path caps videos at 100MB, so it never reaches this.
+const LARGE_INLINE_READ_MAX_BYTES = 100 * 1024 * 1024
+// Joins in progress in THIS process, by upload id — a duplicate complete waits on the same join.
+const largeUploadAssembling = new Map<string, Promise<void>>()
 
 // SECURITY (KLA-559): hard ceiling on any request body. Bun buffers the whole body before our handler
 // runs, so without this an attacker could POST an arbitrarily large body (no Origin needed) and spike
@@ -4214,6 +4233,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   // pages (which read window.KLAV_ICONS via kit.js). Without this route the script 404s and every page
   // throws "kicon is not defined".
   if (req.method === "GET" && path === "/icons.generated.js") return new Response(Bun.file(PUB + "/icons.generated.js"), { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=3600" } })
+  // KD-3089: stops browser Back from crossing a project switch (loaded first in <head> of every project-scoped page).
+  if (req.method === "GET" && path === "/project-history.js") return new Response(Bun.file(PUB + "/project-history.js"), { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } })
   // ── self-hosted fonts (replaces Google Fonts CDN; same-origin under default-src 'self') ──
   if (req.method === "GET" && path === "/fonts/fonts.css") return new Response(Bun.file(SITE + "/fonts/fonts.css"), { headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public, max-age=31536000, immutable" } })
   // ── shared design tokens (canonical token set, sourced from the dashboard) ──
@@ -4942,7 +4963,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   // toggle, per-IP + per-project caps). Best-effort: any failure returns { issues: [] } (never 500).
   if (req.method === "POST" && path === "/api/report/split") {
     if (!rlAllow(`split:ip:${clientIp(req, server)}`, 10, 60_000)) return wjson({ error: "rate limited", issues: [] }, 429)
-    const SIZE_CEIL = TRANSCRIBE_MAX_BYTES + 64 * 1024 // clip cap + multipart framing overhead
+    // clip cap + the sampled frames (KD-3080) + multipart framing overhead
+    const SIZE_CEIL = TRANSCRIBE_MAX_BYTES + SPLIT_MAX_FRAMES * SPLIT_FRAME_MAX_CHARS + 64 * 1024
     const declaredLen = Number(req.headers.get("content-length") || 0)
     if (declaredLen > SIZE_CEIL) return wjson({ error: "payload too large", issues: [] }, 413)
     const bounded = await readBodyBounded(req, SIZE_CEIL)
@@ -4998,18 +5020,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
     const pageUrl = String(form.get("pageUrl") || "").slice(0, 300)
     const note = String(form.get("text") || "").slice(0, 2000)
+    // KD-3080: screenshots the composer sampled across the clip — the model sees the screens, not just the words.
+    const frames = parseSplitFrames(form.get("frames"), { maxFrames: SPLIT_MAX_FRAMES, maxChars: SPLIT_FRAME_MAX_CHARS })
     const issues = await splitTranscriptIntoIssues(transcript, {
       llm: async (input, systemPrompt) => {
+        // Transcript + reporter note + page URL are UNTRUSTED (spoken/typed user content) → fenced as data.
+        const textPart = "VIDEO WALKTHROUGH TRANSCRIPT (untrusted — the reporter narrating):\n" + wrapUntrusted(input) +
+          "\n\nREPORTER NOTE (untrusted):\n" + wrapUntrusted(note || "(none)") +
+          "\n\nPAGE URL (untrusted):\n" + wrapUntrusted(pageUrl || "(unknown)")
+        const userParts: any[] = [{ type: "text", text: textPart + (frames.length ? "\n\nVIDEO FRAMES (untrusted screen content) follow, each labelled with its time in the recording." : "") }]
+        for (const f of frames) {
+          userParts.push({ type: "text", text: `FRAME at ${f.atSec.toFixed(1)}s:` })
+          userParts.push({ type: "image_url", image_url: { url: f.dataUrl } })
+        }
         const { content } = await chat(
           [
             { role: "system", content: systemPrompt + UNTRUSTED_GUARD },
-            {
-              role: "user",
-              // Transcript + reporter note + page URL are UNTRUSTED (spoken/typed user content) → fenced as data.
-              content: "VIDEO WALKTHROUGH TRANSCRIPT (untrusted — the reporter narrating):\n" + wrapUntrusted(input) +
-                "\n\nREPORTER NOTE (untrusted):\n" + wrapUntrusted(note || "(none)") +
-                "\n\nPAGE URL (untrusted):\n" + wrapUntrusted(pageUrl || "(unknown)"),
-            },
+            { role: "user", content: frames.length ? userParts : textPart },
           ],
           3000, true,
           // feature tag 'report-split' → budget-gated + cost-logged like every other LLM call.
@@ -5872,6 +5899,100 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   }
 
   // ── feedback intake (extension backend mode) ──
+  // ── Large-file attachments (lib/large-upload.ts) ─────────────────────────────────────────────────────
+  // Files over the single-request caps are uploaded here in CHUNK_BYTES pieces BEFORE the report is
+  // submitted; the submit then carries a signed `file_refs` entry per file. The start call applies the same
+  // gate an anonymous /api/feedback submit gets (rate limit + the project's report gate); chunk/complete
+  // are authorised by the signed upload token start returned.
+  if (req.method === "POST" && path === "/api/uploads/start") {
+    try {
+      const body = await readJsonLimited(req, 10_000)
+      if (!body.ok) return wjson({ error: body.error }, body.status)
+      const v = validateLargeUploadStart(body.data)
+      if (!v.ok) return wjson({ error: v.error }, 400)
+      const email = (await bearerEmail(req)) || (await sessionEmail(req))
+      if (email) {
+        if (!rlAllow(`lup:user:${email}`, LARGE_UPLOAD_PER_USER, FEEDBACK_ANON_WINDOW)) return wjson({ error: "rate limited" }, 429)
+      } else {
+        if (!rlAllow(`lup:ip:${clientIp(req, server)}`, LARGE_UPLOAD_ANON_PER_IP, FEEDBACK_ANON_WINDOW)) return wjson({ error: "rate limited" }, 429)
+        const reqOrigin = req.headers.get("origin") || ""
+        const baseOrigin = (() => { try { return new URL(BASE).origin } catch { return "" } })()
+        if (reqOrigin && reqOrigin !== baseOrigin) {
+          // Cross-origin widget: the same project checks the report submit itself will make.
+          if (!v.projectId) return wjson({ error: "Unknown project." }, 404)
+          const proj = await projectById(v.projectId)
+          if (!proj) return wjson({ error: "Unknown project." }, 404)
+          if ((widgetConfigFromProject(proj)?.reportGate || "anonymous") === "login") return wjson({ error: "Sign in to Klavity to report on this project." }, 401)
+        }
+      }
+      const uploadId = newUploadId()
+      const token = signUploadToken({ u: uploadId, p: v.projectId, n: v.filename, t: v.contentType, s: v.size, ts: Date.now() })
+      return wjson({ token, chunk_bytes: LARGE_CHUNK_BYTES, chunks: chunkCount(v.size) })
+    } catch (e) { return wjson(oops(e, "uploads/start"), 500) }
+  }
+
+  if (req.method === "POST" && path === "/api/uploads/chunk") {
+    try {
+      const t = verifyUploadToken(url.searchParams.get("token"))
+      if (!t) return wjson({ error: "This upload expired. Please attach the file again." }, 410)
+      const n = Number(url.searchParams.get("n"))
+      const want = Number.isInteger(n) ? chunkLength(t.s, n) : -1
+      if (want < 0) return wjson({ error: "Bad chunk number." }, 400)
+      const len = Number(req.headers.get("content-length") || 0)
+      if (Number.isFinite(len) && len > want) return wjson({ error: "Chunk is too large." }, 413)
+      const bytes = new Uint8Array(await req.arrayBuffer())
+      if (bytes.byteLength !== want) return wjson({ error: `Chunk ${n} is incomplete (${bytes.byteLength} of ${want} bytes).` }, 400)
+      await putUploadPart(t.u, n, bytes)
+      return wjson({ ok: true })
+    } catch (e) { return wjson(oops(e, "uploads/chunk"), 500) }
+  }
+
+  if (req.method === "POST" && path === "/api/uploads/complete") {
+    try {
+      const body = await readJsonLimited(req, 10_000)
+      if (!body.ok) return wjson({ error: body.error }, body.status)
+      const t = verifyUploadToken(body.data?.token)
+      if (!t) return wjson({ error: "This upload expired. Please attach the file again." }, 410)
+      const finalKey = largeAttachmentKey(t.u, t.n)
+      const makeRef = () => signFileRef({ k: finalKey, p: t.p, n: t.n, t: t.t, s: t.s, ts: Date.now() })
+      // A retried complete (e.g. the answer was lost) finds the file already joined → answer at once.
+      if ((await attachmentObjectSize(finalKey)) === t.s) return wjson({ ref: makeRef(), size: t.s })
+      // Every chunk must be present with its exact length; otherwise tell the client which to re-send.
+      const count = chunkCount(t.s)
+      const missing: number[] = []
+      for (let i = 0; i < count; i += 16) {
+        const batch = Array.from({ length: Math.min(16, count - i) }, (_, j) => i + j)
+        const sizes = await Promise.all(batch.map((n) => uploadPartSize(t.u, n)))
+        sizes.forEach((sz, j) => { if (sz !== chunkLength(t.s, batch[j])) missing.push(batch[j]) })
+      }
+      if (missing.length) return wjson({ error: "Some parts of the file did not arrive.", missing: missing.slice(0, 500) }, 409)
+      // Joining a multi-GB file can take a while: stream a space every 10s so neither Bun's idle timeout nor a
+      // proxy closes the connection, then the JSON answer (leading whitespace is valid JSON). Status is 200 from
+      // the first byte, so a failure is reported in the body ({ error }) — clients read `ref`, not the status.
+      const enc = new TextEncoder()
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          const ping = setInterval(() => { try { controller.enqueue(enc.encode(" ")) } catch { /* closed */ } }, 10_000)
+          try {
+            let job = largeUploadAssembling.get(t.u)
+            if (!job) {
+              job = assembleUploadParts(t.u, count, finalKey, t.t).finally(() => largeUploadAssembling.delete(t.u))
+              largeUploadAssembling.set(t.u, job)
+            }
+            await job
+            controller.enqueue(enc.encode(JSON.stringify({ ref: makeRef(), size: t.s })))
+          } catch (e) {
+            controller.enqueue(enc.encode(JSON.stringify({ ...oops(e, "uploads/complete"), retryable: true })))
+          } finally {
+            clearInterval(ping)
+            try { controller.close() } catch { /* already closed */ }
+          }
+        },
+      })
+      return new Response(stream, { status: 200, headers: { "content-type": "application/json", ...WIDGET_CORS } })
+    } catch (e) { return wjson(oops(e, "uploads/complete"), 500) }
+  }
+
   if (req.method === "POST" && path === "/api/feedback") {
     // Idempotent-submission bookkeeping hoisted so the failure exits can clean up: objects this request uploaded, whether a ticket
     // resulted, and the claim we own. When a request ends WITHOUT a ticket we free the claim (an immediate retry must not wait for the
@@ -6229,6 +6350,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // stored descriptor + transcript_status pipeline downstream see it as a video, not octet-stream.
         attachPlan.push({ af, uploadType: (typeIsGeneric && videoMime) ? videoMime : (af.type || "application/octet-stream"), slot: slotFor(slotMap, "files", ai) })
       }
+      // Large files uploaded beforehand through /api/uploads/* arrive as signed refs (`file_refs`). Each ref is
+      // bound to the project it was started for and names an object that is already stored, so nothing is
+      // uploaded here and the object is NOT added to createdObjectKeys (a retried submit must still find it).
+      // They share the 5-file attachment limit; the byte caps above don't apply (the size was capped at start).
+      for (const r of parseFileRefs(form.get("file_refs"), String(form.get("project_id") || ""), Math.max(0, 5 - attachFiles.length))) {
+        const ct = isVideoAttachment(r.t, r.n) ? (r.t && r.t.startsWith("video/") ? r.t : (videoMimeFromName(r.n) || "video/mp4")) : r.t
+        const desc: { key: string; filename: string; contentType: string; size: number; transcript_status?: string } = { key: r.k, filename: r.n, contentType: ct, size: r.s }
+        // Transcription reads the whole file into memory and skips anything over its 20 MB cap anyway, so a large
+        // video is marked "skipped" up front (kickTranscripts also filters by size) instead of being downloaded.
+        if (/^video\//i.test(ct)) desc.transcript_status = r.s <= LARGE_INLINE_READ_MAX_BYTES ? "pending" : "skipped"
+        attachmentDescs.push(desc)
+      }
 
       // KLAVITYKLA-438 "Record me" (Phase 1): screen+camera+mic video recordings. Uploaded PRIVATE via the
       // same uploadAttachment byte-path #425 uses, then persisted as descriptors on the feedback row
@@ -6520,8 +6653,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               json(body, status, { ...WIDGET_CORS, "Server-Timing": pt.header(), "Access-Control-Expose-Headers": "Server-Timing", ...extra })
             // Transcript + enrichment pass for videos / recordings that were attached to an existing ticket after the fact (a repair, or a
             // repeat report merged into one) — the original submit flow only starts it for rows it inserted itself.
-            const kickTranscripts = (fid: string, atts: Array<{ key: string; filename: string; contentType: string }>, recs: Array<{ id: string; key: string; contentType: string }>) => {
-              const vids = atts.filter((a) => /^video\//i.test(a.contentType || ""))
+            const kickTranscripts = (fid: string, atts: Array<{ key: string; filename: string; contentType: string; size?: number }>, recs: Array<{ id: string; key: string; contentType: string }>) => {
+              // Never pull a huge (chunk-uploaded) video into memory for STT — see LARGE_INLINE_READ_MAX_BYTES.
+              const vids = atts.filter((a) => /^video\//i.test(a.contentType || "") && !(Number(a.size) > LARGE_INLINE_READ_MAX_BYTES))
               if (!vids.length && !recs.length) return
               void (async () => {
                 const jobs: Promise<any>[] = []
@@ -9575,7 +9709,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   // gated on !isReservedSlug, so a page/route is never shadowed; a non-existent key-shaped path 404s.
   const prettyTicketMatch =
     path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/t\/([A-Za-z0-9_-]{1,80})$/) ||
-    path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/([A-Za-z][A-Za-z0-9]{1,9}-\d+)$/)
+    // KD-1074: also <KEY>-SIM-<n> — a Sim Report's own number (separate sequence from tickets).
+    path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/([A-Za-z][A-Za-z0-9]{1,9}-(?:[Ss][Ii][Mm]-)?\d+)$/)
   if (req.method === "GET" && prettyTicketMatch && !isReservedSlug(prettyTicketMatch[1])) {
     if (!rlAllow("ticket:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
     const res = await resolveWorkspaceTicket(prettyTicketMatch[1], prettyTicketMatch[2]).catch(() => null)
@@ -10007,7 +10142,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     } catch (err: any) { return json(oops(err, "audit"), 500) }
   }
 
-  if (req.method === "GET" && path === "/app") return me ? file(PUB + "/index.html") : loginGate(path, url.search)
+  if (req.method === "GET" && path === "/app") {
+    if (!me) return loginGate(path, url.search)
+    // KD-3121: the Sims Studio is a Sims feature — a Snap-only project is bounced to the upgrade prompt, same as
+    // the Sims/AutoSims pages (snapLocked). Lookup failures fall through so the studio never breaks on a hiccup.
+    const studioProj = await resolveProject(me, url.searchParams.get("project")).catch(() => null)
+    const studioRow = studioProj ? await projectById(studioProj.id).catch(() => null) : null
+    const studioLock = studioRow ? snapLocked(studioRow) : null
+    if (studioLock) return new Response(null, { status: 302, headers: { location: studioLock.upgradeUrl } })
+    return file(PUB + "/index.html")
+  }
   // Sim Profile page — clicking a Sim row in the dashboard opens /sim/:id (read-only persona +
   // its triaged feedback + the calls that seeded it). The id is read client-side from the path.
   if (req.method === "GET" && /^\/sim\/[^/]+$/.test(path)) return me ? htmlPage(PUB + "/sim-profile.html") : loginGate(path, url.search)
@@ -10064,7 +10208,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "POST" && ciTriggerMatch) {
       const trailId = ciTriggerMatch[1]
       try {
-        const { runId } = await runWalkNow(ciProject, trailId)
+        const { runId } = await runWalkNow(ciProject, trailId, { trigger: "ci" })
         return json({ runId }, 202)
       } catch (e: any) {
         if (e instanceof WalkBusyError) return json({ error: "A walk is already running" }, 409)
@@ -10493,7 +10637,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
 
       try {
-        const { runId } = await runWalkNow(projectId, trailId)
+        const { runId } = await runWalkNow(projectId, trailId, { trigger: "api" })
         // Persist git + idempotency mapping best-effort. On an idempotency race (INSERT OR IGNORE)
         // re-read to converge on the winner so both retries report the same run_id.
         let finalRunId = runId
@@ -11982,9 +12126,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         ? json({ ...s, active: true, limitMs: AUTOSIM_DEADLINE_MS_DEFAULT })
         : json({ active: null })
     }
-    // GET /api/trails/author/stalled — KLA-152: list recent stalled sessions with a checkpoint or partial draft.
+    // GET /api/trails/author/stalled — KLA-152: list recent resumable sessions. R1: a session is listed only if it has a
+    // USABLE persisted checkpoint (the same rule as the resume gate, sweeps and runAuthorNow's verdict); a partial draft
+    // alone is not enough because Resume needs the checkpoint. stallReason is rewritten for display: the persisted
+    // reason keeps the technical detail (raw browser/DB errors) for diagnostics and server logs, the Resume banner never sees it.
     if (req.method === "GET" && path === "/api/trails/author/stalled") {
-      const sessions = await listStalledAuthorSessions(projectId)
+      const sessions = (await listStalledAuthorSessions(projectId)).map((s) => ({ ...s, stallReason: userFacingStallReason(s.stallReason, s) }))
       return json({ sessions })
     }
     // POST /api/trails/author/:sessionId/cancel — KLA-151: abort the in-flight author drive at the next step boundary.
@@ -12007,7 +12154,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const prior = await getAuthorSession(projectId, priorId)
         if (!prior) return json({ error: "Session not found" }, 404)
         if (prior.status !== "stalled") return json({ error: `Session is ${prior.status}, not stalled` }, 409)
-        if (!prior.checkpoint) return json({ error: "Session has no checkpoint to resume from" }, 409)
+        if (!isUsableCheckpoint(prior.checkpoint)) return json({ error: "Session has no usable checkpoint to resume from" }, 409)
         try {
           const { sessionId } = await runAuthorNow(projectId, {
             name: prior.name, objective: prior.objective, baseUrl: prior.baseUrl,
@@ -12017,6 +12164,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ sessionId }, 202)
         } catch (e) {
           if (e instanceof WalkBusyError) return json({ error: "An AutoSim is already running — try again shortly." }, 409)
+          // R2: an actual claim conflict (another attempt owns it, or its state changed since the pre-check) is a 409, not a server error.
+          if (e instanceof ResumeConflictError) return json({ error: e.message }, 409)
           return json(oops(e, "trails-author-resume"), 500)
         }
       }
@@ -12061,7 +12210,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
     if (req.method === "GET" && path.startsWith("/api/trails/author/")) {
       const s = await getAuthorSession(projectId, path.slice("/api/trails/author/".length))
-      return s ? json({ ...s, limitMs: AUTOSIM_DEADLINE_MS_DEFAULT }) : json({ error: "Not found" }, 404)
+      return s ? json({ ...s, stallReason: userFacingStallReason(s.stallReason, s), limitMs: AUTOSIM_DEADLINE_MS_DEFAULT }) : json({ error: "Not found" }, 404)
     }
 
     // GET /api/trails/:id/steps — return a draft trail's steps so the UI can show a review before Activate.
@@ -12714,7 +12863,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return {
             id: f.id, simName: p?.name ?? null, simSource: p?.simSource ?? null,
             // #745: pretty-permalink parts — per-project sequence + workspace slug + project key.
-            seqNum: f.seqNum ?? null, slug: aliasInfo.slug, ticketKey: aliasInfo.ticketKey,
+            seqNum: f.seqNum ?? null, simSeqNum: f.simSeqNum ?? null, slug: aliasInfo.slug, ticketKey: aliasInfo.ticketKey,
             // PX4 #411: surface the reporter's explicit composer Title when present + non-empty;
             // otherwise fall back to the historical observation-derived title (back-compat).
             title: (f.title && f.title.trim()) ? f.title : f.observation, priority: f.priority,
@@ -12759,7 +12908,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json(
           { email: me, projects, active: activeOut, members, contacts, sims, saying, simFeedback, tickets, activity, counts, insights, widgetStatus, hasTranscriptSim, hasSimReaction },
           200,
-          { "Set-Cookie": projectCookie(projectId, SECURE) },
+          // KD-3089: no-store — a Back/Forward page load otherwise reused a cached copy (no request), so this Set-Cookie
+          // never re-ran and the server-side project could disagree with the page on screen.
+          { "Set-Cookie": projectCookie(projectId, SECURE), "Cache-Control": "no-store" },
         )
       } catch (e: any) {
         return json(oops(e, "dashboard"), 500)
@@ -13966,6 +14117,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // projection so the standalone /t/:ref page renders reporter + page context without a second
           // fetch. Member-gated (fbRow already access-checked above) — never surfaced to non-members.
           reporterEmail: fbRow.contactEmail || fbRow.actorEmail || null,
+          // KD-3118: the host-supplied customer identity (sanitized to REPORTER_KEYS at ingest). It is already
+          // written into the exported Jira/connector body as "Customer details:"; the ticket detail shows the
+          // same block. Null on anonymous / older rows. Member-gated like reporterEmail above.
+          reporter: fbRow.reporter && typeof fbRow.reporter === "object" ? fbRow.reporter : null,
           pageUrl: fbRow.reportUrl || (fbRow.urlHost ? `https://${fbRow.urlHost}${fbRow.urlPath || ""}` : (fbRow.urlPath || null)),
           ref: String(fbRow.id).split("-")[0],
           sourceReferrer: fbRow.sourceReferrer,
@@ -14010,6 +14165,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           suggestedLabels: await getSuggestedLabels(fid, fbRow.projectId),
           // KLA-200: human-readable sequential number
           seqNum: fbRow.seqNum ?? null,
+          simSeqNum: fbRow.simSeqNum ?? null, // KD-1074: Sim Report number (<KEY>-SIM-<n>)
           // #745: workspace slug + project ticket_key so the client can build the pretty
           // /<slug>/<KEY>-<n> permalink (falls back to /t/<fb_id> when un-backfilled). Member-gated.
           ...(await projectAliasInfo(fbRow.projectId).catch(() => ({ slug: null, ticketKey: null, projectName: null }))),
@@ -14540,7 +14696,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
     }
     // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-    const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/people|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk(?:\/delete)?|\/bulk-delete|\/rev|\/deleted(?:\/[^/]+\/restore)?)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
+    const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/people|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk(?:\/delete)?|\/bulk-delete|\/rev|\/deleted(?:\/[^/]+\/restore)?)?|\/recurring|\/dashboard-counts|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
     if (projMatch) {
       const pid = projMatch[1]
       const sub = projMatch[2] || ""
@@ -15703,7 +15859,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // GET /api/projects/:id/triage — un-triaged feedback queue (any project member)
       if (req.method === "GET" && sub === "/triage") {
         const triage = await listTriageFeedback(proj.id)
-        return json({ triage })
+        // KD-1074: attach the project key + workspace slug so Sim Reports render as <KEY>-SIM-<n> and link to
+        // /<slug>/<KEY>-SIM-<n> (one lookup per request — every item belongs to this project).
+        const alias = await projectAliasInfo(proj.id).catch(() => ({ slug: null, ticketKey: null, projectName: null }))
+        return json({ triage: triage.map((t: any) => ({ ...t, slug: t.slug ?? alias.slug, ticketKey: t.ticketKey ?? alias.ticketKey })) })
       }
 
       // ── KLA-255: needsConfirm / pending sim-match queue ───────────────────────────────────────
@@ -15800,6 +15959,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const row: any = r.rows[0] || {}
         const rev = String(row.c ?? 0) + ":" + String(row.cr ?? 0) + ":" + String(row.u ?? 0)
         return json({ rev })
+      }
+
+      // KD-3090: GET /api/projects/:id/dashboard-counts — just the four Overview metric numbers (Feedback received,
+      // Sims, Teammates, Tickets filed), computed exactly as /api/dashboard computes them. The Overview polls this
+      // cheaply so the cards stay live even while the full dashboard poll is paused (input focused, modal open…)
+      // and right after an in-tab change, instead of waiting for (or needing) a full reload.
+      if (req.method === "GET" && sub === "/dashboard-counts") {
+        const [c, personas, members] = await Promise.all([dashboardCounts(proj.id), listPersonas(proj.id), membersOfProject(proj.id)])
+        return json({ feedback: c.feedback, tickets: c.tickets, sims: personas.length, team: members.length })
       }
 
       // GET /api/projects/:id/tickets — paginated, filterable ticket list (any project member, KLA-169)
@@ -16883,6 +17051,8 @@ if (db && process.env.NODE_ENV !== "test") {
   // AI touch; this batch walk re-grants idle wallets on a month rollover. Once after boot, then daily.
   setTimeout(() => { runMonthlyGrantReset().catch((e) => console.warn("credits grant-reset failed:", e?.message || e)) }, 90_000)
   setInterval(() => { runMonthlyGrantReset().catch((e) => console.warn("credits grant-reset failed:", e?.message || e)) }, 24 * 60 * 60 * 1000)
+  // Large-file uploads: delete chunks of uploads abandoned for more than 2 days (the token itself lives 24h).
+  setInterval(() => { sweepStaleUploadParts(2 * 24 * 60 * 60 * 1000).then((n) => { if (n) console.log(`[large-upload] swept ${n} stale chunk(s)`) }).catch((e) => console.warn("large-upload sweep failed:", e?.message || e)) }, 6 * 60 * 60 * 1000)
   // KLA-88: trail cron scheduler — ticks every minute, fires scheduled walks.
   startTrailScheduler()
   // KLA-55: crash reaper — sweeps stale-heartbeat walks/sessions every 60s.

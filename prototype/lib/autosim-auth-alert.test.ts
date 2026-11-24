@@ -180,7 +180,9 @@ describe("needs_auth resumability", () => {
     const id = await createAuthorSession(proj, { name: "Explore", objective: "poke around", baseUrl: "https://x.example.com" })
     // Simulate the driver hitting an auth gate: persist a checkpoint, then suspend as needs_auth.
     await updateAuthorSession(proj, id, {
-      checkpoint: { traj: [{ op: "navigate" }] as any, history: ["visited login"], costUsd: 0.02, lastUrl: "https://x.example.com/login" } as any,
+      // R1: a real legacy-format (KLA-57) checkpoint - all six required fields, steps keyed by `action`. The old fixture
+      // ({ op } step, no stepIdx/llmCalls) was not a checkpoint Resume could use, and the shared rule rightly rejects it.
+      checkpoint: { traj: [{ action: "navigate", actionValue: "https://x.example.com/login", url: "https://x.example.com/login", domHash: "h" }], history: ["visited login"], stepIdx: 0, llmCalls: 1, costUsd: 0.02, lastUrl: "https://x.example.com/login" } as any,
       status: "needs_auth",
       stallReason: "stopped at auth gate",
     })

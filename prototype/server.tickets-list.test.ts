@@ -77,6 +77,38 @@ test("listTicketsPaginated: server-side search matches title, observation, and d
   expect((await listTicketsPaginated(project, { search: "safari" })).tickets.map(t => t.id)).toEqual([notes])
 })
 
+// KD-3139: "_" and "%" are matched literally — the escape used to insert TWO backslashes, so any search containing them
+// (e.g. "user_id", "50%") found nothing in the List while the Board (client-side) still matched.
+test("listTicketsPaginated: search treats _ and % as literal characters", async () => {
+  const project = `proj_tkl_search_lit_${Date.now()}`
+  const underscore = await insertFeedback({ projectId: project, observation: "Crash when user_id is empty" })
+  const percent = await insertFeedback({ projectId: project, observation: "Progress bar stuck at 50% forever" })
+  const plain = await insertFeedback({ projectId: project, observation: "user id field label typo, 50 items" })
+  await Promise.all([underscore, percent, plain].map(id => updateFeedbackMeta(project, id, { status: "open" })))
+
+  expect((await listTicketsPaginated(project, { search: "user_id" })).tickets.map(t => t.id)).toEqual([underscore])
+  expect((await listTicketsPaginated(project, { search: "50%" })).tickets.map(t => t.id)).toEqual([percent])
+  expect((await listTicketsPaginated(project, { search: "_" })).tickets.map(t => t.id)).toEqual([underscore])
+})
+
+// KD-3095: typing a ticket ID into search must find that ticket by its number, not only by text.
+test("listTicketsPaginated: search by ticket ID matches seq_num ('109', '#109', 'KD-109')", async () => {
+  const project = `proj_tkl_search_id_${Date.now()}`
+  const target = await insertFeedback({ projectId: project, observation: "Login button misaligned" })
+  const near = await insertFeedback({ projectId: project, observation: "Footer link broken" })
+  await Promise.all([target, near].map(id => updateFeedbackMeta(project, id, { status: "open" })))
+  await db!.execute({ sql: "UPDATE feedback SET seq_num=? WHERE id=?", args: [109, target] })
+  await db!.execute({ sql: "UPDATE feedback SET seq_num=? WHERE id=?", args: [10, near] })
+
+  for (const q of ["109", "#109", "KD-109", "kd-109"]) {
+    expect((await listTicketsPaginated(project, { search: q })).tickets.map(t => t.id)).toEqual([target])
+  }
+  // Exact number match: "10" finds ticket 10, not 109.
+  expect((await listTicketsPaginated(project, { search: "#10" })).tickets.map(t => t.id)).toEqual([near])
+  // Plain text search is unaffected.
+  expect((await listTicketsPaginated(project, { search: "login" })).tickets.map(t => t.id)).toEqual([target])
+})
+
 test("listTicketsPaginated: search remains tenant-scoped and paginated", async () => {
   const project = `proj_tkl_search_page_${Date.now()}`
   const otherProject = `proj_tkl_search_other_${Date.now()}`
