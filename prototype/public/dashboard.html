@@ -9873,6 +9873,11 @@
       transition: border-color .15s, color .15s, transform var(--mi-dur) var(--mi-ease), box-shadow var(--mi-dur) var(--mi-ease)
     }
 
+    /* KD-3144: review "Accept" on an untriaged report is the primary action of the header */
+    .tkt-panel-btn.tkt-review-accept { background: var(--indigo); border-color: var(--indigo); color: #fff }
+    .tkt-panel-btn.tkt-review-accept:hover { color: #fff; filter: brightness(1.06) }
+    .tkt-panel-btn:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none }
+
     .tkt-panel-btn:hover {
       border-color: var(--indigo);
       color: var(--paper);
@@ -29947,6 +29952,36 @@
               if (single && !single.classList.contains("hide") && single.children.length) closeSingleTicket()
             })
           }
+          // KD-3144: a report still waiting for review (status "new" — e.g. a Sim Report like QPQ-SIM-58) gets the same
+          // Accept / Dismiss as the Sim Reports list, in BOTH the preview panel and the full ticket page.
+          function tktNeedsReview(t) { return !!t && String(t.status || "").toLowerCase() === "new" }
+          function tktReviewActionsHtml(t) {
+            if (!tktNeedsReview(t)) return ""
+            return `<button class="tkt-panel-btn tkt-review-accept" data-act="accept" type="button" title="Accept as a bug: moves it to Open in Tickets">${kicon('check', { size: 13 })} Accept</button>`
+              + `<button class="tkt-panel-btn" data-act="dismiss" type="button" title="Dismiss this report (you can undo)">${kicon('x', { size: 13 })} Dismiss</button>`
+          }
+          function wireTktReviewActions(ph, t, id) {
+            const acc = ph.querySelector('[data-act="accept"]'), dis = ph.querySelector('[data-act="dismiss"]')
+            const setStatus = st => { const x = (state.tickets || []).find(r => String(r.id) === String(id)); if (x) x.status = st }
+            if (acc) acc.addEventListener("click", async () => {
+              if (dis) dis.disabled = true
+              const res = await tgAccept([String(id)], null, acc)
+              if (dis) dis.disabled = false
+              if (!res || !res.ok) return   // tgAccept already flashed "Couldn't accept — retry."
+              setStatus("open")
+              // Still viewing it? Re-render so the status pill reads Open and the review buttons go away.
+              const single = $("ticketSingle")
+              if (single && !single.classList.contains("hide") && single.getAttribute("data-tkt-id") === String(id)) tktRenderReusing(() => _renderSingleTicket(id))
+            })
+            if (dis) dis.addEventListener("click", async () => {
+              if (acc) acc.disabled = true
+              const res = await tgDismiss([String(id)], dis)   // shows the Undo toast
+              if (acc) acc.disabled = false
+              if (!res || !res.ok) return
+              setStatus("dismissed")
+              closeSingleTicket()   // a dismissed report leaves the review queue → back to the list
+            })
+          }
           function _renderSingleTicket(id) {
             _tktSeedFromCaches(id)   // prev/next can step to a ticket that is only in the board / Sim Reports cache
             const t = (state.tickets || []).find(x => String(x.id) === String(id))
@@ -30000,12 +30035,14 @@
               ph.innerHTML = `<button class="tkt-panel-btn" data-act="close" type="button" aria-label="Close ticket detail" title="Close (Esc)">${kicon('x', { size: 13 })} Close</button>`
                 + `<span class="tph-sp"></span>`
                 + `<button class="tkt-panel-btn" data-act="expand" type="button" aria-label="Expand to full, shareable page" title="Open as a full, shareable page">${kicon('app-window', { size: 13 })} Full page</button>`
+                + tktReviewActionsHtml(t)
                 + `<button class="tkt-panel-btn" data-act="delete" type="button" aria-label="Delete ticket" title="Delete ticket (restorable for 30 days)" style="color:var(--red,#e05252)">${kicon('trash', { size: 13 })} Delete</button>`
               ph.querySelector('[data-act="close"]').addEventListener("click", closeSingleTicket)
               // ⤢ expand navigates to the dedicated /:project/tickets/:key (hash #tickets/<id>) route.
               ph.querySelector('[data-act="expand"]').addEventListener("click", () => openSingleTicket(id, "full", _tktOriginContext))
               const pDelBtn = ph.querySelector('[data-act="delete"]')
               if (pDelBtn) pDelBtn.addEventListener("click", () => doDeleteSingleTicket())
+              wireTktReviewActions(ph, t, id)
               single.appendChild(ph)
               single.__focusTarget = ph.querySelector('[data-act="close"]')
             } else {
@@ -30036,6 +30073,7 @@
                 + `<span class="tkt-page-key">${esc(key)}</span>`
                 + statusPillHtml(t.status)
                 + `<span class="tph-sp"></span>`
+                + tktReviewActionsHtml(t)
                 + `<button class="tkt-panel-btn" data-act="copy" type="button" aria-label="Copy link to this ticket">${kicon('link', { size: 13 })} Copy link</button>`
                 + `<button class="tkt-panel-btn" data-act="delete" type="button" aria-label="Delete ticket" title="Delete ticket (restorable for 30 days)" style="color:var(--red,#e05252)">${kicon('trash', { size: 13 })} Delete</button>`
                 + `<button class="tkt-icon-btn" data-act="prev" type="button" aria-label="Previous ticket"${hasPrev ? "" : " disabled"}>${kicon('chevron-left', { size: 15 })}</button>`
@@ -30058,6 +30096,7 @@
               })
               const pgDelBtn = ph.querySelector('[data-act="delete"]')
               if (pgDelBtn) pgDelBtn.addEventListener("click", () => doDeleteSingleTicket())
+              wireTktReviewActions(ph, t, id)
               // Keep the origin (Tickets / Sim Reports) while stepping, so the next ticket's prev/next use the same list.
               if (hasPrev) ph.querySelector('[data-act="prev"]').addEventListener("click", () => openSingleTicket(ids[cur - 1], "full", _tktOriginContext))
               if (hasNext) ph.querySelector('[data-act="next"]').addEventListener("click", () => openSingleTicket(ids[cur + 1], "full", _tktOriginContext))
