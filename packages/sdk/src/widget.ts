@@ -1031,7 +1031,7 @@ async function mount() {
     return run
   }
   // Persist one composer-captured shot (data URL) to the active session, tagged with the CURRENT page.
-  async function persistEvShot(sessionId: string, dataUrl: string): Promise<void> {
+  async function persistEvShot(sessionId: string, dataUrl: string, numberMask?: unknown): Promise<void> {
     try {
       const blob = dataUrlToBlob(dataUrl)
       const dims = await measureImage(dataUrl)
@@ -1039,6 +1039,8 @@ async function mount() {
         id: makeShotId(), pageUrl: location.href, pagePath: location.pathname, label: "",
         blob, bytes: blob.size, w: dims.w, h: dims.h, ts: Date.now(),
         dataUrl,
+        // KD-3088: keep where the numbers were so Mask numbers can mask this shot after Minimize → Resume.
+        ...(numberMask ? { numberMask } : {}),
       }
       const res = await addShot(sessionId, shot)
       evSession = res.session
@@ -1995,7 +1997,11 @@ async function mount() {
       onMinimize: ev ? () => minimizeToDock() : undefined,
       // KLA-412: persist a shot captured INSIDE the composer (Full Page / Screen / Region / Upload / paste
       // / auto-capture) to the session, tagged with the current page. Serialized to avoid lost updates.
-      onShotAdded: ev ? (dataUrl: string) => { void queueEvWrite(() => persistEvShot(ev.id, dataUrl)) } : undefined,
+      onShotAdded: ev ? (dataUrl: string, _quality?: unknown, numberMask?: unknown) => { void queueEvWrite(() => persistEvShot(ev.id, dataUrl, numberMask)) } : undefined,
+      // KD-3088: remember the "Mask numbers" choice so Resume re-opens with it (and re-masks the saved shots).
+      onMaskNumbersChange: ev ? (on: boolean) => {
+        void queueEvWrite(async () => { evSession = await updateEvidenceFields(ev.id, { maskNumbers: on }) ?? evSession })
+      } : undefined,
       // KD-166: same idea, for the typed description (see onDescriptionChange's doc comment in modal.ts).
       onDescriptionChange: ev ? (text: string) => { void queueEvWrite(() => persistEvDesc(ev.id, text)) } : undefined,
       onTitleChange: ev ? (text: string) => { void queueEvWrite(() => persistEvTitle(ev.id, text)) } : undefined,
@@ -2056,7 +2062,8 @@ async function mount() {
       // Only pass the success screen when it's the interactive kind; otherwise the pill owns the
       // post-submit confirmation and no in-modal success card should render.
       success: useInteractiveSuccess ? { copy: successCfg, onLead: postLead } : undefined,
-    }, modalConfig)
+    // KD-3088: a resumed report re-opens with the reporter's own "Mask numbers" choice, not the project default.
+    }, ev && typeof ev.maskNumbers === "boolean" ? { ...(modalConfig || {}), maskNumbers: ev.maskNumbers } : modalConfig)
     composer = ctrl // track the open composer so a second open is ignored until this one closes
     if (opts?.initialDescription) prefillReportDescription(ctrl, opts.initialDescription)
     if (opts?.initialTitle) prefillReportTitle(ctrl, opts.initialTitle)
@@ -2069,7 +2076,8 @@ async function mount() {
           try {
             // KLA-772: pass the shot's saved overlay back so the annotator repaints the reporter's shapes.
             const dataUrl = shot.dataUrl || await blobToDataUrl(shot.blob, shot.dataUrl)
-            ctrl.addScreenshot(dataUrl, undefined, { pageUrl: shot.pageUrl, pagePath: shot.pagePath, label: shot.label }, undefined, undefined, shot.annotations)
+            // KD-3088: and its number positions, so Mask numbers masks the restored shot too.
+            ctrl.addScreenshot(dataUrl, undefined, { pageUrl: shot.pageUrl, pagePath: shot.pagePath, label: shot.label }, undefined, undefined, shot.annotations, shot.numberMask as any)
           } catch { failedRestores++ /* KLA-763: unreadable/corrupt persisted blob or read timeout */ }
         }
         // KLA-763 (codex round-2): don't SILENTLY drop persisted evidence on resume — a shot whose blob
