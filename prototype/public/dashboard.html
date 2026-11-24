@@ -25558,21 +25558,26 @@
             const pid = curProjId()
             const sim = (state.sims || []).find(function (x) { return x.id === simId })
             if (!pid || !sim) return
-            if (!makeActive) {
-              // KD-2880: name exactly what is affected — the Sim, in quotes (a bare "Deactivate Test 2?" reads like a
-              // project), and the project it belongs to.
-              const simName = String(sim.name || "").trim() || "this Sim"
-              const projName = String((state && state.active && state.active.name) || "").trim()
-              const ok = await klavConfirm({
-                title: "Deactivate Sim “" + simName + "”?",
-                message: "The Sim “" + simName + "” will stop running for everyone on " +
-                  (projName ? "the project “" + projName + "”" : "this project") +
-                  " and won't appear in the widget or extension. Its history stays, and you can activate it again any time.",
-                confirmText: "Deactivate",
-                danger: false,
-              })
-              if (!ok) return
-            }
+            // KD-2880: name exactly what is affected — the Sim, in quotes (a bare "Deactivate Test 2?" reads like a
+            // project), and the project it belongs to.
+            // KD-3143: Activate confirms too (it used to flip silently) — both directions change the Sim for the whole project.
+            const simName = String(sim.name || "").trim() || "this Sim"
+            const projName = String((state && state.active && state.active.name) || "").trim()
+            const projLabel = projName ? "the project “" + projName + "”" : "this project"
+            const ok = await klavConfirm(makeActive ? {
+              title: "Activate Sim “" + simName + "”?",
+              message: "The Sim “" + simName + "” will be available to everyone on " + projLabel +
+                " and will appear in the widget and extension. You can deactivate it again any time.",
+              confirmText: "Activate",
+              danger: false,
+            } : {
+              title: "Deactivate Sim “" + simName + "”?",
+              message: "The Sim “" + simName + "” will stop running for everyone on " + projLabel +
+                " and won't appear in the widget or extension. Its history stays, and you can activate it again any time.",
+              confirmText: "Deactivate",
+              danger: false,
+            })
+            if (!ok) return
             if (btn) btn.disabled = true
             const revertToggle = applySimActiveOptimistic(sim, makeActive)   // KD-2861: card flips now; a failure puts it back
             window.__klavMutating = (window.__klavMutating || 0) + 1   // keep the liveness poll out of the way while it's in flight
