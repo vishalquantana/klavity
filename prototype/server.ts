@@ -143,6 +143,7 @@ import { buildOpenApiSpec } from "./lib/openapi"
 import { buildAuthoredRunStatus } from "./lib/v1-authored"
 import { listRecentWalks } from "./lib/trails"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
+import { ticketKeyLabel } from "./lib/ticket-key-label"
 import { startCrashReaper } from "./lib/trails-reaper"
 import { ResumeConflictError, runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuthorSessions, listNeedsAuthSessionsForAutoResume, AUTOSIM_DEADLINE_MS_DEFAULT } from "./lib/trails-author"
 import { isUsableCheckpoint, userFacingStallReason } from "./lib/author-checkpoint"
@@ -12395,7 +12396,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const stripped = pagePath.length > 1 ? pagePath.replace(/\/+$/, "") : pagePath
         const np = stripped === "" ? "/" : stripped
         const candidates = [pagePath, np, np === "/" ? "/" : np + "/"]
-        const rows = await feedbackByPageUrl(projectId, host, candidates)
+        const [rows, alias] = await Promise.all([
+          feedbackByPageUrl(projectId, host, candidates),
+          projectAliasInfo(projectId).catch(() => ({ slug: null, ticketKey: null, projectName: null })),
+        ])
         const counts = { open: 0, inProgress: 0, done: 0 }
         const bugs = rows.map((r) => {
           const s = r.status.toLowerCase()
@@ -12415,7 +12419,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
           const out: any = {
             id: r.id,
-            ref: r.id.split("-")[0], // human-quotable short ref "fb_1a2b3c4d" (also the /r/:ref key)
+            ref: r.id.split("-")[0], // internal short ref "fb_1a2b3c4d" (the /r/:ref key) — NOT shown to users
+            // KD-3148: the ticket ID people know ("KD-232", or "KD-SIM-12" for an untriaged Sim Report).
+            key: ticketKeyLabel({ ticketKey: alias.ticketKey, seqNum: r.seqNum, simSeqNum: r.simSeqNum, status: r.status }),
             title: r.title || r.observation || null, // prefer the explicit Title, else the observation
             status: r.status,
             severity: r.priority || r.severity || null, // effective priority wins, else stored severity
