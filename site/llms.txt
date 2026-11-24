@@ -3,6 +3,7 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
+- [AI QA for Landing Pages: What to Test Before Launch](https://klavity.in/blog/ai-qa-for-landing-pages) — AI QA for landing pages tests the whole conversion path — form, success state and every CTA — on each deploy, before paid traffic finds the break.
 - [Vibe Coded App Error Handling: Fix Blank Screen Bugs](https://klavity.in/blog/vibe-coded-app-error-handling) — Vibe coded app error handling usually fails silently: no loading state, no empty state, no error message. Here's how to find and fix every gap.
 - [AI Localization Testing: Catch Multilingual UI Bugs](https://klavity.in/blog/ai-localization-testing) — AI localization testing runs your flows in every language you ship, catching text overflow, broken RTL layouts and untranslated strings before clients do.
 - [Google AI Studio App Testing: What to Check Before You Ship](https://klavity.in/blog/google-ai-studio-app-testing) — Google AI Studio app testing means verifying the deployed app, not the preview: exposed API keys, missing model failure paths, state a refresh erases.

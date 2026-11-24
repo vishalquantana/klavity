@@ -1132,5 +1132,12 @@
     "excerpt": "Vibe coded app error handling usually fails silently: no loading state, no empty state, no error message. Here's how to find and fix every gap.",
     "category": "Guides",
     "date": "2026-11-23"
+  },
+  {
+    "slug": "ai-qa-for-landing-pages",
+    "title": "AI QA for Landing Pages: What to Test Before Launch",
+    "excerpt": "AI QA for landing pages tests the whole conversion path — form, success state and every CTA — on each deploy, before paid traffic finds the break.",
+    "category": "Guides",
+    "date": "2026-11-24"
   }
 ]
