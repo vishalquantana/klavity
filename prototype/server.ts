@@ -14,7 +14,7 @@ import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
 import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, setPersonaActive, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, notifyAssigneeOfTicketUpdate, listNotifications, countUnreadNotifications, markNotificationsRead, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, upsertProjectContact, listProjectContacts, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, appendObservationIfUnchanged, accountRole, accountMembersRaw, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
-import { countFoundingAccounts, liveFeedbackId, deleteTicketsBulk, invalidateDashboardCache } from "./lib/db"
+import { countFoundingAccounts, liveFeedbackId, deleteTicketsBulk, invalidateDashboardCache, notifyTicketsDeleted } from "./lib/db"
 import { listDeletedTickets, restoreDeletedTicket, RETENTION_DAYS as DELETED_TICKETS_RETENTION_DAYS } from "./lib/deleted-tickets"
 import { projectAccessAndRow } from "./lib/db" // KLA-833: access + project row in one DB round-trip (hot /api/projects/:id/* block)
 import { setFeedbackExtraScreenshots } from "./lib/db"
@@ -15974,6 +15974,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               actorEmail: me,
               meta: { count: result.deleted, ticketIds: result.ticketIds },
             }).catch((e: any) => console.warn("bulk delete activity skipped:", e?.message || e))
+            // KD-3134: tell each deleted ticket's assignee + reporter (top-bar bell). The single-ticket Delete
+            // button uses this same endpoint. Fire-and-forget.
+            void notifyTicketsDeleted(proj.id, result.tickets, me).catch((e: any) => console.warn("delete notification skipped:", e?.message || e))
           }
           return json({ ok: true, deleted: result.deleted, ticketIds: result.ticketIds })
         }
@@ -16037,8 +16040,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
         let labelToAdd: string | null = null
         let labelToRemove: string | null = null
+        let labelNames = new Map<string, string>()
         if (hasAddLabel || hasRemoveLabel) {
           const projectLabels = await listLabels(proj.id)
+          labelNames = new Map(projectLabels.map(l => [l.id, l.name]))
           const labelIds = new Set(projectLabels.map(l => l.id))
           if (hasAddLabel) {
             if (!labelIds.has(String(body.addLabelId))) return json({ error: "addLabelId not found in this project." }, 404)
@@ -16140,12 +16145,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
             autoCopyOnTriageAccept(tid, proj.id, row.status, meta.status, hasPriority ? meta.priority : row.priority, me)
           }
+          // KD-3134: bulk label changes notify the assignee like the single-ticket label routes do — but only
+          // for tickets whose labels actually changed (no notification when the label was already on/off).
+          const notifyLabel = (type: string, labelId: string) => void notifyAssigneeOfTicketUpdate({
+            projectId: proj.id, type, actorEmail: me, feedbackId: tid, meta: { label: labelNames.get(labelId) ?? null },
+          }).catch((e: any) => console.warn("bulk label notification skipped:", e?.message || e))
           if (labelToAdd) {
-            try { await attachLabel(labelToAdd, tid) }
+            try { if (await attachLabel(labelToAdd, tid)) notifyLabel("ticket_label_added", labelToAdd) }
             catch (e: any) { failures.push({ ticketId: tid, operation: "addLabel", error: String(e?.message || e) }) }
           }
           if (labelToRemove) {
-            try { await detachLabel(labelToRemove, tid) }
+            try { if (await detachLabel(labelToRemove, tid)) notifyLabel("ticket_label_removed", labelToRemove) }
             catch (e: any) { failures.push({ ticketId: tid, operation: "removeLabel", error: String(e?.message || e) }) }
           }
           updated++
