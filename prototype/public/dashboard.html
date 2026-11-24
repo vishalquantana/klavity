@@ -36571,7 +36571,8 @@
               row.innerHTML =
                 thumb +
                 '<div class="pb-main">' +
-                '<div class="pb-title">' + esc(b.title || "Untitled report") + ' <span class="tkt-seq">' + esc(b.ref || "") + "</span></div>" +
+                // KD-3148: show the ticket ID ("KD-232"), never the internal "fb_…" ref.
+                '<div class="pb-title">' + esc(b.title || "Untitled report") + (b.key ? ' <span class="tkt-seq">' + esc(b.key) + "</span>" : "") + "</div>" +
                 '<div class="tl-meta">' + statusPillHtml(b.status) + (sev ? '<span class="chip sev-' + esc(sev) + '">' + esc(sev) + "</span>" : "") + "<span>" + meta + "</span></div>" +
                 "</div>" +
                 '<div class="pb-actions">' +

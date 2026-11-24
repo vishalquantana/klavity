@@ -304,3 +304,17 @@ test("qa-close sets Done + attempts the tracker transition + records who closed 
   expect(act.rows.length).toBe(1)
   expect(String((act.rows[0] as any).actor_email)).toBe(MEMBER_EMAIL)
 })
+
+// KD-3148: the Reports page shows the ticket ID people know ("KD-232"), never the internal "fb_…" ref.
+test("page-bugs sends the human ticket key, never the internal fb_ ref", async () => {
+  await rawExec(`UPDATE feedback SET seq_num=? WHERE id=?`, [232, FB_OPEN])
+  let keyed = false
+  try { await rawExec(`UPDATE projects SET ticket_key=? WHERE id=?`, ["KD", PROJECT_ID]); keyed = true } catch { /* older test schema: no ticket_key column */ }
+  const r = await api("GET", pageUrl(`https://${HOST}/dashboard`), MEMBER_SID)
+  expect(r.status).toBe(200)
+  const body = await r.json()
+  const open = body.bugs.find((b: any) => b.id === FB_OPEN)
+  expect(open.key).toBe(keyed ? "KD-232" : "#232")
+  expect(open.key).not.toMatch(/^fb_/)
+  for (const b of body.bugs) expect(String(b.key ?? "")).not.toMatch(/^fb_/)   // never the internal ref
+})
