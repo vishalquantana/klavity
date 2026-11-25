@@ -3499,6 +3499,11 @@ export function buildModal(
   }
 
   let _stopVoice: (() => void) | null = null
+  // KD-3156: Enhance with AI must end dictation first. _settleVoice stops a live session, waits (bounded) for its
+  // last words to land in the description, then DETACHES it so no late result can overwrite the text afterwards.
+  // _voiceLock disables the Voice button while Enhance runs. Both stay null when there is no Voice button.
+  let _settleVoice: ((maxMs?: number) => Promise<void>) | null = null
+  let _voiceLock: ((on: boolean) => void) | null = null
 
   // opts.immediate — tear the host down synchronously (no genie-out animation) so the backdrop dim is
   // gone AT ONCE; used by the non-blocking background-upload submit so the page is never left dimmed
@@ -4051,12 +4056,17 @@ export function buildModal(
 
     const runEnhance = async () => {
       if (busy) return
-      const text = desc.value.trim()
-      originalText = desc.value   // snapshot the restore point (current field text) before THIS enhance
       const seq = ++enhanceSeq
       if (enhanceBtn) enhanceBtn.disabled = true
       if (spinEl) spinEl.hidden = false
+      _voiceLock?.(true)   // KD-3156: no new dictation while Enhance runs
       try {
+        // KD-3156: stop a live dictation and let its last words land BEFORE reading the text, so the draft is
+        // built from everything that was said and the recorder can't keep writing over the description.
+        if (_settleVoice) await _settleVoice()
+        if (seq !== enhanceSeq) return
+        const text = desc.value.trim()
+        originalText = desc.value   // snapshot the restore point (current field text) before THIS enhance
         const picked = pickedTarget ? { selector: pickedTarget.selector, text: pickedTarget.text } : null
         const targetIdx = activeIndex >= 0 && activeIndex < screenshots.length ? activeIndex : 0
         const ann = annotationsByIndex[targetIdx] ?? (targetIdx === 0 ? annotationsByIndex[0] : null)
@@ -4089,7 +4099,7 @@ export function buildModal(
         refreshSubmit()
       } catch { /* best-effort — a failure never disturbs the composer */ }
       finally {
-        if (seq === enhanceSeq) { if (enhanceBtn) enhanceBtn.disabled = false; if (spinEl) spinEl.hidden = true }
+        if (seq === enhanceSeq) { if (enhanceBtn) enhanceBtn.disabled = false; if (spinEl) spinEl.hidden = true; _voiceLock?.(false) }
       }
     }
     enhanceBtn?.addEventListener('click', () => { void runEnhance() })
@@ -4309,6 +4319,12 @@ export function buildModal(
     // transient preview past it (a textarea can't style substrings, so the live partial is a plain preview
     // that is replaced on each interim and dropped if it never finalizes).
     let streamBase = ''
+    // KD-3156: once Enhance (or anything else) takes over the description, the finished dictation session is
+    // DETACHED — a late final/interim/stop from it must never write its own copy of the text back over the field.
+    // A new Voice click starts a fresh, attached session. settleWaiters resolve when the session has stopped.
+    let voiceDetached = false
+    const settleWaiters: Array<() => void> = []
+    const notifyVoiceStopped = () => { settleWaiters.splice(0).forEach((f) => { try { f() } catch { /* no-op */ } }) }
 
     const startRing = () => {
       startTime = Date.now()
@@ -4373,6 +4389,7 @@ export function buildModal(
     const wire = (engine: DictationEngine) => {
       let lastInterim = ''
       engine.onTranscript = (text) => {
+        if (voiceDetached) return   // KD-3156
         lastInterim = ''
         streamBase = joinSpeechSegments(streamBase, text)
         desc.value = streamBase
@@ -4381,6 +4398,7 @@ export function buildModal(
         refreshSubmit()
       }
       engine.onInterim = (text) => {
+        if (voiceDetached) return   // KD-3156
         lastInterim = text || ''
         const sep = streamBase.length > 0 && !/\s$/.test(streamBase) ? ' ' : ''
         desc.value = streamBase + (text ? sep + text : '')
@@ -4399,21 +4417,24 @@ export function buildModal(
         setVoiceStatus('err', message, 4000)
       }
       engine.onStop = () => {
-        if (lastInterim) {
-          streamBase = joinSpeechSegments(streamBase, lastInterim)
-          lastInterim = ''
+        if (!voiceDetached) {   // KD-3156: a detached session only resets its UI, never the description
+          if (lastInterim) {
+            streamBase = joinSpeechSegments(streamBase, lastInterim)
+            lastInterim = ''
+          }
+          if (streamBase) {
+            streamBase = formatSpeechFinal(streamBase)
+            desc.value = streamBase
+          }
+          try { desc.scrollTop = desc.scrollHeight } catch {}
+          try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         }
-        if (streamBase) {
-          streamBase = formatSpeechFinal(streamBase)
-          desc.value = streamBase
-        }
-        try { desc.scrollTop = desc.scrollHeight } catch {}
-        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         voiceRecording = false
         setVoiceBtnMode(false)
         stopRing()
         clearInfoStatus()
         refreshSubmit()
+        notifyVoiceStopped()
       }
     }
 
@@ -4452,6 +4473,7 @@ export function buildModal(
       // (slow/dropped final), we still commit the last spoken words instead of discarding them on onStop.
       let lastInterim = ''
       s.onTranscript = (text) => {
+        if (voiceDetached) return   // KD-3156
         lastInterim = ''
         streamBase = joinSpeechSegments(streamBase, text)
         desc.value = streamBase
@@ -4460,6 +4482,7 @@ export function buildModal(
         refreshSubmit()
       }
       s.onInterim = (text) => {
+        if (voiceDetached) return   // KD-3156
         lastInterim = text || ''
         desc.value = streamBase + sep() + text
         try { desc.scrollTop = desc.scrollHeight } catch {}
@@ -4471,21 +4494,26 @@ export function buildModal(
       s.onStop = () => {
         // Commit a still-uncommitted interim (no final arrived) so short utterances aren't lost; else the
         // final already folded into streamBase and lastInterim is ''.
-        if (lastInterim) {
-          streamBase = joinSpeechSegments(streamBase, lastInterim)
-          lastInterim = ''
+        if (!voiceDetached) {   // KD-3156: a detached session only resets its UI, never the description
+          if (lastInterim) {
+            streamBase = joinSpeechSegments(streamBase, lastInterim)
+            lastInterim = ''
+          }
+          if (streamBase) {
+            streamBase = formatSpeechFinal(streamBase)
+          }
+          desc.value = streamBase
+          try { desc.scrollTop = desc.scrollHeight } catch {}
+          try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         }
-        if (streamBase) {
-          streamBase = formatSpeechFinal(streamBase)
-        }
-        desc.value = streamBase
-        try { desc.scrollTop = desc.scrollHeight } catch {}
-        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         voiceRecording = false; setVoiceBtnMode(false); stopRing(); clearInfoStatus(); refreshSubmit()
+        notifyVoiceStopped()
       }
       s.onUnavailable = () => {
-        desc.value = streamBase // clear the interim preview before another engine takes over
-        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
+        if (!voiceDetached) {   // KD-3156
+          desc.value = streamBase // clear the interim preview before another engine takes over
+          try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
+        }
         if (!voiceRecording) { setVoiceBtnMode(false); stopRing(); clearInfoStatus(); return }
         const batch = makeBatchServer()
         if (batch) { voice = batch; setVoiceStatus('info', 'Reconnecting dictation…'); void voice.start(); return }
@@ -4509,6 +4537,7 @@ export function buildModal(
     voiceBtn.addEventListener('click', () => {
       if (!voiceRecording) {
         clearVoiceStatus() // fresh start — drop any leftover error/reconnect line
+        voiceDetached = false   // KD-3156: a new session is attached to the description again
         streamBase = desc.value // #647: capture the durable text streaming finals/interims build on
         voice = makeEngine() // fresh engine per session (a prior fallback may have swapped it)
         voiceRecording = true
@@ -4520,6 +4549,27 @@ export function buildModal(
     })
 
     _stopVoice = () => { if (voiceRecording) voice.stop() }
+    // KD-3156: stop + wait for the last words (bounded), then detach the session from the description.
+    _settleVoice = (maxMs = 2500) => {
+      if (!voiceRecording) { voiceDetached = true; return Promise.resolve() }
+      return new Promise<void>((resolve) => {
+        let done = false
+        const finish = () => {
+          if (done) return
+          done = true
+          clearTimeout(timer)
+          voiceDetached = true
+          // The engine never confirmed its stop in time: reset the control ourselves (and keep the
+          // fallback-to-Web-Speech path from resurrecting it, which checks voiceRecording).
+          if (voiceRecording) { voiceRecording = false; setVoiceBtnMode(false); stopRing(); clearInfoStatus() }
+          resolve()
+        }
+        const timer = setTimeout(finish, maxMs)
+        settleWaiters.push(finish)
+        try { voice.stop() } catch { finish() }
+      })
+    }
+    _voiceLock = (on) => { voiceBtn.disabled = on || submitInFlight }
   }
 
   // QPQ-31: the field is always shown, and optional unless requireEmail gated it. A half-typed address must
