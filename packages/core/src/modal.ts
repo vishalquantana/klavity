@@ -5048,7 +5048,7 @@ export function buildModal(
       // text's words (double-click) or delete it (Delete key).
       t('select', 'Select & edit', heroGlyph('<path d="M5 3l14 8-6 1.5L9.5 19z"/>', TOOL_ICON), 'v') +
       `<span class="kl-hsep"></span>` +
-      // Annotation tools, in the product-specified order: Rectangle (the default), Arrow, Text, Counter,
+      // Annotation tools, in the product-specified order: Rectangle, Arrow, Text, Counter,
       // Pencil, Line, Circle — larger glyphs (TOOL_ICON) so they're easy to tell apart and select.
       t('rect', 'Rectangle', heroGlyph('<rect x="4" y="5" width="16" height="14" rx="1.5"/>', TOOL_ICON), 'r') +
       t('arrow', 'Arrow', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>', TOOL_ICON), 'a') +
@@ -5375,7 +5375,7 @@ export function buildModal(
       // host in utm_source/utm_content can never break out of the attribute (this file's XSS discipline).
       const logoLink = tools.querySelector('#kl-hero-logo') as HTMLAnchorElement | null
       if (logoLink) logoLink.href = heroLogoHref(cfg.projectId)
-      let activeTool = 'rect' // default tool = Rectangle (hierarchy: rect → circle → arrow → text)
+      let activeTool = 'select' // KD-3154: default tool = Select (V) — was Rectangle
       let activeColor = '#ef4444'
       let textSize = 26
       let textOutline: 'black' | 'white' | 'none' = 'black'
@@ -5415,6 +5415,8 @@ export function buildModal(
         persist()
         return true
       }
+      // KD-3154: set once the zoom state exists (further down) — keeps the cursor honest for the zoom level.
+      const toolHook: { after: (() => void) | null } = { after: null }
       const selectTool = (t: string) => {
         activeTool = t
         tools.querySelectorAll<HTMLElement>('[data-tool]').forEach(el => el.classList.toggle('kl-on', el.dataset.tool === t))
@@ -5422,6 +5424,7 @@ export function buildModal(
         if (textOpts) textOpts.hidden = !(t === 'text' || (annotator.selected && annotator.selected.type === 'text'))
         // (zoom state is declared further down — don't read it here; applyZoomTransform owns the zoomed cursor)
         canvas.style.cursor = t === 'select' ? 'default' : 'crosshair'
+        toolHook.after?.()
       }
       const customBtn = tools.querySelector('.kl-hcolor-custom') as HTMLElement | null
       const colorInput = tools.querySelector('.kl-hcolor-input') as HTMLInputElement | null
@@ -5564,13 +5567,22 @@ export function buildModal(
         minimap.hidden = false
       }
 
+      // KD-3154: the cursor matches what a drag will do. Select (the default tool) shows a grab hand while zoomed in,
+      // because dragging the image then moves it; drawing tools keep the crosshair. Before, every tool showed "grab"
+      // while zoomed, yet a plain drag drew a shape (the only pan was an undiscoverable Shift+drag).
+      const toolCursor = () => activeTool === 'select' ? (zoom > 1 ? 'grab' : 'default') : 'crosshair'
       const applyZoomTransform = () => {
-        if (zoom === 1) { panX = 0; panY = 0; canvas.style.transform = ''; canvas.style.cursor = 'crosshair'; updateMinimap(); return }
+        if (zoom === 1) {
+          panX = 0; panY = 0; canvas.style.transform = ''; canvas.style.willChange = ''
+          canvas.style.cursor = toolCursor(); updateMinimap(); return
+        }
         canvas.style.transformOrigin = '0 0'
+        canvas.style.willChange = 'transform'   // KD-3154: keep the zoomed image on its own layer → smooth dragging
         canvas.style.transform = `translate(${panX}px,${panY}px) scale(${zoom})`
-        canvas.style.cursor = 'grab'
+        canvas.style.cursor = toolCursor()
         updateMinimap()
       }
+      toolHook.after = () => { canvas.style.cursor = toolCursor() }
       const zoomToward = (clientX: number, clientY: number, factor: number) => {
         const h = getHome(); if (!h) return
         const prev = zoom
@@ -5627,6 +5639,8 @@ export function buildModal(
       let drawing = false, startX = 0, startY = 0, penPoints: Array<{ x: number; y: number }> = []
       // Shift-drag pan state (only active while zoomed in).
       let panning = false, panSX = 0, panSY = 0, panBaseX = 0, panBaseY = 0
+      let panFrame = 0   // KD-3154: pending requestAnimationFrame for the next pan paint
+      const endPan = () => { panning = false; if (panFrame) { cancelAnimationFrame(panFrame); panFrame = 0 } applyZoomTransform(); canvas.style.cursor = toolCursor() }
       // Crop drag state: a dashed overlay box tracks the selection in stage-relative pixels.
       let cropBox: HTMLDivElement | null = null
       let cropClient = { x: 0, y: 0 }
@@ -5683,20 +5697,23 @@ export function buildModal(
         const hit = annotator.hitShape(toImg(e as unknown as PointerEvent).x, toImg(e as unknown as PointerEvent).y)
         if (hit && hit.type === 'text') { e.stopPropagation(); editTextContent(hit, e.clientX, e.clientY) }
       })
+      const startPan = (e: PointerEvent) => {
+        panning = true; panSX = e.clientX; panSY = e.clientY; panBaseX = panX; panBaseY = panY
+        canvas.style.transition = 'none' // pan must track the pointer 1:1 — no easing lag
+        canvas.style.cursor = 'grabbing'; try { canvas.setPointerCapture(e.pointerId) } catch { /* noop */ }
+        e.preventDefault()
+      }
       canvas.addEventListener('pointerdown', (e) => {
-        // Shift+drag pans the zoomed image instead of drawing.
-        if (e.shiftKey && zoom > 1) {
-          panning = true; panSX = e.clientX; panSY = e.clientY; panBaseX = panX; panBaseY = panY
-          canvas.style.transition = 'none' // pan must track the pointer 1:1 — no easing lag
-          canvas.style.cursor = 'grabbing'; try { canvas.setPointerCapture(e.pointerId) } catch { /* noop */ }
-          e.preventDefault(); return
-        }
+        // While zoomed in, Shift+drag (as before) or a middle-mouse drag (KD-3154) pans with ANY tool. With the
+        // Select tool, dragging the image itself pans too (handled below).
+        if (zoom > 1 && (e.shiftKey || e.button === 1)) { startPan(e); return }
         const pt = toImg(e); startX = pt.x; startY = pt.y
         if (activeTool === 'select') {
           annotator.uiScale = 1 / displayScale()
           const handle = annotator.hitHandle(pt.x, pt.y)
           const target = handle ? annotator.selected : annotator.hitShape(pt.x, pt.y)
-          if (!target) { setSelected(null); return }
+          // KD-3154: Select tool + drag on empty image while zoomed in pans (no annotation to move there).
+          if (!target) { setSelected(null); if (zoom > 1) startPan(e); return }
           if (target !== annotator.selected) setSelected(target)
           const bounds = annotator.shapeBounds(target) || { x: pt.x, y: pt.y, w: 0, h: 0 }
           editDrag = { shape: target, orig: cloneShape(target), bounds, mode: handle ? 'resize' : 'move', handle, grabX: pt.x, grabY: pt.y, snap: snapshotShot(index), moved: false }
@@ -5768,7 +5785,13 @@ export function buildModal(
         if (activeTool === 'pen') penPoints = [pt]
       })
       canvas.addEventListener('pointermove', (e) => {
-        if (panning) { canvas.style.transition = 'none'; panX = panBaseX + (e.clientX - panSX); panY = panBaseY + (e.clientY - panSY); applyZoomTransform(); canvas.style.cursor = 'grabbing'; return }
+        if (panning) {
+          // KD-3154: smooth drag — record the target and paint it once per animation frame (pointer events can
+          // fire faster than the screen refreshes, and each transform write also re-syncs the minimap).
+          panX = panBaseX + (e.clientX - panSX); panY = panBaseY + (e.clientY - panSY)
+          if (!panFrame) panFrame = requestAnimationFrame(() => { panFrame = 0; if (panning) { applyZoomTransform(); canvas.style.cursor = 'grabbing' } })
+          return
+        }
         if (editDrag) {
           const pt = toImg(e)
           if (!editDrag.moved) {
@@ -5832,7 +5855,7 @@ export function buildModal(
         if (prov) annotator.drawPreview(prov)
       })
       canvas.addEventListener('pointerup', (e) => {
-        if (panning) { panning = false; canvas.style.cursor = zoom > 1 ? 'grab' : 'crosshair'; try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ } return }
+        if (panning) { endPan(); try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ } return }
         if (editDrag) {
           const moved = editDrag.moved
           editDrag = null
@@ -5864,7 +5887,7 @@ export function buildModal(
         }
         // #449: snapshot before adding so this shape becomes one undo step in the unified history.
         const isPixel = activeTool === 'pixelate' && Math.abs(pt.x - startX) > 4 && Math.abs(pt.y - startY) > 4
-        // Rectangle is now the default tool, so a plain click (no drag) must not drop an invisible 0×0 shape + an
+        // A drawing tool is the default (Arrow), so a plain click (no drag) must not drop an invisible 0×0 shape + an
         // undo step. Line / rect / circle / arrow are added only after a real drag of a few pixels.
         const dragged = Math.abs(pt.x - startX) > 3 || Math.abs(pt.y - startY) > 3
         const isShape = (activeTool === 'line' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'arrow') && dragged
@@ -5885,7 +5908,7 @@ export function buildModal(
       canvas.addEventListener('pointercancel', (e) => {
         try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ }
         if (cropBox) { safeRemove(cropBox); cropBox = null }
-        if (panning) { panning = false; canvas.style.cursor = zoom > 1 ? 'grab' : 'crosshair' }
+        if (panning) endPan()
         // KLA-770: an interrupted text drag keeps its last position (already mutated); commit + clear state so
         // the gesture can't get stuck holding the shape.
         if (textDrag) { textDrag = null; canvas.style.cursor = 'crosshair'; annotator.redraw(); persist() }
@@ -6029,7 +6052,7 @@ export function buildModal(
       toolbar.querySelector('#klavity-fit-width')!.addEventListener('click', () => applyScale(fitWidthScale()))
       toolbar.querySelector('#klavity-fit-page')!.addEventListener('click', () => applyScale(fitPageScale()))
 
-      let activeTool = 'rect'
+      let activeTool = 'arrow'   // this older full-screen editor has no Select tool; Arrow is its default (was Rectangle)
       let activeColor = '#ef4444'
       let drawing = false
       let penPoints: Array<{ x: number; y: number }> = []
