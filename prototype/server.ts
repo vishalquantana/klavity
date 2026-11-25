@@ -14115,9 +14115,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const report = {
           id: fbRow.id,
           projectId: fbRow.projectId,
-          // PX4 #411: surface the reporter's explicit composer Title when present + non-empty;
-          // otherwise fall back to the historical observation-derived title (back-compat).
-          title: (fbRow.title && String(fbRow.title).trim()) ? String(fbRow.title) : fbRow.observation,
+          // PX4 #411: surface the reporter's explicit composer Title when present + non-empty.
+          // KD-3152: otherwise resolve it the same way the Sim Reports list does — the AI suggested-bug
+          // title next, then the description's first line. Falling straight to the WHOLE observation made
+          // a Sim Report opened by URL / after a refresh show its full description as the title.
+          title: effectiveTicketTitle(fbRow),
           observation: fbRow.observation,
           sentiment: fbRow.sentiment,
           priority: fbRow.priority,
