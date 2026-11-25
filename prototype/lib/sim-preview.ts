@@ -47,11 +47,18 @@ async function assertFinalUrlSafe(
   if (!ok) throw new Error("blocked navigation: final URL failed SSRF guard")
 }
 
+/** Read-only element map for the page that was just screenshotted. Best-effort: any failure just means identification stays screenshot-only. */
+async function captureElementMap(page: { pageElements?: (o?: { fullPage?: boolean }) => Promise<unknown> }, fullPage: boolean): Promise<unknown> {
+  try { return (await page.pageElements?.({ fullPage })) ?? undefined } catch { return undefined }
+}
+
 export interface ScreenshotResult {
   imageB64: string // base64 JPEG, no data: prefix
   mediaType: "image/jpeg"
   /** true when a logged-in session was established before the shot (KLA-264). */
   authed?: boolean
+  /** READ-ONLY element map taken from the same page load right after the shot (Rule 2: accurate UI identification). Untrusted; sanitise before use. */
+  pageMeta?: unknown
 }
 
 /**
@@ -86,7 +93,7 @@ export async function screenshotUrl(
     if (settleMs > 0) await page.waitMs(settleMs)
     const imageB64 = await page.screenshotJpeg(quality, shotTimeoutMs, { fullPage: !!opts.fullPage })
     if (!imageB64 || imageB64.length < 100) throw new Error("empty screenshot")
-    return { imageB64, mediaType: "image/jpeg" }
+    return { imageB64, mediaType: "image/jpeg", pageMeta: await captureElementMap(page, !!opts.fullPage) }
   } finally {
     await browser.close().catch(() => {})
   }
@@ -175,10 +182,33 @@ export async function authedScreenshotUrl(
     if (settleMs > 0) await page.waitMs(settleMs)
     const imageB64 = await page.screenshotJpeg(quality, shotTimeoutMs)
     if (!imageB64 || imageB64.length < 100) throw new Error("empty screenshot")
-    return { imageB64, mediaType: "image/jpeg", authed }
+    return { imageB64, mediaType: "image/jpeg", authed, pageMeta: await captureElementMap(page, false) }
   } finally {
     await browser.close().catch(() => {})
   }
+}
+
+export type PreviewSimSelection<T> =
+  | { ok: true; sims: T[]; /** the picked ids when a strict subset of the project's Sims was chosen; null = all Sims */ simIds: string[] | null }
+  | { ok: false; error: string }
+
+/**
+ * Which of the project's Sims a "Preview a URL" run should use. `simIds` omitted (undefined/null) = every Sim — the behaviour before the
+ * Sim picker existed, so existing callers are unchanged. When given it must be a non-empty list of ids that all belong to this project;
+ * this runs BEFORE any SSRF/screenshot work so a bad selection never burns a browser slot or an AI call. Duplicate ids are ignored and the
+ * result keeps the project's own Sim order.
+ */
+export function selectPreviewSims<T extends { id: string }>(projectSims: T[], simIds: unknown, inactiveIds?: ReadonlySet<string>): PreviewSimSelection<T> {
+  if (simIds === undefined || simIds === null) return { ok: true, sims: projectSims, simIds: null }
+  if (!Array.isArray(simIds)) return { ok: false, error: "simIds must be a list of Sim ids." }
+  const wanted = new Set(simIds.map((x) => String(x ?? "").trim()).filter(Boolean))
+  if (wanted.size === 0) return { ok: false, error: "Select at least one Sim to run." }
+  const known = new Set(projectSims.map((s) => s.id))
+  // WP-S2: name the real reason when the Sim exists but is switched off (projectSims holds active Sims only).
+  for (const id of wanted) if (!known.has(id) && inactiveIds?.has(id)) return { ok: false, error: "One or more selected Sims are inactive. Activate them to run a preview." }
+  for (const id of wanted) if (!known.has(id)) return { ok: false, error: "One or more selected Sims aren't in this project." }
+  const sims = projectSims.filter((s) => wanted.has(s.id))
+  return { ok: true, sims, simIds: sims.length === projectSims.length ? null : sims.map((s) => s.id) }
 }
 
 /** Max time a preview screenshot (browser launch + navigation + shot) may take before we give up. */

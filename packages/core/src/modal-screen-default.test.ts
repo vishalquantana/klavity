@@ -119,18 +119,16 @@ describe("on-open Screen-default capture + decline fallback (KLA-587)", () => {
     expect(cbs.onCaptureViewport).not.toHaveBeenCalled()
   })
 
-  it("on DECLINE (getDisplayMedia rejects NotAllowedError), silently falls back to the rendered viewport — no error shown", async () => {
+  it("on DECLINE (getDisplayMedia rejects NotAllowedError), dismisses dialog and cancels bug reporting process", async () => {
     const onCaptureSharp = vi.fn().mockRejectedValue(Object.assign(new Error("Permission denied"), { name: "NotAllowedError" }))
     const cbs = sharpCbs(onCaptureSharp)
     buildModal("bug", cbs as any, { theme: "light" } as any)
-    const shadow = modalShadow()
     await wait(60)
     expect(onCaptureSharp).toHaveBeenCalledTimes(1)
-    // Fell back to the rendered viewport capture (never leaves the reporter with no screenshot).
-    expect(cbs.onCaptureViewport).toHaveBeenCalledTimes(1)
-    // No error surfaced for a decline.
-    const err = shadow.getElementById("klavity-err") as HTMLElement | null
-    expect(err && err.style.display === "block").toBeFalsy()
+    // Does NOT fall back to rendered viewport (process is cancelled)
+    expect(cbs.onCaptureViewport).not.toHaveBeenCalled()
+    // Modal is dismissed immediately
+    expect(cbs.onClose).toHaveBeenCalledWith("discard")
   })
 })
 

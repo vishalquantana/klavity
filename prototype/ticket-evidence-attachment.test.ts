@@ -14,7 +14,9 @@ function extractFn(src: string, sig: string): string {
 }
 
 test("buildAttachmentsHtml checks both screenshotId and attachments for screenshot display", () => {
-  const fn = extractFn(HTML, "function buildAttachmentsHtml(")
+  // The list (primary screenshot + extra report screenshots + file attachments) is built once in ticketAttachList.
+  expect(extractFn(HTML, "function buildAttachmentsHtml(")).toContain("var atts = ticketAttachList(t)")
+  const fn = extractFn(HTML, "function ticketAttachList(")
   expect(fn).toContain("if (t.screenshotId && !atts.some")
   expect(fn).toContain('filename: "Screenshot"')
   expect(fn).toContain('screenshotId: t.screenshotId')

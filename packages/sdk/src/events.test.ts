@@ -205,3 +205,21 @@ describe('parseScriptConfig — G5 metadata via data-* attributes', () => {
     expect(cfg.reporter!.name).toBeUndefined()
   })
 })
+
+describe('parseScriptConfig — opt-in recorder window (data-record-mode)', () => {
+  const script = (data: Record<string, string>) => ({ dataset: data, src: 'https://klavity.in/widget.js' })
+
+  it('defaults to the in-page recorder: no recordMode when the attribute is absent', () => {
+    expect(parseScriptConfig(script({ project: 'p1' })).recordMode).toBeUndefined()
+  })
+
+  it('opts in with data-record-mode="window" (case/whitespace tolerant)', () => {
+    expect(parseScriptConfig(script({ project: 'p1', recordMode: 'window' })).recordMode).toBe('window')
+    expect(parseScriptConfig(script({ project: 'p1', recordMode: ' Window ' })).recordMode).toBe('window')
+  })
+
+  it('ignores any other value, keeping the in-page recorder', () => {
+    expect(parseScriptConfig(script({ project: 'p1', recordMode: 'page' })).recordMode).toBeUndefined()
+    expect(parseScriptConfig(script({ project: 'p1', recordMode: '' })).recordMode).toBeUndefined()
+  })
+})

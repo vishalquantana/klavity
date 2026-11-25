@@ -9,7 +9,7 @@
 // hands Playwright the resolved devtools endpoint. See acquirePlaywrightBrowser + createSteelSession.
 import type { Fingerprint, NetworkMock as TrailNetworkMock, TrailViewport } from "./trails-types"
 import { KREF_SNAPSHOT_CAP } from "./trails-snapshot"
-import { clickWithTransitionFallback } from "./trails-click"
+import { clickWithTransitionFallback, selectOptionAnyWidget, gotoPastRedirect } from "./trails-click"
 // KLA-786 (dialog-capture): keep at most the last N captured dialogs per page so an alert-spamming page
 // can't grow the buffer unbounded between drains. The author loop drains every loop-top, so N need only
 // cover a burst within one action.
@@ -82,7 +82,7 @@ export function matchesMock(pattern: string | RegExp, requestUrl: string): boole
 // ── Page-context evaluate bodies (run in the browser; NO module-scope closures). Shared verbatim by
 //    both drivers — Playwright and Puppeteer both serialize a function to the page identically. ──────
 /* eslint-disable */
-function krefSnapshotBody(): string {
+export function krefSnapshotBody(): string {
   document.querySelectorAll("[data-kref]").forEach((el) => el.removeAttribute("data-kref"))
   let n = 0
   const lines: string[] = []
@@ -147,7 +147,58 @@ function krefSnapshotBody(): string {
     if (t === "option") return "option"
     if (/^h[1-6]$/.test(t)) return "heading"
     if (t === "img" && el.getAttribute("alt")) return "img"
+    // Dropdown panel without ARIA (Bootstrap "dropdown-menu", CSS-module "_add_dropdown_menu_x1y2"):
+    // emit it as a container so its items nest under it.
+    if (/dropdown[-_]?menu/i.test(el.getAttribute("class") || "")) return "menu"
     return null
+  }
+  // Clickable elements with no semantic role (<a> without href, <div onclick>, Bootstrap data-toggle,
+  // React onClick divs). Without a ref the model cannot target them and picks a look-alike (PX4: nav
+  // "Projects" instead of the header Add menu's "Project"). Wrappers of other clickables are skipped.
+  const CLICKABLE_INSIDE = "a,button,input,select,textarea,[role],[onclick],[data-toggle],[data-bs-toggle],[tabindex]"
+  const reactClick = (el: Element): boolean => {
+    for (const k of Object.keys(el)) {
+      if (k.startsWith("__reactProps$") || k.startsWith("__reactEventHandlers$")) {
+        const p = (el as any)[k]
+        return !!(p && (p.onClick || p.onMouseDown || p.onPointerDown))
+      }
+    }
+    return false
+  }
+  const handlers = new Set<Element>()
+  const wrappers = new Set<Element>()
+  if (document.body) {
+    document.body.querySelectorAll("*").forEach((el) => { if (reactClick(el)) handlers.add(el) })
+    for (const el of [...Array.from(handlers), ...Array.from(document.body.querySelectorAll(CLICKABLE_INSIDE))]) {
+      for (let p = el.parentElement; p && !wrappers.has(p); p = p.parentElement) wrappers.add(p)
+    }
+  }
+  const isPointer = (el: Element | null) => { try { return !!el && getComputedStyle(el as HTMLElement).cursor === "pointer" } catch { return false } }
+  const isUntypedClickable = (el: Element): boolean => {
+    if (wrappers.has(el)) return false
+    const t = el.tagName.toLowerCase()
+    const explicit = t === "a" || handlers.has(el) || el.hasAttribute("onclick") || el.hasAttribute("data-toggle") ||
+      el.hasAttribute("data-bs-toggle") || el.hasAttribute("aria-haspopup") ||
+      (el.hasAttribute("tabindex") && el.getAttribute("tabindex") !== "-1")
+    return explicit || (isPointer(el) && !isPointer(el.parentElement)) // cursor is inherited: outermost only
+  }
+  const inMenu = (el: Element) => !!el.closest('[class*="dropdown-menu"],[class*="dropdown_menu"],[class*="dropdownMenu"],[role="menu"],[role="listbox"]')
+  const LABEL_TAGS = new Set(["span", "div", "i", "b", "strong", "small", "em", "font"])
+  const ownText = (el: Element): string => Array.from(el.childNodes)
+    .filter((c) => c.nodeType === 3).map((c) => c.textContent || "").join(" ").trim().replace(/\s+/g, " ")
+  // Compact HTML identity so the model can check WHICH element a label belongs to (nav link vs dropdown item),
+  // not just what it looks like in the screenshot.
+  const htmlHint = (el: Element): string => {
+    let h = "<" + el.tagName.toLowerCase()
+    const cls = (el.getAttribute("class") || "").trim().split(/\s+/).filter(Boolean).slice(0, 2).map((c) => c.slice(0, 28))
+    if (cls.length) h += "." + cls.join(".")
+    const href = el.getAttribute("href")
+    if (href && !/^javascript:|^#$/i.test(href)) {
+      let p = href
+      try { const u = new URL(href, location.href); p = u.origin === location.origin ? u.pathname + u.search : u.host + u.pathname } catch {}
+      h += ` href=${p.slice(0, 50)}`
+    }
+    return clean(h + ">")
   }
   const labelFor = (el: Element): string => {
     const id = el.getAttribute("id")
@@ -171,15 +222,47 @@ function krefSnapshotBody(): string {
         el.getAttribute("name") || el.getAttribute("title") || ""
     return clean(cand.replace(/\s+/g, " ").slice(0, 80))
   }
-  const walk = (el: Element, depth: number) => {
+  // Dropdown HTML: select2/chosen hide the real <select> (field label + options) behind a span that just
+  // reads "Select", so two dropdowns look identical. Read the backing <select> and expose its field and
+  // options. Same resolution as selectCheckBody / trails-click selectOptionAnyWidget (page bodies can't share).
+  const backingSelect = (el: Element): HTMLSelectElement | null => {
+    if (el.tagName === "SELECT") return el as HTMLSelectElement
+    const inner = el.querySelector("select"); if (inner) return inner
+    const prev = el.closest(".select2-container, .chosen-container")?.previousElementSibling
+    if (prev?.tagName === "SELECT") return prev as HTMLSelectElement
+    for (const id of [el.id, el.getAttribute("aria-labelledby"), el.querySelector("[id^='select2-']")?.id]) {
+      const m = id?.match(/^select2-(.+)-container$/); const s = m && document.getElementById(m[1])
+      if (s?.tagName === "SELECT") return s as HTMLSelectElement
+    }
+    return null
+  }
+  const fieldOf = (s: Element): string => {
+    let t = labelFor(s) || s.getAttribute("aria-label") || ""
+    for (let p = s.parentElement, i = 0; !t && p && i < 3; p = p.parentElement, i++) t = (p.querySelector("label")?.textContent || "").trim()
+    return clean((t || s.getAttribute("name") || s.id || "").replace(/\s+/g, " ").slice(0, 60))
+  }
+  const dropdownInfo = (el: Element): string => {
+    const s = backingSelect(el); if (!s) return ""
+    const opts = Array.from(s.options).map((o) => clean((o.text || "").trim().replace(/\s+/g, " ").slice(0, 40))).filter(Boolean)
+    const field = fieldOf(s)
+    return (field && field !== nameOf(el) ? ` {field: "${field}"}` : "") +
+      (opts.length ? ` {options: ${opts.slice(0, 15).map((o) => `"${o}"`).join(" | ")}${opts.length > 15 ? ` | …+${opts.length - 15} more` : ""}}` : "")
+  }
+  const walk = (el: Element, depth: number, inCtl = false) => {
     if (truncated) return
     for (const child of Array.from(el.children)) {
       if (truncated) return
       const t = child.tagName.toLowerCase()
       if (SKIP.has(t)) continue
       let emitted = false
+      let refd = false
       if (visible(child)) {
-        const role = roleOf(child)
+        let role = roleOf(child)
+        let clickable = false
+        if (!role && isUntypedClickable(child) && nameOf(child)) {
+          role = inMenu(child) ? "menuitem" : "button"
+          clickable = true
+        }
         const indent = "  ".repeat(Math.min(depth, 6))
         if (role) {
           let line = `${indent}${clean(role.replace(/\s+/g, " "))} "${nameOf(child)}"`
@@ -197,13 +280,24 @@ function krefSnapshotBody(): string {
             }
             else if (typeof iv.value === "string" && iv.value.length) line += ` {filled: ${iv.value.length} chars}`
           }
-          if (INTERACTIVE.has(t) || child.getAttribute("role")) {
+          if (role === "combobox" || role === "listbox") line += dropdownInfo(child)
+          if (clickable || INTERACTIVE.has(t) || child.getAttribute("role")) {
             const ref = `e${++n}`
             child.setAttribute("data-kref", ref)
             line += ` [ref=${ref}]`
+            refd = true
+            if (clickable || t === "a") line += " " + htmlHint(child)
           }
           push(line)
           emitted = true
+        } else if (!inCtl && LABEL_TAGS.has(t) && /^.{2,30}$/.test(ownText(child)) && !inNoticeContext(child)) {
+          // Short visible label in a generic container whose click handler we cannot see (jQuery/delegated
+          // listeners): give it a ref so the model can click it like a person; the click bubbles to the handler.
+          const ref = `e${++n}`
+          child.setAttribute("data-kref", ref)
+          push(`${indent}text "${clean(ownText(child))}" [ref=${ref}] ${htmlHint(child)}`)
+          emitted = true
+          refd = true
         } else {
           const isNotice = inNoticeContext(child)
           if (TEXTUAL.has(t) || isNotice) {
@@ -215,11 +309,182 @@ function krefSnapshotBody(): string {
           }
         }
       }
-      walk(child, emitted ? depth + 1 : depth)
+      walk(child, emitted ? depth + 1 : depth, inCtl || refd)
     }
   }
-  walk(document.body, 0)
+  // Mid-navigation the new document can exist before <body> is parsed; emit an empty snapshot so the author
+  // loop's empty-snapshot re-capture kicks in instead of throwing "Cannot read properties of null".
+  if (document.body) walk(document.body, 0)
   return lines.join("\n")
+}
+
+export type TargetCheck = { ok: boolean; html: string; candidates: string[] }
+/**
+ * HTML cross-check before a click: does the element the model picked actually carry the label it
+ * says it is clicking? Compares normalized visible text / aria-label / title / value / alt / own label
+ * EXACTLY (so "Projects" ≠ "Project"); on mismatch returns the element's HTML plus the visible
+ * elements whose HTML text IS that label, with their location, so the model can re-pick.
+ */
+export function targetCheckBody(arg: { selector: string; label: string }): TargetCheck {
+  const norm = (s: string | null | undefined) => (s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
+  const want = norm(arg.label)
+  const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + "…" : s).replace(/<<<|>>>/g, "·")
+  const describe = (el: Element): string => {
+    // Never leak field contents (passwords, OTPs) into model context: drop value/style attrs, no text for fields.
+    const shell = el.cloneNode(false) as Element
+    for (const a of ["value", "style", "srcdoc"]) shell.removeAttribute(a)
+    const open = shell.outerHTML.replace(/<\/[^>]+>$/, "")
+    const isField = /^(input|textarea|select)$/i.test(el.tagName)
+    const txt = isField ? "" : ((el as HTMLElement).innerText || el.textContent || "").trim().replace(/\s+/g, " ")
+    const r = el.getBoundingClientRect()
+    const where = r.top < window.innerHeight * 0.15 ? "top" : r.top > window.innerHeight * 0.85 ? "bottom" : "middle"
+    const side = r.left < window.innerWidth * 0.33 ? "left" : r.left > window.innerWidth * 0.66 ? "right" : "center"
+    const ctx: string[] = []
+    for (let p = el.parentElement, i = 0; p && p !== document.body && i < 3; p = p.parentElement, i++) {
+      const c = (p.getAttribute("class") || "").trim().split(/\s+/)[0]
+      ctx.push(p.tagName.toLowerCase() + (p.id ? "#" + p.id : c ? "." + c.slice(0, 28) : ""))
+    }
+    return `${clip(open, 160)}${clip(txt, 40)} (${where}-${side}${ctx.length ? ", inside " + ctx.join(" < ") : ""})`
+  }
+  const names = (el: Element): string[] => {
+    const h = el as HTMLElement & { value?: string; alt?: string }
+    const out = [h.innerText, el.textContent, el.getAttribute("aria-label"), el.getAttribute("title"), h.value, h.alt, el.getAttribute("placeholder")]
+    // multi-line innerText (icon line + label line, badge counts): any single line may be the label
+    for (const line of (h.innerText || "").split("\n")) out.push(line)
+    for (const n of Array.from(el.childNodes)) if (n.nodeType === 3) out.push(n.textContent)
+    if (el.id) { try { out.push(document.querySelector(`label[for="${CSS.escape(el.id)}"]`)?.textContent) } catch {} }
+    out.push(el.closest("label")?.textContent)
+    // KD-2255: a form field is also known by its name/id and by the unlinked <label> beside it in its own
+    // field group (PX4: <label>Project Name</label><input name="project_name">). select2 boxes answer for the
+    // hidden <select> behind them. A group with more than one field is skipped so a neighbour's label can't match.
+    let ctl: Element | null = /^(input|textarea|select)$/i.test(el.tagName) ? el : null
+    if (!ctl && (el.getAttribute("role") === "combobox" || /select2-selection/.test(el.getAttribute("class") || ""))) {
+      const prev = el.closest(".select2-container")?.previousElementSibling
+      if (prev?.tagName === "SELECT") ctl = prev
+    }
+    if (ctl) {
+      out.push(ctl.getAttribute("name"), ctl.id)
+      for (let p = ctl.parentElement, i = 0; p && i < 3; p = p.parentElement, i++) {
+        if (p.querySelectorAll("input:not([type=hidden]),select,textarea").length > 1) break
+        const l = p.querySelector("label"); if (l) { out.push(l.textContent); break }
+      }
+    }
+    return out.map(norm).filter(Boolean)
+  }
+  const el = document.querySelector(arg.selector)
+  if (!el) return { ok: true, html: "", candidates: [] }
+  if (!want || names(el).includes(want)) return { ok: true, html: "", candidates: [] }
+  // A checkbox/radio has no visible text, so the model names it by role ("checkbox", "1st check box on the page"). That is a
+  // correct description of an <input type=checkbox>, not a mismatch (PX4 Pending Actions rejected it 4 times).
+  const inType = el.tagName === "INPUT" ? ((el as HTMLInputElement).type || "").toLowerCase() : ""
+  if ((inType === "checkbox" && /\bcheck ?box\b/.test(want)) || (inType === "radio" && /\bradio\b/.test(want))) {
+    // But NEVER let a "select all" / header checkbox stand in for "the 1st check box": completing after it acts on EVERY row
+    // (a live run on qa2 did exactly that). A row checkbox is not in a header and not an all-rows toggle.
+    const hay = `${el.id} ${el.getAttribute("name") || ""} ${el.getAttribute("class") || ""} ${el.getAttribute("aria-label") || ""}`
+    const isAllToggle = /select[_ -]?all|check[_ -]?all|toggle[_ -]?all|\ball[_-]?(rows|items)\b/i.test(hay) || !!el.closest("thead, th") || (el as HTMLInputElement).disabled
+    if (!isAllToggle) {
+      if (!/\b(1st|first)\b/.test(want)) return { ok: true, html: "", candidates: [] }
+      // "1st/first check box": it must be the first VISIBLE row checkbox of ITS OWN table (not of the whole page: hidden modal
+      // or filter checkboxes elsewhere in the DOM must not make the genuine first row look like the second).
+      const scope: ParentNode = el.closest("table") || document
+      const rowBoxes = Array.from(scope.querySelectorAll('input[type="checkbox"]')).filter((c) => {
+        const h = `${c.id} ${c.getAttribute("name") || ""} ${c.getAttribute("class") || ""}`
+        return !/select[_ -]?all|check[_ -]?all|toggle[_ -]?all/i.test(h) && !c.closest("thead, th") && !(c as HTMLInputElement).disabled
+          && (c as HTMLElement).getClientRects().length > 0
+      })
+      if (rowBoxes[0] === el) return { ok: true, html: "", candidates: [] }
+    }
+  }
+  const visible = (e: Element) => {
+    const r = e.getBoundingClientRect(); if (r.width === 0 || r.height === 0) return false
+    const s = getComputedStyle(e); return s.display !== "none" && s.visibility !== "hidden" && s.opacity !== "0"
+  }
+  const cands: string[] = []
+  const all = Array.from(document.body.querySelectorAll("*"))
+  for (const c of all) {
+    if (cands.length >= 6) break
+    if (c === el || !visible(c) || /^(script|style|svg|path|html|body)$/i.test(c.tagName)) continue
+    if (!names(c).includes(want)) continue
+    // innermost match only (skip ancestors whose child also matches)
+    if (Array.from(c.children).some((k) => visible(k) && names(k).includes(want))) continue
+    cands.push(describe(c))
+  }
+  return { ok: false, html: describe(el), candidates: cands }
+}
+
+/**
+ * HTML cross-check before a `select`: does the chosen dropdown (or the hidden <select> behind a select2/chosen
+ * widget) really contain the option? On mismatch, name the chosen field, its closest options, and the fields
+ * whose HTML does contain it. Custom widgets with no <select> can't be verified here and pass.
+ */
+export function selectCheckBody(arg: { selector: string; value: string }): TargetCheck {
+  const ok = { ok: true, html: "", candidates: [] as string[] }
+  const backingSelect = (el: Element): HTMLSelectElement | null => {
+    if (el.tagName === "SELECT") return el as HTMLSelectElement
+    const inner = el.querySelector("select"); if (inner) return inner
+    const prev = el.closest(".select2-container, .chosen-container")?.previousElementSibling
+    if (prev?.tagName === "SELECT") return prev as HTMLSelectElement
+    for (const id of [el.id, el.getAttribute("aria-labelledby"), el.querySelector("[id^='select2-']")?.id]) {
+      const m = id?.match(/^select2-(.+)-container$/); const s = m && document.getElementById(m[1])
+      if (s?.tagName === "SELECT") return s as HTMLSelectElement
+    }
+    return null
+  }
+  const fieldOf = (s: Element): string => {
+    let t = ""
+    if (s.id) { try { t = (document.querySelector(`label[for="${CSS.escape(s.id)}"]`)?.textContent || "").trim() } catch {} }
+    t = t || (s.closest("label")?.textContent || "").trim() || s.getAttribute("aria-label") || ""
+    for (let p = s.parentElement, i = 0; !t && p && i < 3; p = p.parentElement, i++) t = (p.querySelector("label")?.textContent || "").trim()
+    return (t || s.getAttribute("name") || s.id || "?").replace(/\s+/g, " ").slice(0, 60).replace(/<<<|>>>/g, "·")
+  }
+  const texts = (s: HTMLSelectElement) => Array.from(s.options).map((o) => (o.text || "").trim().replace(/\s+/g, " "))
+  const want = arg.value.trim()
+  const has = (s: HTMLSelectElement) => Array.from(s.options).some((o) => (o.text || "").trim().replace(/\s+/g, " ") === want || o.value === want)
+  const el = document.querySelector(arg.selector)
+  const s = el && backingSelect(el)
+  if (!s || has(s)) return ok
+  const norm = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "")
+  const near = texts(s).filter((t) => t && (norm(t).includes(norm(want)) || norm(want).includes(norm(t)))).slice(0, 5)
+  const html = `field "${fieldOf(s)}" (options: ${texts(s).filter(Boolean).slice(0, 10).map((t) => `"${t.slice(0, 40)}"`).join(", ")})` +
+    (near.length ? `; closest options here: ${near.map((t) => `"${t}"`).join(", ")} — use the exact text` : "")
+  const candidates = Array.from(document.querySelectorAll("select")).filter((x) => x !== s && has(x)).slice(0, 5).map((x) => `field "${fieldOf(x)}"`)
+  return { ok: false, html, candidates }
+}
+
+const freshKref = () => `e${90000 + Math.floor(Math.random() * 9999)}` // outside the e1… range a snapshot assigns
+
+/** Page-side (Puppeteer has no Playwright engine): resolve `base:has-text("T")`, `:text("T")`, `text=T`
+ *  (plus a trailing `:visible`) to its single visible match and tag it with `data-kref`. */
+function pwSelectorKrefBody(arg: { selector: string; id: string }): { selector: string | null; count: number } {
+  let sel = arg.selector.trim().replace(/:visible\b/g, "")
+  let base = "*", want = "", exact = false
+  const t = sel.match(/^text=(["']?)(.*)\1$/s)
+  const m = sel.match(/^(.*?):(has-text|text-is|text)\((["'])(.*)\3\)\s*$/s)
+  if (t) { want = t[2]; exact = !!t[1] } else if (m) { base = m[1].trim() || "*"; want = m[4]; exact = m[2] === "text-is" } else return { selector: null, count: 0 }
+  // The model often writes an ARIA role where CSS wants a tag: heading:has-text("Completed Actions"). "heading" is not an
+  // element, so it matched 0 and three misses in a row stalled the run. Map the common roles to the elements that carry them.
+  const ROLE_BASE: Record<string, string> = {
+    heading: 'h1,h2,h3,h4,h5,h6,[role="heading"]',
+    button: 'button,[role="button"],input[type="button"],input[type="submit"]',
+    link: 'a,[role="link"]',
+    textbox: 'input:not([type]),input[type="text"],input[type="email"],input[type="password"],textarea,[role="textbox"]',
+    checkbox: 'input[type="checkbox"],[role="checkbox"]',
+    dialog: '[role="dialog"],dialog,.modal',
+    row: 'tr,[role="row"]',
+    cell: 'td,th,[role="cell"]',
+  }
+  base = ROLE_BASE[base.toLowerCase()] ?? base
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase()
+  const w = norm(want)
+  const hit = (el: Element) => { const x = norm((el as HTMLElement).innerText ?? el.textContent ?? ""); return exact ? x === w : x.includes(w) }
+  const visible = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden" }
+  let els: Element[]
+  try { els = Array.from(document.querySelectorAll(base)).filter(hit) } catch { return { selector: null, count: 0 } }
+  if (base === "*") els = els.filter((e) => !Array.from(e.children).some(hit)) // innermost element carrying the text
+  if (els.length > 1) { const v = els.filter(visible); if (v.length) els = v }
+  if (els.length !== 1) return { selector: null, count: els.length }
+  els[0].setAttribute("data-kref", arg.id)
+  return { selector: `[data-kref="${arg.id}"]`, count: 1 }
 }
 
 function fingerprintBody(el: Element): Fingerprint {
@@ -239,10 +504,34 @@ function fingerprintBody(el: Element): Fingerprint {
     accessibleName: accName || undefined, text: text || undefined,
     testId: el.getAttribute("data-testid") || undefined, domPath: path,
     inputType: tag === "input" ? ((el as HTMLInputElement).type || undefined) : undefined,
+    allToggle: tag === "input" && (el as HTMLInputElement).type === "checkbox"
+      && (/select[_ -]?all|check[_ -]?all|toggle[_ -]?all|\ball[_-]?(rows|items)\b/i.test(`${el.id} ${el.getAttribute("name") || ""} ${el.getAttribute("class") || ""} ${el.getAttribute("aria-label") || ""}`)
+        || !!el.closest("thead, th")) || undefined,
   }
 }
 
-function stableSelectorBody(el: Element): string | null {
+// A selector is POSITIONAL when it depends on sibling order (`:nth-of-type`, `:nth-child`, `:first-child`...), which drifts when a list,
+// sidebar or table gains/loses/reorders items. Quoted text (names, has-text) is ignored so a label like "a:nth-child(2)" can't trip it.
+// Lets a later Trail-quality check find positional-only steps without storing extra metadata on the fingerprint.
+export function isPositionalSelector(sel: string): boolean {
+  const bare = sel.replace(/"(?:\\.|[^"\\])*"/g, '""')
+  return /:(nth-of-type|nth-child|nth-last-child|nth-last-of-type|first-child|last-child|first-of-type|last-of-type|only-child|only-of-type)\b/.test(bare)
+}
+
+// A selector produced by the role + accessible-name tiers (`role=link[name="X"s]`, optionally scoped `tr:has-text("Y") >> role=…`).
+// These are Playwright selector-engine strings: replay resolves them with page.locator(), the Puppeteer author adapter never executes them.
+const SEMANTIC_TAIL = /role=([a-z]+)\[name="((?:\\.|[^"\\])*)"s\]$/
+function isSemanticSelector(sel: string): boolean { return SEMANTIC_TAIL.test(sel) && (sel.startsWith("role=") || sel.includes(" >> role=")) }
+
+// Large-page safeguard: the scoped (`container:has-text(…) >> role=…`) tier costs ~rows x labels (measured 1.4 s at 3,000 rows, 8.9 s at 10,000 -
+// near the author's 8-10 s stableSelector bound, after which the author would lose the unique positional path). With this many or more interactive
+// candidates of the target's role on the page the scoped tier is skipped and the existing positional fallback is used. The role + name tier is not capped.
+export const SCOPED_TIER_MAX_CANDIDATES = 3000
+
+// opts.skipSemantic = the caller's engine cross-check rejected the semantic candidate -> go straight to the positional path.
+// opts.maxScoped    = skip the scoped tier at/above this many same-role candidates (adapters pass SCOPED_TIER_MAX_CANDIDATES; in-page code cannot see module constants).
+function stableSelectorBody(el: Element, opts?: { skipSemantic?: boolean; maxScoped?: number }): string | null {
+  const skipSemantic = !!opts?.skipSemantic, maxScoped = opts?.maxScoped ?? Infinity
   const esc = (v: string) => v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
   const tag = el.tagName.toLowerCase()
   // Each candidate must resolve to EXACTLY ONE element AND that element must be `el` itself — else a replay
@@ -262,11 +551,191 @@ function stableSelectorBody(el: Element): string | null {
   // "text") — otherwise a bare `<input>` would build `input[type="text"]` and could anchor onto a DIFFERENT
   // explicit text input. Absent/invalid attribute → skip (fall through to the positional path).
   if (tag === "input") { const ty = el.getAttribute("type"); if (ty) { const s = `input[type="${esc(ty)}"]`; if (uniq(s)) return s } }
-  return null
+  // Semantic tiers (links / buttons with a visible name but no id/aria-label/testid): `role=<role>[name="<accessible name>"s]` - the same signal
+  // replay's heal tier uses (getByRole exact) - validated here to match EXACTLY this element among the page's visible elements of that role. When the
+  // name repeats (the same "Edit" in every table row), scope it to the nearest row/item/card/dialog that has distinguishing text:
+  // `tr:has-text("Acme") >> role=button[name="Edit"s]`. Position-independent, so inserted list items / shifted wrappers do not break it.
+  // Anything ambiguous falls through to the positional path below. Playwright's `s` flag = case-sensitive exact match on the whitespace-normalised name.
+  if (!skipSemantic) {
+    const sem = ((): string | null => {
+      const escQ = (v: string) => v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+      const norm = (s: string) => s.replace(/\s+/g, " ").trim()
+      const roleOf = (n: Element): string => {
+        const r = (n.getAttribute("role") || "").trim().split(/\s+/)[0].toLowerCase()
+        if (r) return r
+        const t = n.tagName.toLowerCase()
+        if (t === "a") return n.hasAttribute("href") ? "link" : ""
+        if (t === "button") return "button"
+        if (t === "input") return /^(button|submit|reset|image)$/.test((n.getAttribute("type") || "").toLowerCase()) ? "button" : ""
+        return ""
+      }
+      const selfHidden = (n: Element) => { const cs = getComputedStyle(n); return cs.display === "none" || cs.visibility === "hidden" || cs.visibility === "collapse" }
+      // hidden for accessibility = display:none / visibility:hidden on it, display:none or aria-hidden on it or any ancestor (getByRole ignores these by default)
+      const hiddenForAria = (n: Element): boolean => {
+        for (let c: Element | null = n; c; c = c.parentElement) { if (c.getAttribute("aria-hidden") === "true" || getComputedStyle(c).display === "none") return true }
+        return selfHidden(n)
+      }
+      // accessible-name text from content: hidden / aria-hidden subtrees are skipped; block-level children are space separated; <img> contributes its alt.
+      const textOf = (n: Node, isRoot: boolean, depth: number): string => {
+        if (depth > 15) return ""
+        if (n.nodeType === 3) return n.textContent || ""
+        if (n.nodeType !== 1) return ""
+        const e = n as Element, t = e.tagName.toLowerCase()
+        if (/^(script|style|noscript|template|svg)$/.test(t)) return ""
+        if (!isRoot && (e.getAttribute("aria-hidden") === "true" || selfHidden(e))) return ""
+        if (t === "img") return e.getAttribute("alt") || ""
+        let s = ""
+        for (const c of Array.from(e.childNodes)) s += textOf(c, false, depth + 1)
+        const d = getComputedStyle(e).display
+        return d === "inline" || d === "contents" ? s : " " + s + " "
+      }
+      const nameOf = (n: Element): string => {
+        const lb = n.getAttribute("aria-labelledby")
+        if (lb) {
+          const refs = lb.trim().split(/\s+/).map((id) => document.getElementById(id)).filter(Boolean) as Element[]
+          const s = norm(refs.map((r) => textOf(r, true, 0)).join(" "))
+          if (s) return s
+        }
+        const al = norm(n.getAttribute("aria-label") || "")
+        if (al) return al
+        if (n.tagName.toLowerCase() === "input") {
+          const ty = (n.getAttribute("type") || "").toLowerCase()
+          const v = norm(n.getAttribute("value") || "")
+          const nm = ty === "image" ? norm(n.getAttribute("alt") || "") || v || "Submit" : v || (ty === "submit" ? "Submit" : ty === "reset" ? "Reset" : "")
+          if (nm) return nm
+        }
+        return norm(textOf(n, true, 0)) || norm(n.getAttribute("title") || "")
+      }
+      const ELIGIBLE = /^(link|button|tab|menuitem)$/
+      const role = roleOf(el)
+      if (!ELIGIBLE.test(role) || hiddenForAria(el)) return null
+      const name = nameOf(el)
+      if (!name || name.length > 80) return null
+      const matches = (root: ParentNode): Element[] =>
+        Array.from(root.querySelectorAll("a[href],button,input,[role]")).filter((n) => roleOf(n) === role && !hiddenForAria(n) && nameOf(n) === name)
+      const leaf = `role=${role}[name="${escQ(name)}"s]`
+      const all = matches(document)
+      if (all.length === 1 && all[0] === el) return leaf
+      // Large page: skip the (quadratic-ish) scoped tier and fall through to the positional path. Counted without any style work, so this check is cheap.
+      if (Array.from(document.querySelectorAll("a[href],button,input,[role]")).filter((n) => roleOf(n) === role).length >= maxScoped) return null
+      // Scoped: nearest few row / list-item / card / dialog ancestors; try their own visible text (never the target's) as the distinguishing label.
+      const CONTAINER = 'tr,li,article,dialog,[role="row"],[role="listitem"],[role="dialog"]'
+      let c: Element | null = el.parentElement ? el.parentElement.closest(CONTAINER) : null
+      for (let tries = 0; c && tries < 3; tries++, c = c.parentElement ? c.parentElement.closest(CONTAINER) : null) {
+        const tg = c.tagName.toLowerCase()
+        const csel = /^(tr|li|article|dialog)$/.test(tg) ? tg : `[role="${escQ(c.getAttribute("role") || "")}"]`
+        const labels: string[] = []
+        const walker = document.createTreeWalker(c, NodeFilter.SHOW_TEXT)
+        for (let tn = walker.nextNode(); tn && labels.length < 12; tn = walker.nextNode()) {
+          const pe = tn.parentElement
+          if (!pe || el.contains(pe) || /^(script|style|noscript)$/i.test(pe.tagName) || hiddenForAria(pe)) continue
+          const seg = norm(tn.textContent || "")
+          if (seg.length >= 2 && seg.length <= 60 && /[\p{L}\p{N}]/u.test(seg) && !labels.includes(seg)) labels.push(seg)
+        }
+        for (const lab of labels) {
+          const want = lab.toLowerCase()
+          const scopes = Array.from(document.querySelectorAll(csel)).filter((s) => norm(s.textContent || "").toLowerCase().includes(want))
+          const hit = new Set<Element>()
+          for (const s of scopes) for (const m of matches(s)) hit.add(m)
+          if (hit.size === 1 && hit.has(el)) return `${csel}:has-text("${escQ(lab)}") >> ${leaf}`
+        }
+      }
+      return null
+    })()
+    if (sem) return sem
+  }
+  // Last resort (a bare <a>/<div>/<td> - e.g. the "1st project" link in a list): the fingerprint's domPath is only the last 4 levels,
+  // NOT anchored to the page, so it can match dozens of elements (dev, 2026-11-16: 21 matches -> replay "ambiguous_selector"). Build the
+  // path from the nearest ancestor with a unique id (else <body>) down to el, and keep it only if it resolves to exactly `el`.
+  const seg = (n: Element): string => {
+    let i = 1, sib = n.previousElementSibling
+    while (sib) { if (sib.tagName === n.tagName) i++; sib = sib.previousElementSibling }
+    return n.tagName.toLowerCase() + ":nth-of-type(" + i + ")"
+  }
+  // Prefer the SHORTEST unique suffix of that chain (dev v15: the full body-anchored path began with a positional
+  // `body>div:nth-of-type(6)` that drifted between author and replay -> a 93s vision heal). Fewer positional levels
+  // = less to drift. Walk up one level at a time and stop at the first suffix (>= 2 segments when available) that
+  // resolves to exactly `el`; fall back to the full anchored path.
+  let path = seg(el), cur: Element | null = el.parentElement, depth = 1
+  let anchored = ""
+  while (cur && cur !== document.documentElement) {
+    if (depth >= 2 && uniq(path)) return path
+    if (cur === document.body) { anchored = "body>" + path; break }
+    if (cur.id) { const a = "#" + CSS.escape(cur.id); if (document.querySelectorAll(a).length === 1) { anchored = a + ">" + path; break } }
+    path = seg(cur) + ">" + path
+    depth++
+    cur = cur.parentElement
+  }
+  if (anchored) return uniq(anchored) ? anchored : null
+  return uniq(path) ? path : null
+}
+
+// READ-ONLY element map for Sim screenshot review (Rule 2: accurate UI identification). Runs in the page context right after the
+// screenshot is taken: it only READS layout and text — no clicks, typing, scrolling, navigation or form access. Input VALUES are never
+// read (only labels / placeholders / aria-labels). Boxes are normalised 0..1 against the same viewport (or full document) the screenshot shows.
+function pageElementsBody(fullPage: boolean): any {
+  const W = fullPage ? Math.max(document.documentElement.scrollWidth, 1) : Math.max(window.innerWidth, 1)
+  const H = fullPage ? Math.max(document.documentElement.scrollHeight, 1) : Math.max(window.innerHeight, 1)
+  const offX = fullPage ? window.scrollX : 0, offY = fullPage ? window.scrollY : 0
+  const INTERACTIVE = /^(A|BUTTON|INPUT|SELECT|TEXTAREA|SUMMARY|LABEL)$/
+  const out: any[] = []
+  let heading = ""
+  const all = document.querySelectorAll("body *")
+  const limit = Math.min(all.length, 4000)
+  const clean = (t: string | null | undefined, c: number) => (t || "").replace(/\s+/g, " ").trim().slice(0, c)
+  for (let i = 0; i < limit && out.length < 160; i++) {
+    const el = all[i] as HTMLElement
+    const tag = el.tagName
+    if (/^(SCRIPT|STYLE|NOSCRIPT|META|LINK|PATH|BR|HEAD)$/.test(tag)) continue
+    const isHeading = /^H[1-6]$/.test(tag) || el.getAttribute("role") === "heading"
+    const role = el.getAttribute("role") || ""
+    const interactive = INTERACTIVE.test(tag) || !!role
+    let own = ""
+    for (const n of Array.from(el.childNodes)) if (n.nodeType === 3) own += " " + (n.textContent || "")
+    own = clean(own, 90)
+    let text = interactive || isHeading ? clean(el.innerText, 90) : own
+    const name = clean(el.getAttribute("aria-label") || (tag === "IMG" ? el.getAttribute("alt") : "") || el.getAttribute("title") || (tag === "INPUT" || tag === "TEXTAREA" ? el.getAttribute("placeholder") : ""), 90)
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") text = ""
+    if (isHeading && text) heading = text
+    if (!text && !name && tag !== "IMG" && !/^(INPUT|SELECT|TEXTAREA)$/.test(tag)) continue
+    const cs = getComputedStyle(el)
+    if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity || "1") === 0) continue
+    const r = el.getBoundingClientRect()
+    if (r.width < 2 || r.height < 2) continue
+    const x0 = (r.left + offX) / W, y0 = (r.top + offY) / H, x1 = (r.right + offX) / W, y1 = (r.bottom + offY) / H
+    if (!fullPage && (x1 <= 0 || y1 <= 0 || x0 >= 1 || y0 >= 1)) continue
+    const cx = Math.max(0, x0), cy = Math.max(0, y0), cw = Math.min(1, x1) - cx, ch = Math.min(1, y1) - cy
+    if (cw <= 0 || ch <= 0) continue
+    const id = el.getAttribute("id") || ""
+    const tid = el.getAttribute("data-testid") || ""
+    const selector = id && /^[A-Za-z][\w-]*$/.test(id) ? "#" + id : tid && /^[\w .:-]{1,60}$/.test(tid) ? '[data-testid="' + tid + '"]' : ""
+    out.push({ tag: tag.toLowerCase(), role, text, name, selector, heading: isHeading ? "" : heading, box: { x: cx, y: cy, w: cw, h: ch } })
+  }
+  return { title: clean(document.title, 120), elements: out }
 }
 /* eslint-enable */
 
 const cap = (s: string, c: number) => (s.length > c ? s.slice(0, c - 20) + "\n…[snapshot truncated]" : s)
+
+// A click that navigates (e.g. a form POST) can destroy the page's JS context while the next snapshot's
+// evaluate() is in flight. That is a transient race, not a walk failure: wait a beat and retry on the new page.
+// Caught at the wrong instant, evaluate() can also just hang on the dying context instead of throwing, so each
+// attempt is capped (4 tries × 3s + gaps stays under the author loop's 15s snapshot bound).
+const NAV_RACE_RE = /Execution context was destroyed|Cannot find context with specified id|Inspected target navigated or closed|attempt hung/i
+export async function retryNavRace<T>(fn: () => Promise<T>, tries = 4, attemptMs = 3_000): Promise<T> {
+  for (let i = 1; ; i++) {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      // The losing attempt keeps running; when it later fails (e.g. the browser was closed by a cancel)
+      // nothing awaits it any more - mark it handled so it can't crash the server (KD-2255).
+      const attempt = fn(); attempt.catch(() => {})
+      return await Promise.race([attempt, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error("snapshot attempt hung")), attemptMs) })])
+    } catch (e) {
+      if (i >= tries || !NAV_RACE_RE.test(String((e as any)?.message ?? e))) throw e
+      await new Promise((r) => setTimeout(r, 750))
+    } finally { clearTimeout(timer) }
+  }
+}
 
 // ── Interfaces the author drive programs against ─────────────────────────────────────────────────
 export interface BrowserPage {
@@ -281,11 +750,23 @@ export interface BrowserPage {
    */
   screenshotJpeg(quality: number, timeoutMs: number, opts?: { fullPage?: boolean }): Promise<string>
   krefSnapshot(capChars?: number): Promise<string>
+  /** READ-ONLY element map for Sim screenshot review (no interaction). Optional: only the real drivers implement it. */
+  pageElements?(opts?: { fullPage?: boolean }): Promise<unknown>
   count(selector: string): Promise<number>
   fingerprint(selector: string): Promise<Fingerprint>
+  /** HTML cross-check that `selector`'s element carries `label` (see targetCheckBody). Optional for fakes. */
+  targetCheck?(selector: string, label: string): Promise<TargetCheck>
+  /** HTML cross-check that `selector`'s dropdown contains option `value` (see selectCheckBody). Optional for fakes. */
+  selectCheck?(selector: string, value: string): Promise<TargetCheck>
+  /** Resolve a Playwright-only selector (`:has-text`, `text=`…) to a `[data-kref="eN"]` on its one match; null if not exactly 1. */
+  krefFor?(selector: string): Promise<{ selector: string | null; count: number }>
   stableSelector(selector: string): Promise<string | null>
   click(selector: string, timeoutMs: number): Promise<void>
   fill(selector: string, value: string, timeoutMs: number, sensitive?: boolean): Promise<void>
+  /** Current value of an input/textarea (null if it has none / can't be read). Used to avoid re-typing what a field already holds. */
+  fieldValue?(selector: string): Promise<string | null>
+  /** Whether a checkbox/radio is currently checked (null if it isn't one / can't be read). Lets a repeated click be skipped only when it WOULD un-select. */
+  isChecked?(selector: string): Promise<boolean | null>
   selectOption(selector: string, value: string, timeoutMs: number): Promise<void>
   hover(selector: string, timeoutMs: number): Promise<void>
   keyPress(selector: string, key: string, timeoutMs: number): Promise<void>
@@ -373,22 +854,50 @@ class PlaywrightPage implements BrowserPage {
   }
   drainDialogs() { const out = this.dialogs; this.dialogs = []; return out }
   url() { return this.page.url() }
-  async goto(url: string, timeoutMs: number) { await this.page.goto(url, { timeout: timeoutMs, waitUntil: "domcontentloaded" }) }
+  async goto(url: string, timeoutMs: number) { await gotoPastRedirect(this.page, url, { timeout: timeoutMs, waitUntil: "domcontentloaded" }) }
   async screenshotJpeg(quality: number, timeoutMs: number, opts?: { fullPage?: boolean }) { return (await this.page.screenshot({ type: "jpeg", quality, timeout: timeoutMs, fullPage: !!opts?.fullPage })).toString("base64") }
-  async krefSnapshot(capChars = KREF_SNAPSHOT_CAP) { return cap(await this.page.evaluate(krefSnapshotBody), capChars) }
+  async krefSnapshot(capChars = KREF_SNAPSHOT_CAP) { return cap(await retryNavRace(() => this.page.evaluate(krefSnapshotBody)), capChars) }
+  async pageElements(opts?: { fullPage?: boolean }) { return await this.page.evaluate(pageElementsBody, !!opts?.fullPage) }
   async count(selector: string) { return await this.page.locator(selector).count() }
   async fingerprint(selector: string) { return await this.page.locator(selector).first().evaluate(fingerprintBody) }
-  async stableSelector(selector: string) { try { return await this.page.locator(selector).first().evaluate(stableSelectorBody) } catch { return null } }
+  async targetCheck(selector: string, label: string) { return await this.page.evaluate(targetCheckBody, { selector, label }) }
+  async selectCheck(selector: string, value: string) { return await this.page.evaluate(selectCheckBody, { selector, value }) }
+  async krefFor(selector: string) {
+    // Playwright's own engine understands :has-text / text= etc.; prefer the visible match when several exist.
+    let loc = this.page.locator(selector)
+    let count = await loc.count()
+    if (count > 1) { const vis = loc.filter({ visible: true }); if (await vis.count() === 1) { loc = vis; count = 1 } }
+    if (count !== 1) return { selector: null, count }
+    const id = freshKref()
+    await loc.evaluate((el: Element, v: string) => el.setAttribute("data-kref", v), id)
+    return { selector: `[data-kref="${id}"]`, count }
+  }
+  async stableSelector(selector: string) {
+    try {
+      const loc = this.page.locator(selector).first()
+      const first = await loc.evaluate(stableSelectorBody, { maxScoped: SCOPED_TIER_MAX_CANDIDATES })
+      if (!first || !isSemanticSelector(first)) return first
+      // Cross-check with the REAL selector engine replay uses: it must resolve to exactly this element, else fall back to the positional path.
+      const found = this.page.locator(first)
+      if ((await found.count()) === 1) {
+        const [a, b] = [await loc.elementHandle(), await found.elementHandle()]
+        if (a && b && await a.evaluate((x: Element, y: Element) => x === y, b)) return first
+      }
+      return await loc.evaluate(stableSelectorBody, { skipSemantic: true })
+    } catch { return null }
+  }
   async click(selector: string, timeoutMs: number) { await clickWithTransitionFallback(this.page.locator(selector), timeoutMs) }
   async fill(selector: string, value: string, timeoutMs: number, sensitive = false) {
     const loc = this.page.locator(selector)
     await loc.fill(value, { timeout: timeoutMs })
     if (sensitive) await loc.first().evaluate((el) => el.setAttribute("data-autosim-sensitive", "1")).catch(() => {})
   }
-  async selectOption(selector: string, value: string, timeoutMs: number) { await this.page.locator(selector).selectOption(value, { timeout: timeoutMs }) }
+  async selectOption(selector: string, value: string, timeoutMs: number) { await selectOptionAnyWidget(this.page.locator(selector), value, timeoutMs) }
   async hover(selector: string, timeoutMs: number) { await this.page.locator(selector).hover({ timeout: timeoutMs }) }
   async keyPress(selector: string, key: string, timeoutMs: number) { await this.page.locator(selector).press(key, { timeout: timeoutMs }) }
   async clearField(selector: string, timeoutMs: number) { await this.page.locator(selector).clear({ timeout: timeoutMs }) }
+  async fieldValue(selector: string) { try { return await this.page.locator(selector).first().inputValue({ timeout: 2_000 }) } catch { return null } }
+  async isChecked(selector: string) { try { return await this.page.locator(selector).first().isChecked({ timeout: 2_000 }) } catch { return null } }
   async setInputFiles(selector: string, files: string[], timeoutMs: number) { await this.page.locator(selector).setInputFiles(files, { timeout: timeoutMs }) }
   async waitForSelector(selector: string, timeoutMs: number) { await this.page.locator(selector).first().waitFor({ state: "visible", timeout: timeoutMs }) }
   async assertVisible(selector: string, timeoutMs: number) { await this.page.locator(selector).waitFor({ state: "visible", timeout: timeoutMs }) }
@@ -518,8 +1027,24 @@ class PlaywrightHandle implements BrowserHandle {
   }
 }
 
+/**
+ * Runs IN the page (serialized by puppeteer's evaluate, so it must stay self-contained): focus the field and
+ * select ALL of its current text, so the next type() REPLACES it - what Playwright's fill() does. The old
+ * triple-click did not select anything on some React inputs (PX4's pre-filled login "identity" field), so a
+ * re-typed email was APPENDED ("a@b.coa@b.co") and Login failed.
+ */
+export function selectAllBody(node: any): void {
+  node.focus?.()
+  if (typeof node.select === "function") { node.select(); return }
+  const r = document.createRange()
+  r.selectNodeContents(node)
+  const s = getSelection()
+  s?.removeAllRanges()
+  s?.addRange(r)
+}
+
 // ── Puppeteer-over-CDP impl — remote browser (Steel). Actionability re-added via waitForSelector. ──
-class PuppeteerPage implements BrowserPage {
+export class PuppeteerPage implements BrowserPage {
   // KLA-786 (dialog-capture): mirror PlaywrightPage — capture JS dialog text before closing it. Puppeteer
   // does NOT auto-dismiss by default (a dialog can hang the page), so a handler is doubly important here.
   private dialogs: { type: string; message: string }[] = []
@@ -534,23 +1059,47 @@ class PuppeteerPage implements BrowserPage {
   url() { return this.page.url() }
   async goto(url: string, timeoutMs: number) { await this.page.goto(url, { timeout: timeoutMs, waitUntil: "domcontentloaded" }) }
   async screenshotJpeg(quality: number, _timeoutMs: number, opts?: { fullPage?: boolean }) { return (await this.page.screenshot({ type: "jpeg", quality, encoding: "base64", fullPage: !!opts?.fullPage })) as string }
-  async krefSnapshot(capChars = KREF_SNAPSHOT_CAP) { return cap(await this.page.evaluate(krefSnapshotBody), capChars) }
+  async krefSnapshot(capChars = KREF_SNAPSHOT_CAP) { return cap(await retryNavRace(() => this.page.evaluate(krefSnapshotBody)), capChars) }
+  async pageElements(opts?: { fullPage?: boolean }) { return await this.page.evaluate(pageElementsBody, !!opts?.fullPage) }
   async count(selector: string) { return await this.page.evaluate((s: string) => document.querySelectorAll(s).length, selector) }
   async fingerprint(selector: string) { return await this.page.$eval(selector, fingerprintBody) }
-  async stableSelector(selector: string) { try { return await this.page.$eval(selector, stableSelectorBody) } catch { return null } }
+  async targetCheck(selector: string, label: string) { return await this.page.evaluate(targetCheckBody, { selector, label }) }
+  async selectCheck(selector: string, value: string) { return await this.page.evaluate(selectCheckBody, { selector, value }) }
+  async krefFor(selector: string) { return await this.page.evaluate(pwSelectorKrefBody, { selector, id: freshKref() }) }
+  async stableSelector(selector: string) {
+    try {
+      const first = await this.page.$eval(selector, stableSelectorBody, { maxScoped: SCOPED_TIER_MAX_CANDIDATES })
+      if (!first || !isSemanticSelector(first)) return first
+      // Puppeteer has no Playwright selector engine, so cross-check the role + name with Chrome's own accessibility tree for this exact element.
+      // Any mismatch or failure -> the positional path (conservative: never save a semantic selector that was not confirmed).
+      const tail = first.match(SEMANTIC_TAIL)!
+      const handle = await this.page.$(selector)
+      let ok = false
+      try {
+        const ax = handle ? await this.page.accessibility.snapshot({ root: handle, interestingOnly: false }) : null
+        const want = tail[2].replace(/\\(.)/g, "$1")
+        ok = !!ax && String(ax.role) === tail[1] && String(ax.name ?? "").replace(/\s+/g, " ").trim() === want
+        if (!ok) console.warn(`[trails-browser-page] semantic selector not confirmed by the accessibility tree (want ${tail[1]} "${want}", got ${ax?.role} "${ax?.name}"); using the positional path`)
+      } catch (e) { console.warn("[trails-browser-page] accessibility cross-check failed; using the positional path:", String((e as any)?.message ?? e).slice(0, 120)) }
+      finally { await handle?.dispose().catch(() => {}) }
+      return ok ? first : await this.page.$eval(selector, stableSelectorBody, { skipSemantic: true })
+    } catch { return null }
+  }
   async click(selector: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }); await this.page.click(selector) }
   async fill(selector: string, value: string, timeoutMs: number, sensitive = false) {
     const el = await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs })
-    await el.click({ clickCount: 3 }).catch(() => {}) // select existing text so type() replaces it (mirrors fill)
+    await el.evaluate(selectAllBody).catch(() => {}) // select existing text so type() replaces it (mirrors fill)
     await el.type(value)
     if (sensitive) await el.evaluate((node: Element) => node.setAttribute("data-autosim-sensitive", "1")).catch(() => {})
   }
   async selectOption(selector: string, value: string, timeoutMs: number) { await this.page.waitForSelector(selector, { timeout: timeoutMs }); await this.page.select(selector, value) }
   async hover(selector: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }); await this.page.hover(selector) }
   async keyPress(selector: string, key: string, timeoutMs: number) { await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs }); await this.page.focus(selector); await this.page.keyboard.press(key) }
+  async fieldValue(selector: string) { try { return await this.page.$eval(selector, (e: any) => (typeof e.value === "string" ? e.value : null)) } catch { return null } }
+  async isChecked(selector: string) { try { return await this.page.$eval(selector, (e: any) => (e.type === "checkbox" || e.type === "radio" ? !!e.checked : null)) } catch { return null } }
   async clearField(selector: string, timeoutMs: number) {
     const el = await this.page.waitForSelector(selector, { visible: true, timeout: timeoutMs })
-    await el.click({ clickCount: 3 }).catch(() => {})
+    await el.evaluate(selectAllBody).catch(() => {})
     await this.page.keyboard.press("Backspace")
   }
   async setInputFiles(selector: string, files: string[], timeoutMs: number) {
@@ -671,6 +1220,29 @@ export class BrowserLaunchError extends Error {
     super(message)
     this.name = "BrowserLaunchError"
   }
+}
+
+/**
+ * The walk browser launch/connect never returned. Seen with Playwright's Chromium under Bun on Windows (the
+ * pipe/WebSocket transport hangs), which left the Verification Walk stuck BEFORE its first step with no heartbeat
+ * until the stale reaper killed the AutoSim as "stale heartbeat". A hung launch is not transient, so it is NOT retried.
+ */
+export class BrowserAcquireTimeoutError extends BrowserLaunchError {
+  constructor(readonly timeoutMs: number) {
+    super(
+      `The walk browser did not start within ${Math.round(timeoutMs / 1000)}s. Playwright's Chromium can hang on launch under Bun on Windows; ` +
+      `run the server where Playwright works (Linux/Node), or set AUTOSIM_CDP_URL to a remote browser. Override the wait with AUTOSIM_BROWSER_ACQUIRE_TIMEOUT_MS.`,
+    )
+    this.name = "BrowserAcquireTimeoutError"
+  }
+}
+
+/** Reject with BrowserAcquireTimeoutError if `p` has not settled within `ms` (the pending launch is abandoned). */
+export async function withAcquireTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([p, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new BrowserAcquireTimeoutError(ms)), ms) })])
+  } finally { if (timer) clearTimeout(timer) }
 }
 
 const REMOTE_HINT =
@@ -1005,6 +1577,8 @@ export interface WalkBrowserRetryOptions {
   attempts?: number
   /** Base backoff in ms for the jittered exponential backoff between attempts. Default 500. */
   baseDelayMs?: number
+  /** Per-attempt wall-clock limit for the launch/connect. Default 45s, or AUTOSIM_BROWSER_ACQUIRE_TIMEOUT_MS. */
+  attemptTimeoutMs?: number
   /** Injectable sleep (tests pass a no-op so retries are instant). */
   sleep?: (ms: number) => Promise<void>
   /** Injectable jitter source (tests). Default Math.random. */
@@ -1034,12 +1608,16 @@ export async function acquireWalkBrowser(
   const sleep = retry.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)))
   const rand = retry.rand ?? Math.random
   const acquire = retry.acquire ?? acquirePlaywrightBrowser
+  const envTimeout = Number(process.env.AUTOSIM_BROWSER_ACQUIRE_TIMEOUT_MS)
+  const attemptTimeoutMs = retry.attemptTimeoutMs ?? (Number.isFinite(envTimeout) && envTimeout > 0 ? envTimeout : 45_000)
   let lastErr: unknown
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      return await acquire(opts, retry.deps)
+      return await withAcquireTimeout(acquire(opts, retry.deps), attemptTimeoutMs)
     } catch (e) {
       lastErr = e
+      // A launch that hangs is not transient - fail fast instead of burning attempts x timeout.
+      if (e instanceof BrowserAcquireTimeoutError) break
       // Stop when we're out of attempts, or the failure is NOT a transient transport error.
       if (attempt >= attempts || !isInfraTransportError(e)) break
       // Jittered exponential backoff: base * 2^(attempt-1) * (0.5..1.5). Bounded — never unbounded.
@@ -1128,7 +1706,10 @@ async function launchLocalPuppeteer(executablePath: string, opts: AcquireOpts): 
   const { default: puppeteer } = await import("puppeteer-core")
   let browser: any
   try {
-    browser = await puppeteer.launch({ executablePath, headless: opts.headless ?? true, args: opts.launchArgs ?? [], defaultViewport: null, timeout: 30_000 })
+    // --single-process (a Linux prod memory flag in CHROMIUM_PROD_ARGS) crashes Chromium on Windows at the
+    // first keystroke ("Input.dispatchKeyEvent: Target closed"), so drop it on this Windows-only path.
+    const args = (opts.launchArgs ?? []).filter(a => a !== "--single-process")
+    browser = await puppeteer.launch({ executablePath, headless: opts.headless ?? true, args, defaultViewport: null, timeout: 30_000 })
   } catch (e) {
     throw new BrowserLaunchError(
       "Could not start a local browser (" + String((e as any)?.message ?? e) + "). Install Playwright's Chromium on the host (bunx playwright install chromium), or run walks remotely. " + REMOTE_HINT, e,

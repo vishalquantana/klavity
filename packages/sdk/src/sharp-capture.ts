@@ -160,6 +160,16 @@ export interface StickyHeaderInfo {
 }
 
 /**
+ * True for a fixed/sticky box that covers most of the viewport in BOTH dimensions (an app-shell wrapper or a
+ * modal backdrop); those stay visible in every frame. A full-height but narrow rail (e.g. a left nav sidebar at
+ * height:100vh) is NOT a cover: it is hidden after the first frame like any other fixed element, so the
+ * full-page shot shows it once at the top and blank space below, instead of repeating it once per frame (KD-3120).
+ */
+export function isViewportCover(r: { width: number; height: number }, vw: number, vh: number): boolean {
+  return r.height > vh * 0.6 && r.width > vw * 0.6
+}
+
+/**
  * Identify top-anchored position:fixed and position:sticky elements (such as navigation bars
  * and sticky headers) that repeat across viewport scroll stops.
  */
@@ -180,8 +190,8 @@ export function findTopFixedStickyHeaders(rootDoc?: Document, hostId = "klavity-
       if (pos === "fixed" || pos === "sticky" || pos === "-webkit-sticky") {
         try {
           const r = el.getBoundingClientRect()
-          // Do not treat large containers/app shells (> 60% viewport height) as repeated headers/bars
-          if (r.height > vh * 0.6) continue
+          // Leave viewport-covering app shells / modal backdrops alone; tall narrow side rails are still collected.
+          if (isViewportCover(r, vw, vh)) continue
           elements.push(el)
           // Top-anchored header: near top (top <= 8), spanning width (>= 35% of viewport),
           // reasonable header height (0 < height <= 40% of viewport)

@@ -3,6 +3,7 @@ import { injectSimStyles } from "@klavity/core/sim"
 import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage, safeToPngViewport, hasUncapturableEmbeds, fullPageCaptureSize } from "./capture"
 import { buildModal, installRegionDrag, isEditableTarget, isLinkTarget, createSharePickerHint, shareCaptureLikelyGranted, type ModalController, type PickedTarget, type CaptureQuality, type ShotCapture } from "@klavity/core/modal"
 import { safeRemove } from "@klavity/core"
+import { splitForLargeUpload, offloadLargeFiles, fetchTransport, LargeUploadError } from "@klavity/core/large-upload"
 import { cropDataUrl, cumulativeScrollForRect, type Rect } from "@klavity/core/crop"
 import {
   planScrollStitch,
@@ -16,25 +17,30 @@ import {
 import { type CaptureBuffers } from "@klavity/core/capture"
 import { installCaptureContext, buildCaptureContext } from "./capture-context"
 import { installErrorReporter } from "./error-reporter"
-import type { ReportContext, ReportIdentity, Reporter, ClientInfo } from "@klavity/core"
-import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, shouldUseInteractiveSuccess, compressScreenshot, buildThumbnail, resolveComposerRecord } from "./widget-lib"
+import type { ReportContext, ReportIdentity, Reporter, ClientInfo, ReportRecording } from "@klavity/core"
+import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, shouldUseInteractiveSuccess, compressScreenshot, buildThumbnail, resolveComposerRecord, mergeRecordings } from "./widget-lib"
 import { SubmitError, newSubmissionKey, sendForm, withRetries, buildRepairForm, refreshTurnstileField, outcomeFromResult, serverSupportsIdempotency, retryFailureCopy, RETRY, type SubmitOutcome, type RetryInfo } from "./submit-flow"
 import { coerceReporter, reporterToIdentity, resolveFallbackReporter, captureClientInfo } from "./identity"
-import { computeSelector, describeElement } from "./element-selector"
+import { pickElementOnPage as pickElementOnPageShared } from "@klavity/core/element-picker"
 import { getTurnstileToken } from "./load-turnstile"
 import { icon } from "@klavity/core/icons"
 // KLA-726: keep in sync with the extension card menu — shared source of truth in @klavity/core/context-menu.
 import { CONTEXT_MENU_CSS, MENU_ARROW_SVG, buildMenuCard } from "@klavity/core/context-menu"
 import { klavityAttributionUrl } from "@klavity/core/attribution"
 import { recordMe, recordingSupported } from "./recorder"
+import { createRecordBridge, recorderWindowAvailable } from "./record-bridge"
 import { on, emit } from "./events"
 import {
   getActiveSession, startOrContinue, addShot, removeShot, clear as clearEvidenceSession,
   makeShotId, pageCount, MAX_SHOTS, updateShotAnnotations, updateFields as updateEvidenceFields,
+  setRecordings as setEvidenceRecordings,
+  setFiles as setEvidenceFiles,
+  setMulti as setEvidenceMulti,
   type EvidenceSession, type EvidenceShot,
 } from "./evidence-session"
 import { SimsLive, type LiveObservation } from "./sims-live"  // side-effecting: auto-installs window.KlavitySims on load
 import { startSimsWatch, type SimsWatchController } from "./sims-watch"
+import { openSelectSimsModal, createSelectSimsApi, managedSigOf, planManagedSync, isSimRunning, type ManagedSim, type ManagedSimAction } from "./sims-select-modal"
 
 const HOST_ID = "klavity-widget-host"
 // Screenshot capture filter: exclude ALL Klavity-injected chrome so the widget never captures
@@ -95,102 +101,14 @@ const TOKEN_KEY = "klavity_widget_token"
 const WIDGET_FETCH_TIMEOUT_MS = 15_000
 const SIM_REVIEW_FETCH_TIMEOUT_MS = 45_000
 
-// KLAVITYKLA-228/371 (JTBD 1.11): on-page element picker. Mounts a lightweight highlight overlay that
-// tracks the element under the cursor; on click it computes a robust unique CSS selector + captures a
-// human-readable text snippet (aria-label / placeholder / visible text) to pin onto the report as
-// annotations.selector + annotations.selectorText. Esc cancels. The highlight/label/banner are
-// pointer-events:none so elementFromPoint always reads the page beneath.
+// KLAVITYKLA-228/371 (JTBD 1.11): on-page element picker — the shared @klavity/core picker (KD-988: the
+// Chrome extension uses the same one). The widget's host is never pickable, and the picked element's
+// screenshot is the same pixel-accurate region crop as the drag/Region paths (full-page source + cumulative
+// scroll), so it matches the element's box even on app-shell / inner-scroller layouts.
 function pickElementOnPage(): Promise<PickedTarget | null> {
-  return new Promise((resolve) => {
-    if (typeof document === "undefined" || !document.body) return resolve(null)
-    const box = document.createElement("div")
-    // KLA-763 (odd color): the element-picker highlight box + label used #6d5efc / rgba(109,94,252,…),
-    // an off-brand purple that read as a DIFFERENT accent from the rest of the widget/composer (which is
-    // the Klavity brand accent #6366f1 = rgb 99,102,241 everywhere else — pill, FAB, region-drag, chips).
-    // Snap them to the brand accent so the picker matches the composer.
-    box.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;border:2px solid #6366f1;background:rgba(99,102,241,.14);border-radius:4px;box-shadow:0 0 0 2px rgba(255,255,255,.55);display:none;"
-    const label = document.createElement("div")
-    label.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;font:600 11px/1.4 system-ui,-apple-system,sans-serif;color:#fff;background:#6366f1;padding:2px 7px;border-radius:5px;max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:none;"
-    const banner = document.createElement("div")
-    banner.setAttribute("role", "status")
-    banner.setAttribute("aria-live", "polite")
-    banner.textContent = "Click the element that's broken · press Esc to cancel"
-    banner.style.cssText = "position:fixed;z-index:2147483647;top:16px;left:50%;transform:translateX(-50%);pointer-events:none;font:600 13px/1.4 system-ui,-apple-system,sans-serif;color:#fff;background:#111827;padding:8px 16px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.3);"
-    document.body.append(box, label, banner)
-    const rootEl = document.documentElement
-    const prevCursor = rootEl.style.cursor
-    rootEl.style.cursor = "crosshair"
-
-    const isOurs = (el: Element | null): boolean => {
-      for (let n: Element | null = el; n; n = n.parentElement) {
-        if (n.id === HOST_ID || n === box || n === label || n === banner) return true
-      }
-      return false
-    }
-    const highlight = (el: Element) => {
-      const r = el.getBoundingClientRect()
-      box.style.display = "block"
-      box.style.left = r.left + "px"; box.style.top = r.top + "px"
-      box.style.width = r.width + "px"; box.style.height = r.height + "px"
-      const tag = el.tagName.toLowerCase()
-      const id = el.id ? "#" + el.id : ""
-      const cls = el.classList && el.classList.length ? "." + el.classList[0] : ""
-      label.textContent = tag + id + cls
-      label.style.display = "block"
-      label.style.left = r.left + "px"
-      label.style.top = Math.max(2, r.top - 22) + "px"
-    }
-    const onMove = (e: MouseEvent) => {
-      const el = document.elementFromPoint(e.clientX, e.clientY)
-      if (!el || isOurs(el)) return
-      highlight(el)
-    }
-    // Tear down the picker overlays + listeners. Split from resolve() so onClick can drop the highlight
-    // overlays BEFORE it captures the element crop (otherwise the purple box/label paint into the shot).
-    const teardown = () => {
-      document.removeEventListener("mousemove", onMove, true)
-      document.removeEventListener("click", onClick, true)
-      document.removeEventListener("keydown", onKey, true)
-      rootEl.style.cursor = prevCursor
-      safeRemove(box); safeRemove(label); safeRemove(banner)
-    }
-    const cleanup = (result: PickedTarget | null) => { teardown(); resolve(result) }
-    const onClick = (e: MouseEvent) => {
-      const el = document.elementFromPoint(e.clientX, e.clientY)
-      if (!el || isOurs(el)) return
-      e.preventDefault(); e.stopPropagation()
-      const selector = computeSelector(el)
-      if (!selector) { cleanup(null); return }
-      // KLAVITYKLA-494: also grab a cropped screenshot of the picked element's bounding box so the report
-      // carries an image of exactly what's broken (not just the selector/kref/context). Capture the rect +
-      // text NOW, drop the picker overlays, then crop out of a full-page capture — mirrors onRegionCapture.
-      const r = el.getBoundingClientRect()
-      const text = describeElement(el)
-      teardown()
-      void (async () => {
-        let shot: string | undefined
-        let shotQuality: CaptureQuality | undefined
-        try {
-          if (r.width >= 1 && r.height >= 1) {
-            // Same pixel-accurate region crop as the drag/Region paths so the picked-element shot matches the
-            // element's box even on app-shell / inner-scroller layouts (full-page source + cumulative scroll).
-            const { dataUrl, quality } = await captureRegionCrop({ x: r.left, y: r.top, w: r.width, h: r.height })
-            shot = dataUrl
-            shotQuality = quality
-          }
-        } catch { /* the crop is best-effort — the selector still pins the element even if capture fails */ }
-        // KLA-621: carry the element's rect so Retake can redo THIS element (re-resolved live from the selector,
-        // rect as fallback) cropped pixel-perfect from the shared Snap frame — not a full-screen grab.
-        resolve({ selector, text, shot, shotQuality, rect: { x: r.left, y: r.top, w: r.width, h: r.height } })
-      })()
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cleanup(null) }
-    }
-    // Capture phase so we win the click/keydown before the host page's own handlers.
-    document.addEventListener("mousemove", onMove, true)
-    document.addEventListener("click", onClick, true)
-    document.addEventListener("keydown", onKey, true)
+  return pickElementOnPageShared({
+    hostIds: [HOST_ID],
+    captureRect: async (rect) => { const { dataUrl, quality } = await captureRegionCrop(rect); return { dataUrl, quality } },
   })
 }
 
@@ -302,6 +220,19 @@ function currentScript(): HTMLScriptElement {
     || (document.querySelector('script[src*="widget.js"]') as HTMLScriptElement)
 }
 
+// KD-993: remember the reporter's email (per project, on the customer's origin) so the composer doesn't make them
+// retype it every time. A host-supplied identity (identify() / data-user-email) always wins over this.
+const REPORTER_EMAIL_KEY = "klavity_reporter_email"
+const EMAIL_OK = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+function getSavedEmail(projectId: string): string {
+  try { const v = localStorage.getItem(REPORTER_EMAIL_KEY + ":" + projectId) || ""; return EMAIL_OK.test(v) ? v : "" } catch { return "" }
+}
+function setSavedEmail(projectId: string, email: string) {
+  try {
+    if (email && EMAIL_OK.test(email)) localStorage.setItem(REPORTER_EMAIL_KEY + ":" + projectId, email)
+    else localStorage.removeItem(REPORTER_EMAIL_KEY + ":" + projectId)
+  } catch { /* storage unavailable (private mode / blocked) — just don't remember */ }
+}
 function getToken(): string { try { return localStorage.getItem(TOKEN_KEY) || "" } catch { return "" } }
 function setToken(t: string) { try { localStorage.setItem(TOKEN_KEY, t) } catch {} }
 function clearToken() { try { localStorage.removeItem(TOKEN_KEY) } catch {} }
@@ -546,6 +477,40 @@ function hideFixedSticky(out: Array<{ el: HTMLElement; v: string }>) {
 // "Stop sharing" bar (the track's 'ended' event drops our handle so the next capture re-prompts cleanly).
 let _sharedDisplayStream: MediaStream | null = null
 let _sharedDisplayVideo: HTMLVideoElement | null = null
+// KD-3088: resolves once Chrome's "Sharing this tab" bar has settled after a NEW share (see acquireDisplayStream).
+let _shareBarSettled: Promise<void> = Promise.resolve()
+
+// KD-3088: right after a share starts, Chrome adds its "Sharing this tab" bar, which shrinks the page's viewport a
+// moment LATER. A frame grabbed before that is the old size (the page at the top, a black band below) and no longer
+// matches the page's layout, so Mask numbers can't place its boxes and the shot gets a black strip. Resolves on the
+// first resize after the share starts (plus a short layout beat), or after `maxMs` when no bar shows up.
+export function watchShareBarSettle(maxMs = 1200): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    let done = false
+    const finish = () => { if (done) return; done = true; window.removeEventListener("resize", onResize); clearTimeout(timer); resolve() }
+    const onResize = () => { setTimeout(finish, 120) }
+    const timer = setTimeout(finish, maxMs)
+    window.addEventListener("resize", onResize)
+  })
+}
+
+// KD-3088: wait (bounded) until the stream's frame has the page viewport's shape and the viewport height has stopped
+// changing, so the grabbed frame and the page layout (which Mask numbers measures) agree. Best-effort: on timeout the
+// caller grabs anyway, exactly as before.
+export async function waitForFrameToMatchViewport(video: HTMLVideoElement, maxMs = 1000, stepMs = 50): Promise<boolean> {
+  const deadline = Date.now() + maxMs
+  let lastH = -1
+  for (;;) {
+    const vw = Math.max(1, window.innerWidth), vh = Math.max(1, window.innerHeight)
+    const fw = video.videoWidth, fh = video.videoHeight
+    const shapeOk = fw > 0 && fh > 0 && Math.abs(fw / fh - vw / vh) / (vw / vh) < 0.01
+    if (shapeOk && vh === lastH) return true
+    lastH = vh
+    if (Date.now() >= deadline) return false
+    await _sleep(stepMs)
+  }
+}
 
 // Return the live shared stream, or null if none / it has ended (user stopped sharing). Self-heals a dead one.
 export function activeSharedStream(): MediaStream | null {
@@ -575,6 +540,7 @@ export async function acquireDisplayStream(): Promise<MediaStream> {
     preferCurrentTab: true,
   })
   _sharedDisplayStream = stream
+  _shareBarSettled = watchShareBarSettle()   // KD-3088: the first grab waits for Chrome's sharing bar to settle
   // snap-share-hint: the reporter just granted a screen-share — remember it so the "click Allow" hover hint on
   // the FAB stops showing (they know the flow now). Best-effort; private mode / disabled storage is fine.
   try { localStorage.setItem("klavity_share_ok", "1") } catch { /* noop */ }
@@ -603,6 +569,9 @@ async function grabDisplayViewportFrame(stream: MediaStream): Promise<{ dataUrl:
     const deadline = Date.now() + 3000
     while ((video.videoWidth === 0 || video.videoHeight === 0) && Date.now() < deadline) await _sleep(50)
     if (!video.videoWidth || !video.videoHeight) throw new Error("sharp viewport capture: no video frame")
+    // KD-3088: never grab before the sharing bar has settled and the frame matches the page's current shape.
+    await _shareBarSettled
+    await waitForFrameToMatchViewport(video)
     const vw = Math.max(1, window.innerWidth)
     const vh = Math.max(1, window.innerHeight)
     const scale = video.videoWidth / vw
@@ -685,6 +654,9 @@ async function captureSharpFullPage(): Promise<string> {
     const deadline = Date.now() + 3000
     while ((video.videoWidth === 0 || video.videoHeight === 0) && Date.now() < deadline) await _sleep(50)
     if (!video.videoWidth || !video.videoHeight) throw new Error("sharp capture: no video frame")
+    // KD-3088: same as the viewport grab — wait for the sharing bar to settle before measuring/stitching.
+    await _shareBarSettled
+    await waitForFrameToMatchViewport(video)
 
     const vw = Math.max(1, window.innerWidth)
     const vh = Math.max(1, window.innerHeight)
@@ -901,7 +873,11 @@ async function mount() {
   // the browser can screen-record (getDisplayMedia + MediaRecorder) — hidden on iOS Safari, matching the
   // Sharp-capture support envelope. A project turns it OFF only by explicitly setting composer.record:false
   // (or allowRecording:false). No config / a failed config fetch → the button shows (when supported).
-  let composerRecord = (() => { try { return resolveComposerRecord(null, recordingSupported()) } catch { return false } })()
+  // The recorder window (record-bridge) is opt-in per embed (data-record-mode="window", e.g. PX4); every other
+  // project keeps the original in-page recorder and its support check, unchanged.
+  const useRecorderWindow = cfg.recordMode === "window"
+  const recordCapable = () => recordingSupported() || (useRecorderWindow && recorderWindowAvailable())
+  let composerRecord = (() => { try { return resolveComposerRecord(null, recordCapable()) } catch { return false } })()
   let composerIssueTypes: Array<{ value: 'bug' | 'feature' | 'task' | 'query'; label: string; mappingLabel?: string }> | undefined
   // Report-clarity helper (per-project, DEFAULT on). Only OFF when the server explicitly returns
   // reportClarity:false. Server + widget ship together (orchestrator), so the field is always present.
@@ -967,7 +943,7 @@ async function mount() {
         composerFileAttach = !(composer.fileAttach === false || composer.allowFileAttachments === false)
         // "Record me" (KLAVITYKLA-438): DEFAULT-ON — only an EXPLICIT record:false / allowRecording:false
         // turns it off. Still gated on browser screen-capture support (recordingSupported()).
-        composerRecord = resolveComposerRecord(composer, recordingSupported())
+        composerRecord = resolveComposerRecord(composer, recordCapable())
         if (Array.isArray(composer.issueTypes) && composer.issueTypes.length) {
           const cleaned = composer.issueTypes
             .filter((t: any) => t && typeof t.value === 'string' && ['bug', 'feature', 'task', 'query'].includes(t.value))
@@ -1044,13 +1020,18 @@ async function mount() {
   let evMinimizing = false // set while we deliberately close the composer to minimize (vs a plain X-close)
   // Serialize session writes so concurrent adds/removes can't lose an update (read-modify-write races).
   let evWriteChain: Promise<unknown> = Promise.resolve()
+  // KD-1004: sessions whose report was already filed, and whether the current composer's report was. A late
+  // write (debounced typing, a page-unload flush) for a filed report must not re-create the saved draft —
+  // that resurrected a "Bug report in progress" dock after a refresh even though the ticket was created.
+  const filedSessionIds = new Set<string>()
+  let composerFiled = false
   function queueEvWrite<T>(fn: () => Promise<T>): Promise<T> {
     const run = evWriteChain.then(fn, fn)
     evWriteChain = run.catch(() => undefined)
     return run
   }
   // Persist one composer-captured shot (data URL) to the active session, tagged with the CURRENT page.
-  async function persistEvShot(sessionId: string, dataUrl: string): Promise<void> {
+  async function persistEvShot(sessionId: string, dataUrl: string, numberMask?: unknown): Promise<void> {
     try {
       const blob = dataUrlToBlob(dataUrl)
       const dims = await measureImage(dataUrl)
@@ -1058,6 +1039,8 @@ async function mount() {
         id: makeShotId(), pageUrl: location.href, pagePath: location.pathname, label: "",
         blob, bytes: blob.size, w: dims.w, h: dims.h, ts: Date.now(),
         dataUrl,
+        // KD-3088: keep where the numbers were so Mask numbers can mask this shot after Minimize → Resume.
+        ...(numberMask ? { numberMask } : {}),
       }
       const res = await addShot(sessionId, shot)
       evSession = res.session
@@ -1074,6 +1057,7 @@ async function mount() {
   // the screenshot via this same session; without this, the typed text was silently lost even though the
   // shot survived. queueEvWrite serializes it against shot writes so a fast typist + a fast shot can't race.
   async function persistEvDesc(sessionId: string, text: string): Promise<void> {
+    if (filedSessionIds.has(sessionId)) return
     try {
       saveDraft(cfg.projectId, evOrigin, { desc: text })
       const updated = await updateEvidenceFields(sessionId, { desc: text })
@@ -1081,6 +1065,7 @@ async function mount() {
     } catch { /* best-effort: a failed persist must never break typing */ }
   }
   async function persistEvTitle(sessionId: string, text: string): Promise<void> {
+    if (filedSessionIds.has(sessionId)) return
     try {
       saveDraft(cfg.projectId, evOrigin, { title: text })
       const updated = await updateEvidenceFields(sessionId, { title: text })
@@ -1149,11 +1134,60 @@ async function mount() {
   }
   function hasEvSessionContent(session: EvidenceSession | null): boolean {
     if (!session) return false
-    return session.shots.length > 0 || session.desc.trim().length > 0 || session.title.trim().length > 0
+    return session.shots.length > 0 || (session.recordings?.length ?? 0) > 0 || (session.files?.length ?? 0) > 0 || session.desc.trim().length > 0 || session.title.trim().length > 0
+  }
+  // ── Attached files across Minimize → Resume ──
+  // The composer's attached Files can't all go into IndexedDB (a multi-GB video would blow the quota), so the
+  // bytes stay in page memory and the session stores metadata — plus the bytes for small data-URL files, which
+  // therefore also survive a reload/navigation. A big file the page lost is reported on Resume, never dropped silently.
+  const EV_FILE_STORE_MAX_CHARS = 12 * 1024 * 1024 // ≈ an 8 MB file as a data URL
+  const evFileIds = new WeakMap<object, string>()
+  const evFilesMem = new Map<string, any>()
+  function evFileId(f: object): string {
+    let id = evFileIds.get(f)
+    if (!id) { id = "f_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); evFileIds.set(f, id) }
+    return id
+  }
+  function evPersistFiles(sessionId: string, files: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>) {
+    const keep = new Set<string>()
+    const rows = files.map((f) => {
+      const id = evFileId(f); keep.add(id); evFilesMem.set(id, f)
+      const dataUrl = f.dataUrl && f.dataUrl.length <= EV_FILE_STORE_MAX_CHARS ? f.dataUrl : ""
+      // Attached videos are kept as a Blob (never base64'd) → persist the Blob itself (IndexedDB stores it natively),
+      // so the video survives minimize + a navigation/reload instead of being dropped.
+      return { id, name: f.name, type: f.type, size: f.size, dataUrl, ...(!dataUrl && f.blob ? { blob: f.blob } : {}) }
+    })
+    for (const id of [...evFilesMem.keys()]) if (!keep.has(id)) evFilesMem.delete(id)
+    void queueEvWrite(async () => { evSession = await setEvidenceFiles(sessionId, rows) ?? evSession; updateEvDock() })
+  }
+  function evRestoreFiles(session: EvidenceSession): any[] {
+    const out: any[] = []
+    const lost: string[] = []
+    for (const row of session.files ?? []) {
+      const mem = evFilesMem.get(row.id)
+      if (mem) { out.push(mem); continue }
+      if (row.dataUrl || row.blob) {
+        const f: any = { name: row.name, type: row.type, size: row.size, dataUrl: row.dataUrl || "" }
+        if (!row.dataUrl && row.blob) f.blob = row.blob   // a stored video: the composer previews + uploads the Blob
+        evFileIds.set(f, row.id); evFilesMem.set(row.id, f); out.push(f)
+        continue
+      }
+      lost.push(row.name)
+    }
+    if (lost.length) {
+      try { evBanner(`${lost.join(", ")} couldn't be kept after the page reloaded — please attach ${lost.length === 1 ? "it" : "them"} again.`) } catch { /* best-effort */ }
+      evPersistFiles(session.id, out)
+    }
+    return out
   }
   function evCountText(): string {
     const n = evSession ? evSession.shots.length : 0
     const m = evSession ? pageCount(evSession) : 0
+    // KD-1074: a recording-only report (e.g. a walkthrough, whose default snap is dropped) still says what's saved.
+    const r = evSession?.recordings?.length ?? 0
+    if (n === 0 && r > 0) return `${r} recording${r === 1 ? "" : "s"} - not lost`
+    const f = evSession?.files?.length ?? 0
+    if (n === 0 && f > 0) return `${f} file${f === 1 ? "" : "s"} - not lost`
     if (n === 0) return "Bug report in progress - not lost"
     return `${n} shot${n === 1 ? "" : "s"} - ${m} page${m === 1 ? "" : "s"} - not lost`
   }
@@ -1250,6 +1284,7 @@ async function mount() {
   async function discardEvidence() {
     const s = evSession
     evSession = null
+    evFilesMem.clear()
     clearDraft(cfg.projectId, evOrigin)
     hideEvDock()
     if (s) { try { await clearEvidenceSession(s.id) } catch { /* best-effort */ } }
@@ -1491,14 +1526,30 @@ async function mount() {
     reportBtn.addEventListener("mouseleave", () => { fabHover = false; fabShareHint?.classList.remove("kl-show") })
   }
 
-  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialTitle?: string; initialShotCapture?: ShotCapture; evidence?: { session: EvidenceSession } }) {
+  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialTitle?: string; initialShotCapture?: ShotCapture; evidence?: { session: EvidenceSession }; initialRecordings?: ReportRecording[] }) {
     if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
+    composerFiled = false
     // KLA-412: the multi-page evidence session backing this composer (null for a normal single-page report).
     const ev = opts?.evidence?.session ?? null
     if (ev) {
       ev.isOpen = true
       saveDraft(cfg.projectId, evOrigin, { isOpen: true, desc: ev.desc, title: ev.title })
       void queueEvWrite(() => updateEvidenceFields(ev.id, { isOpen: true }))
+    }
+    // KD-1470: ONE seed list for the composer's recordings — the session's saved ones (KD-1074) plus a
+    // "Record me" video that finished after a page reload (record-bridge). They used to be two separate
+    // `initialRecordings` keys in the buildModal options, so the later one silently dropped the arrived video.
+    const arrivedNow = [...(opts?.initialRecordings || []), ...arrivedRecordings]
+    arrivedRecordings = []
+    // KD-3080: a "Report Multiple Issues" walkthrough that finished after a page load — the composer analyses it.
+    const multiRecordingId = arrivedMultiId && arrivedNow.some((r) => r.id === arrivedMultiId) ? arrivedMultiId : undefined
+    if (multiRecordingId) arrivedMultiId = null
+    const seedRecordings = mergeRecordings(ev?.recordings?.map((r) => ({ ...r })), arrivedNow)
+    const seedFiles = ev ? evRestoreFiles(ev) : []
+    // The composer never echoes its seed back via onRecordingsChange, so persist an arrived video into the
+    // session here — otherwise a later minimize/reload would lose it again.
+    if (ev && arrivedNow.length) {
+      void queueEvWrite(async () => { evSession = await setEvidenceRecordings(ev.id, seedRecordings) ?? evSession; updateEvDock() })
     }
     const identified = firstParty || !!getToken()  // already known to Klavity (own page session, or signed-in widget)
     // Only the "login" gate forces the connect flow on third-party sites. "email"/"anonymous" let an
@@ -1538,7 +1589,22 @@ async function mount() {
       // so we skip the full-page auto-capture and let the zoomed-in region lead. KLA-412: also skip it when
       // resuming an evidence session that already holds shots (we seed those below); a BRAND-NEW session
       // (empty, no region shot) still auto-captures so the first shot lands + persists via onShotAdded.
-      autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0),
+      // Resuming a report that already holds a recording (incl. a "Report Multiple Issues" walkthrough, whose
+      // default snap is dropped) must NOT auto-capture again — that re-prompted for screen-share permission on
+      // every Resume. Check the merged seed list (session recordings + arrived ones), not just opts.
+      autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0) && !seedRecordings.length && !seedFiles.length && !(ev && ev.multi),
+      // Saved session recordings + a "Record me" video that finished after the reporter navigated (see above).
+      initialRecordings: seedRecordings.length ? seedRecordings : undefined,
+      // Files attached via Attach used to live ONLY in the open composer, so Minimize → Resume lost them.
+      initialFiles: seedFiles.length ? seedFiles : undefined,
+      onFilesChange: ev ? (files) => evPersistFiles(ev.id, files) : undefined,
+      initialMultiRecordingId: multiRecordingId,
+      // "Report Multiple Issues": keep the analysed ticket list (+ edits/selections) across Minimize → Resume.
+      // Only restored when its walkthrough clip is among the seeded recordings (else it would point at nothing).
+      initialMultiIssues: !multiRecordingId && ev?.multi && seedRecordings.some((r) => r.id === ev.multi!.recordingId) ? (ev.multi as any) : undefined,
+      onMultiIssuesChange: ev ? (snap) => {
+        void queueEvWrite(async () => { evSession = await setEvidenceMulti(ev.id, snap as any) ?? evSession; if (evSession) ev.multi = evSession.multi; updateEvDock() })
+      } : undefined,
       // #638: render the "Attach console logs" toggle (default OFF) in the composer. When the reporter enables
       // it, the submit payload carries attachConsole:true and onSubmit includes the captured console logs.
       consoleAttachToggle: true,
@@ -1616,15 +1682,16 @@ async function mount() {
       // whether this project already tracks a matching known/recurring issue; on a hit the composer shows
       // an inline "Already reported — status: X" note (the user can still submit or dismiss). Best-effort:
       // any failure resolves null so the composer is never blocked by the lookup.
-      // QPQ-31: resolve people for the Email field's typeahead. Credentials are sent so a signed-in
-      // reporter (our own dashboard, or a logged-in embedder) gets the project's members + contacts;
-      // the endpoint is session-gated, so an anonymous visitor on a customer's site simply gets nothing
-      // back and their dropdown offers Create only — the team's addresses never leave the server.
+      // QPQ-31 / KD-983: resolve people for the Email field's typeahead — the project's members + contacts.
+      // The endpoint is public (the list shows whether or not the reporter is signed in); credentials and
+      // the widget token are still sent so the server can attribute the request when it can.
       onLookupPeople: async (q: string) => {
         try {
+          const headers: Record<string, string> = {}
+          if (getToken()) headers.authorization = `Bearer ${getToken()}`
           const res = await fetchWithTimeout(
             cfg.backendUrl + "/api/projects/" + encodeURIComponent(cfg.projectId) + "/people?q=" + encodeURIComponent(q),
-            { credentials: "include" },
+            { credentials: "include", headers },
           )
           if (!res.ok) return []
           const j = await res.json().catch(() => null) as any
@@ -1702,12 +1769,35 @@ async function mount() {
           return (data && data.draft) ? data.draft : null
         } catch { return null }
       }) : undefined,
+      // KD-995: split a "Record me" walkthrough into separate tickets — POST the clip to /api/report/split
+      // (transcribe + AI issue extraction) and resolve the issues it found. Gated on the same reportClarity
+      // toggle as Enhance (the server enforces it too). Long timeout: STT of a clip + an LLM call. Best-effort:
+      // any failure resolves null so the composer keeps the single ticket.
+      onSplitRecording: (reportClarity && composerRecord) ? (async (audio: Blob, ctx?: { text?: string; frames?: Array<{ atSec: number; dataUrl: string }> }) => {
+        try {
+          const fd = new FormData()
+          fd.append('projectId', cfg.projectId)
+          fd.append('audio', audio, 'recording.webm')
+          if (audio.type) fd.append('mime', audio.type)
+          fd.append('pageUrl', location.href)
+          if (ctx?.text) fd.append('text', ctx.text)
+          // KD-3080: screenshots sampled across the clip, so the analysis sees the screens being described.
+          if (ctx?.frames?.length) fd.append('frames', JSON.stringify(ctx.frames))
+          const res = await fetchWithTimeout(cfg.backendUrl + '/api/report/split', { method: 'POST', body: fd }, 90000)
+          if (!res.ok) return null
+          const data = await res.json().catch(() => null)
+          return (data && Array.isArray(data.issues)) ? data.issues : null
+        } catch { return null }
+      }) : undefined,
       requireEmail,
       // PX4 #439: pre-fill the email gate with the known reporter email so the user never retypes it.
-      prefillEmail: _reporter?.email,
+      prefillEmail: _reporter?.email || getSavedEmail(cfg.projectId) || undefined,
+      onRememberEmail: (email: string) => setSavedEmail(cfg.projectId, email),
       // PX4 #411/#425: enhanced-composer opts from the project config (all default off → classic composer).
       showTitleField: composerShowTitle,
       allowFileAttachments: composerFileAttach,
+      // Files over the single-request caps upload in chunks before the report is sent (prepareSubmission).
+      largeFileUploads: true,
       // KLA-591: role-aware over-cap CTA. An identified reporter (first-party page / signed-in widget) is a
       // workspace member/owner → offer a direct upgrade link; an anonymous end-user on a customer's site is
       // never asked to pay → the composer shows "ask your team to upgrade / attach a smaller file". The
@@ -1717,9 +1807,24 @@ async function mount() {
       // KLAVITYKLA-438 "Record me": expose the button + drive the consent → record → preview overlay from
       // the sdk recorder, returning the captured recording (or null on cancel) to the composer.
       allowRecording: composerRecord,
+      // KD-1074: persist every add/remove so a minimize (or a navigation) never loses the recorded video.
+      // (The session's recordings are restored via the single `initialRecordings` seed above — KD-1470.)
+      onRecordingsChange: ev ? (recs) => {
+        void queueEvWrite(async () => { evSession = await setEvidenceRecordings(ev.id, recs) ?? evSession; updateEvDock() })
+      } : undefined,
       // KLA-555 (walkthrough mode): thread the composer's onPhase signal into the recorder so it can
       // minimize the composer while recording is ACTIVE and restore it on consent/preview.
-      onRecord: composerRecord ? ((onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => recordMe({ onPhase })) : undefined,
+      // Opted-in embeds (data-record-mode="window") record in the Klavity recorder WINDOW (record-bridge.ts) so it
+      // survives full page loads; the in-page recordMe() overlay is the fallback when the popup is blocked.
+      // Every other embed uses recordMe() exactly as before.
+      onRecord: composerRecord ? ((onPhase?: (phase: 'consent' | 'recording' | 'preview') => void, recOpts?: { purpose?: 'multi' }) => {
+        if (!recBridge) return recordMe({ onPhase })
+        const viaWindow = recBridge.start(onPhase, recOpts?.purpose)
+        if (viaWindow) return viaWindow
+        if (recordingSupported()) return recordMe({ onPhase })
+        evBanner("Allow pop-ups for this site to use Record me.")
+        return Promise.resolve(null)
+      }) : undefined,
       // KLA-505: server-side live dictation for the Voice button (replaces the flaky Web Speech backend).
       // The composer records a short mic clip and hands each audio Blob here; we POST it to the STT endpoint
       // (POST /api/voice/transcribe, multipart: audio + projectId) and resolve the recognized text. On ANY
@@ -1819,11 +1924,14 @@ async function mount() {
         // multi-page evidence session (KLA-412) now that the report is stored.
         const afterFiled = async (result: { issueKey: string; issueUrl: string }) => {
           try { emit("submit", { issueKey: result.issueKey, issueUrl: result.issueUrl ?? null, type: p.type as "bug" | "feature" }) } catch {}
+          composerFiled = true
+          if (ev) filedSessionIds.add(ev.id)
           clearDraft(cfg.projectId, evOrigin)
           if (ev) {
             evMinimizing = false
             try { await clearEvidenceSession(ev.id) } catch { /* best-effort */ }
             evSession = null
+            evFilesMem.clear()
             hideEvDock()
           }
         }
@@ -1843,7 +1951,7 @@ async function mount() {
           const freshTurnstile = needsTurnstile ? () => getTurnstileToken(turnstileSiteKey) : undefined
           const attempt = (repair?: string[]) => {
             pill.uploading()
-            ;(preparedP ||= prepareSubmission(uploadCfg, uploadPayload).catch((e) => { preparedP = null; throw e }))
+            ;(preparedP ||= prepareSubmission(uploadCfg, uploadPayload, (sent, total) => pill.progress(Math.round((sent / total) * 90), sent, total)).catch((e) => { preparedP = null; throw e }))
               .then((prepared) => sendPrepared(prepared, uploadCfg, {
                 onProgress: (pct, loaded, total) => pill.progress(pct, loaded, total),
                 onRetry: (i) => i.pending ? pill.waiting(i.delayMs, i.waitedMs ?? 0) : pill.retrying(i.attempt, i.maxAttempts, i.error.userMessage),
@@ -1859,6 +1967,8 @@ async function mount() {
               .catch((e) => {
                 // Retry re-sends the SAME prepared body + key. Against a server that did not confirm idempotency support, a lost answer may
                 // mean the ticket already exists — say so, and name the button honestly ("Retry anyway").
+                // A large file that couldn't be uploaded: say which, and Retry starts that file's upload again (it is still held).
+                if (e instanceof LargeUploadError) { pill.failure(() => attempt(repair), e.message); return }
                 const copy = retryFailureCopy(e instanceof SubmitError ? e : null, serverIdempotent)
                 pill.failure(() => attempt(repair), copy.message, copy.retryLabel)
               })
@@ -1887,7 +1997,11 @@ async function mount() {
       onMinimize: ev ? () => minimizeToDock() : undefined,
       // KLA-412: persist a shot captured INSIDE the composer (Full Page / Screen / Region / Upload / paste
       // / auto-capture) to the session, tagged with the current page. Serialized to avoid lost updates.
-      onShotAdded: ev ? (dataUrl: string) => { void queueEvWrite(() => persistEvShot(ev.id, dataUrl)) } : undefined,
+      onShotAdded: ev ? (dataUrl: string, _quality?: unknown, numberMask?: unknown) => { void queueEvWrite(() => persistEvShot(ev.id, dataUrl, numberMask)) } : undefined,
+      // KD-3088: remember the "Mask numbers" choice so Resume re-opens with it (and re-masks the saved shots).
+      onMaskNumbersChange: ev ? (on: boolean) => {
+        void queueEvWrite(async () => { evSession = await updateEvidenceFields(ev.id, { maskNumbers: on }) ?? evSession })
+      } : undefined,
       // KD-166: same idea, for the typed description (see onDescriptionChange's doc comment in modal.ts).
       onDescriptionChange: ev ? (text: string) => { void queueEvWrite(() => persistEvDesc(ev.id, text)) } : undefined,
       onTitleChange: ev ? (text: string) => { void queueEvWrite(() => persistEvTitle(ev.id, text)) } : undefined,
@@ -1934,6 +2048,7 @@ async function mount() {
               if (latest) await clearEvidenceSession(latest.id)
               clearDraft(cfg.projectId, evOrigin)
               evSession = null
+              evFilesMem.clear()
               hideEvDock()
             }
           })
@@ -1947,7 +2062,8 @@ async function mount() {
       // Only pass the success screen when it's the interactive kind; otherwise the pill owns the
       // post-submit confirmation and no in-modal success card should render.
       success: useInteractiveSuccess ? { copy: successCfg, onLead: postLead } : undefined,
-    }, modalConfig)
+    // KD-3088: a resumed report re-opens with the reporter's own "Mask numbers" choice, not the project default.
+    }, ev && typeof ev.maskNumbers === "boolean" ? { ...(modalConfig || {}), maskNumbers: ev.maskNumbers } : modalConfig)
     composer = ctrl // track the open composer so a second open is ignored until this one closes
     if (opts?.initialDescription) prefillReportDescription(ctrl, opts.initialDescription)
     if (opts?.initialTitle) prefillReportTitle(ctrl, opts.initialTitle)
@@ -1960,7 +2076,8 @@ async function mount() {
           try {
             // KLA-772: pass the shot's saved overlay back so the annotator repaints the reporter's shapes.
             const dataUrl = shot.dataUrl || await blobToDataUrl(shot.blob, shot.dataUrl)
-            ctrl.addScreenshot(dataUrl, undefined, { pageUrl: shot.pageUrl, pagePath: shot.pagePath, label: shot.label }, undefined, undefined, shot.annotations)
+            // KD-3088: and its number positions, so Mask numbers masks the restored shot too.
+            ctrl.addScreenshot(dataUrl, undefined, { pageUrl: shot.pageUrl, pagePath: shot.pagePath, label: shot.label }, undefined, undefined, shot.annotations, shot.numberMask as any)
           } catch { failedRestores++ /* KLA-763: unreadable/corrupt persisted blob or read timeout */ }
         }
         // KLA-763 (codex round-2): don't SILENTLY drop persisted evidence on resume — a shot whose blob
@@ -2061,6 +2178,11 @@ async function mount() {
     // session). Anonymous/unidentified visitors — and every visitor in 'reportOnly' mode — get the
     // Report/Request/Browser-menu menu without any Sims jargon. (Same identity notion as openReport.)
     const showSims = rightClickMode === 'full' && (firstParty || !!getToken() || (typeof process !== "undefined" && process.env.NODE_ENV === "test"))
+    // No Klavity connection yet on a customer's site ('full' mode, not our own page, no stored token): the Sims
+    // actions stay hidden, but we offer a "Sims — Connect" card that opens the connect popup (same handshake as
+    // "Deploy all Sims"). Once the token arrives the menu is re-drawn with the Sims and the card is gone. In
+    // production this is exactly !showSims; in tests showSims is force-enabled, so both can appear there.
+    const needsConnect = rightClickMode === 'full' && !firstParty && !getToken()
     // Each action is a compact CARD: icon chip + label + optional desc + arrow/hint.
     // Pass desc="" to render a label-only card (no description line — keeps menu short).
     const card = (iconName: string, label: string, desc: string, opts: { primary?: boolean; muted?: boolean; hint?: string; onClick: () => void }) => {
@@ -2162,10 +2284,10 @@ async function mount() {
       const syncConfirm = () => {
         const n = sel.size
         confirmBtn.disabled = n === 0
-        confirmBtn.textContent = n > 0 ? `Deploy ${n} Sim${n > 1 ? "s" : ""} →` : "Select a Sim first"
+        confirmBtn.textContent = n > 0 ? `Run ${n} Sim${n > 1 ? "s" : ""} →` : "Select a Sim first"
         confirmBtn.style.opacity = n > 0 ? "1" : ".45"
       }
-      confirmBtn.addEventListener("click", () => { if (!sel.size) return; closeMenu(); void deployAndWatch([...sel]) })
+      confirmBtn.addEventListener("click", () => { if (!sel.size) return; closeMenu(); void runSimsOnPage([...sel]) })
       // Sim rows — scrollable list
       const list = document.createElement("div")
       list.style.cssText = "display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto"
@@ -2193,10 +2315,19 @@ async function mount() {
     }
     menu.appendChild(card("zap", "Report a Bug", "Snap the page and tell us what broke.", { primary: true, onClick: () => void startBugReport() }))
     menu.appendChild(card("lightbulb", "Request a Feature", "Suggest something you'd love to see.", { onClick: () => openReport("feature") }))
+    if (needsConnect) {
+      menu.appendChild(card("users", "Sims", "Connect to Klavity to use your Sims on this page.", {
+        hint: "Connect",
+        // The card handler has already closed the menu; once the popup hands back a token, re-open it in the same
+        // spot — getToken() is now set, so the Sims actions show and this card does not come back.
+        onClick: () => { void openConnect().then((tok) => { if (tok) showMenu(x, y) }) },
+      }))
+    }
     // Sims actions are member-only + 'full'-mode-only — anonymous visitors and reportOnly never see them.
     if (showSims) {
-      menu.appendChild(card("users", "Deploy all Sims", "Have every Sim jump in and analyze this page.", { onClick: () => { closeMenu(); void deployAndWatch("all") } }))
-      menu.appendChild(card("sparkles", "Select Sims…", "Choose which Sims jump into action.", { onClick: () => { void showSimPicker() } }))
+      menu.appendChild(card("users", "Run all Sims", "Every activated Sim reviews the pages you browse.", { onClick: () => { closeMenu(); void runSimsOnPage("all") } }))
+      // Opens the Select Sims modal: Run / Stop each Sim (Activate / Deactivate stays on the dashboard Sims tab).
+      menu.appendChild(card("sparkles", "Select Sims…", "Run or stop individual Sims.", { onClick: () => { void openSimsManager() } }))
     }
     menu.appendChild(card("monitor", "Browser menu", "", { muted: true, hint: "⇧ right-<br>click", onClick: () => { nativePending = true; showNativeHint(x, y) } }))
     // "Powered by Klavity" footer — hidden for Pro accounts with whiteLabel enabled (KLAVITYKLA-311).
@@ -2338,47 +2469,185 @@ async function mount() {
     setTimeout(() => { if (el && el.textContent === text) safeRemove(el) }, 6000)
   }
 
-  // Deploy the named Sims (or "all") + boot the watch engine + fire an IMMEDIATE review.
-  // Uses the anonymous /api/widget/sims endpoint so this works on client sites with no admin auth.
-  async function deployAndWatch(simIds: string[] | 'all') {
-    // AUTH GATE: /api/sim/review hard-requires an authenticated caller (session cookie OR bearer token).
-    // On a cross-origin customer site the klavity.in session cookie isn't sent, so reviews only work with a
-    // widget token. Without one the Sims would deploy and float but every review 401s silently — so run the
-    // connect handshake FIRST and only deploy once we hold a real token. (First-party pages use the cookie.)
+  // "Run all Sims" / the menu's Sim chips: set the Sims to RUNNING for this user (server Run state — the same one Select Sims, the
+  // dashboard Sims tab and the card's Close use), then show them on the card, watch the page and review it right away. Every way of
+  // starting Sims goes through this state, so Stop always works however they were started. "all" = every Activated Sim.
+  async function runSimsOnPage(simIds: string[] | 'all') {
+    // AUTH GATE: the Run state and /api/sim/review need an authenticated caller (session cookie OR bearer token). On a
+    // cross-origin customer site the klavity.in cookie isn't sent, so run the connect handshake FIRST.
     if (!firstParty && !getToken()) {
       banner("Connect to Klavity so your Sims can review this page…")
       const token = await openConnect()
-      if (!token) { banner("Sims need a Klavity connection to review this page. Deploy again to connect."); return }
+      if (!token) { banner("Sims need a Klavity connection to review this page. Run them again to connect."); return }
     }
+    try {
+      const api = managedSimsApi()
+      const ids = simIds === "all"
+        ? (await api.load()).filter((s) => s.active !== false && s.run !== "running").map((s) => s.id)
+        : simIds
+      const res = ids.length ? await api.act("run", ids) : { applied: [], skipped: [], sims: await api.load() }
+      if (!res.sims.some((s) => s.active !== false)) { banner("No activated Sims yet — activate one on the Klavity Sims tab."); return }
+      if (!res.applied.length && res.skipped.length) banner(`Couldn't run that Sim: ${res.skipped[0].reason}.`)
+      applyManagedSims(res.sims, { action: "run", applied: res.applied })
+      try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-applied")) } catch { /* noop */ }
+    } catch (e: any) {
+      banner(e?.message || "Couldn't start the Sims — please try again.")
+    }
+  }
+
+  // ── Sims on this page: Run / Stop (per user) ──────────────────────────────────────────────
+  // ONE state decides which Sims run on the pages this user browses: the server Run state (/api/widget/sim-deployments →
+  // prototype/lib/sim-run-state.ts). It is set from the Select Sims modal, "Run all Sims" / the menu chips, the dashboard Sims tab,
+  // and the feedback card's Close. applyManagedSims() mirrors it onto the page:
+  //   * the feedback card shows the RUNNING Sims; a Sim that is stopped keeps the issues it already reported but adds no new ones;
+  //   * only running Sims are watched / reviewed (the server also refuses widget reviews for Sims that aren't running);
+  //   * when NO Sim is running, the card closes by itself (every reported issue is already in Sim Reports);
+  //   * the card's Close (×) stops every running Sim and closes the card.
+  let _managedMounted = false
+  async function openSimsManager() {
+    // Same auth gate as runSimsOnPage: cross-origin pages need a widget token for member endpoints.
+    if (!firstParty && !getToken()) {
+      banner("Connect to Klavity to manage your Sims…")
+      const token = await openConnect()
+      if (!token) { banner("Sims need a Klavity connection. Open Select Sims again to connect."); return }
+    }
+    openSelectSimsModal({
+      api: managedSimsApi(),
+      onChange: (sims, change) => {
+        applyManagedSims(sims, change)
+        // Lets a host page that shows Sim status (the dashboard Sims tab) refresh it.
+        try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-applied")) } catch { /* noop */ }
+      },
+    })
+  }
+  function managedSimsApi() {
+    return createSelectSimsApi({
+      backendUrl: cfg.backendUrl,
+      projectId: cfg.projectId,
+      getToken,
+      fetch: (input, init) => fetchWithTimeout(input, init),
+    })
+  }
+  // Signature of the running set — lets a sync skip no-op re-applies. null until the first sync.
+  let _managedSig: string | null = null
+
+  // Run / Stop can also change OUTSIDE this page — the dashboard Sims tab, another tab, or before a reload. Re-read the server
+  // state on load, when the tab regains focus, on a light poll while Sims run here, and when the dashboard announces a change
+  // ("klavity:sim-deployments-changed"). A reload restores the running Sims WITHOUT an extra AI review; a Sim started elsewhere
+  // reviews the page right away.
+  let _managedSyncing = false
+  async function syncManagedSims() {
+    if (_managedSyncing || rightClickMode !== "full" || (!firstParty && !getToken())) return
+    _managedSyncing = true
+    try {
+      const sims = await managedSimsApi().load()
+      const plan = planManagedSync(_managedSig, sims)
+      if (plan.kind === "skip") { _managedSig = plan.sig; return }
+      applyManagedSims(sims, { action: plan.fresh.length ? "run" : "stop", applied: plan.fresh })
+    } catch { /* best-effort: the page keeps its current Sims */ }
+    finally { _managedSyncing = false }
+  }
+  if (typeof window !== "undefined" && typeof document !== "undefined") {
+    const syncSoon = () => { if (document.visibilityState !== "hidden") void syncManagedSims() }
+    window.addEventListener("klavity:sim-deployments-changed", syncSoon)
+    window.addEventListener("focus", syncSoon)
+    document.addEventListener("visibilitychange", syncSoon)
+    // Poll only while Sims are running on this page.
+    setInterval(() => { if (_managedSig) syncSoon() }, 20_000)
+    setTimeout(syncSoon, 1500) // after the project config (rightClickMode) has loaded
+  }
+
+  // The card's Close (×): stop every Sim this user has running and close the card. Nothing is lost — each issue was saved to
+  // Sim Reports the moment its Sim reported it.
+  async function closeSimsCard() {
     _simsWatchCtrl?.stop()
     _simsWatchCtrl = null
-    let sims: Array<{ id: string; name: string; initials?: string; accent?: string }> = []
-    try {
-      const r = await fetchWithTimeout(cfg.backendUrl + "/api/widget/sims?project=" + encodeURIComponent(cfg.projectId))
-      if (r.ok) {
-        const data = await r.json().catch(() => ({}))
-        sims = Array.isArray(data.sims) ? data.sims : []
+    try { (window as any).KlavitySims?.undeploy?.() } catch { /* never break page */ }
+    _managedMounted = false
+    _deployedSims = []
+    let sims: ManagedSim[] | null = null
+    try { sims = (await managedSimsApi().act("stop_all")).sims } catch { /* the server also skips stopped Sims; retry on next sync */ }
+    _managedSig = sims ? managedSigOf(sims) : ""
+    banner("Sims stopped. Every issue they reported is in Sim Reports.")
+    try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-applied")) } catch { /* noop */ }
+  }
+
+  // The feedback card's "Sims" menu: every Sim with Run / Stop (and Run / Stop selected). Same per-user Run state as Select Sims;
+  // each action is applied to the page right away (a started Sim reviews now, a stopped one stops; none left → the card closes).
+  function cardSimControls() {
+    const toCard = (list: ManagedSim[]) => list.map((s) => ({
+      id: s.id, name: s.name, role: s.role, initials: s.initials ?? null, accent: s.accent ?? null,
+      active: s.active !== false, running: isSimRunning(s),
+    }))
+    const act = async (action: "run" | "stop", ids: string[]) => {
+      const res = await managedSimsApi().act(action, ids)
+      applyManagedSims(res.sims, { action, applied: res.applied })
+      try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-applied")) } catch { /* noop */ }
+      if (!res.applied.length && res.skipped.length) throw new Error(`Couldn't ${action}: ${res.skipped[0].reason}.`)
+      return toCard(res.sims)
+    }
+    return {
+      list: async () => toCard(await managedSimsApi().load()),
+      run: (ids: string[]) => act("run", ids),
+      stop: (ids: string[]) => act("stop", ids),
+    }
+  }
+
+  function applyManagedSims(sims: ManagedSim[], change: { action: ManagedSimAction; applied: string[] }) {
+    _managedSig = managedSigOf(sims)
+    // A Sim Deactivated on the dashboard Sims tab never runs, whatever its Run state.
+    const running = sims.filter(isSimRunning)
+    const kl = (window as any).KlavitySims
+    _simsWatchCtrl?.stop()
+    _simsWatchCtrl = null
+    if (!running.length) {
+      // Nothing running → the card closes by itself (its issues are already in Sim Reports).
+      if (_managedMounted) {
+        try { kl?.undeploy?.() } catch { /* never break page */ }
+        if (change.action === "stop" || change.action === "stop_all") banner("All Sims are stopped. Their reported issues are in Sim Reports.")
       }
-    } catch { /* non-fatal: empty dock is guarded in sims-live.ts */ }
-    _deployedSims = sims
-    ;(window as any).KlavitySims?.deploy?.(simIds, sims)
-    // Boot the watch engine for continuous monitoring (scroll / navigation / mutations).
+      _managedMounted = false
+      _deployedSims = []
+      return
+    }
+    const descriptors = running.map((s) => ({ id: s.id, name: s.name, initials: s.initials || undefined, accent: s.accent || undefined }))
+    // Update the card in place: a stopped Sim keeps its earlier findings; a started one is added. (Mounts the card if needed.)
+    const cardOpts = { onClose: () => void closeSimsCard(), simControls: cardSimControls() }
+    try {
+      if (kl?.updateSims) kl.updateSims(descriptors, cardOpts)
+      else kl?.deploy?.(running.map((s) => s.id), descriptors, cardOpts)
+    } catch { /* never break page */ }
+    _managedMounted = true
+    _deployedSims = descriptors
     _simsWatchCtrl = startSimsWatch({
       backendUrl: cfg.backendUrl,
       projectId: cfg.projectId,
-      simIds: simIds === 'all' ? undefined : simIds,
-      // Live-review captures the FULL page (whole scrollHeight), not just the above-the-fold viewport,
-      // so the Sim reviews the entire page — bounded by MAX_FULLPAGE_CAPTURE_HEIGHT. (KLAVITYKLA-404)
+      simIds: running.map((s) => s.id),
       captureViewport: () => safeToPngFullPage({ skipFonts: true, filter: notKlavityChrome }),
       bearerToken: getToken() || undefined,
+      runScope: "widget",
     })
-    // BOOT: fire an immediate review so Sims react to the current page right away (not only on next scroll).
-    void bootReview(simIds)
+    // Sims that just started review the current page right away — a beat AFTER the click has painted. The review starts with a
+    // full-page screenshot, which is heavy on a big page; starting it in the same tick froze the modal / card mid-update and made
+    // Run feel slow. (The Run itself is already done — this is only the first review.)
+    if (change.action === "run") {
+      const fresh = change.applied.filter((id) => running.some((s) => s.id === id))
+      if (fresh.length) {
+        const start = () => void bootReview(fresh)
+        const ric = (window as any).requestIdleCallback as undefined | ((cb: () => void, o?: { timeout: number }) => void)
+        setTimeout(() => (ric ? ric(start, { timeout: 1200 }) : start()), 350)
+      }
+    }
   }
 
   // Capture the current viewport and POST to /api/sim/review immediately.
   // This is the "boot" review triggered right after Deploy — no waiting for scroll or mutation.
   async function bootReview(simIds: string[] | 'all') {
+    // KD-1465: report the run's phase to the Sims feedback panel (analysing → running → completed/failed).
+    const runStatus = (s: "analysing" | "running" | "completed" | "failed") => {
+      try { (window as any).KlavitySims?.setRunStatus?.(s) } catch { /* never break page */ }
+    }
+    runStatus("analysing")
     try {
       const benchStart = benchNow()
       const captureStart = benchNow()
@@ -2401,10 +2670,13 @@ async function mount() {
         domSig: null,
         adhoc: true,
         projectId: cfg.projectId,
+        // Only Sims this user has set to Run are reviewed (a Sim stopped meanwhile is skipped by the server).
+        runScope: "widget",
       }
       if (simIds !== 'all') body.simIds = simIds
       const headers: Record<string, string> = { 'content-type': 'application/json' }
       if (getToken()) headers.authorization = `Bearer ${getToken()}`
+      runStatus("running")
       const networkStart = benchNow()
       const res = await fetchWithTimeout(cfg.backendUrl + '/api/sim/review', {
         method: 'POST', headers, credentials: 'include', body: JSON.stringify(body),
@@ -2414,12 +2686,13 @@ async function mount() {
       if (res.status === 401 && !firstParty) {
         clearToken()
         banner("Your Klavity connection expired — deploy Sims again to reconnect.")
+        runStatus("failed")
         return
       }
-      if (!res.ok) return
+      if (!res.ok) { runStatus("failed"); return }
       const data = await res.json().catch(() => ({}))
       const networkMs = benchNow() - networkStart
-      if (!data?.ok || !Array.isArray(data.reviews)) return
+      if (!data?.ok || !Array.isArray(data.reviews)) { runStatus("failed"); return }
       const kl = (window as any).KlavitySims
       const renderStart = benchNow()
       let observations = 0
@@ -2441,6 +2714,7 @@ async function mount() {
       const renderMs = benchNow() - renderStart
       const totalMs = benchNow() - benchStart
       updateIssueCounter()
+      runStatus("completed")
       const server = data.timing?.simReview
       const domNodes = reactionNodeCount()
       console.log(
@@ -2449,7 +2723,7 @@ async function mount() {
         `serverReviewMs=${server?.reviewMs ?? '?'} renderMs=${benchMs(renderMs)} totalMs=${benchMs(totalMs)} ` +
         `sims=${data.reviews.length} observations=${observations} domNodes=${domNodes}`,
       )
-    } catch { /* non-fatal: boot review is best-effort */ }
+    } catch { runStatus("failed") /* non-fatal: boot review is best-effort */ }
   }
 
   // Opens the Klavity connect popup and resolves with the minted widget token, or "" if the user
@@ -2497,6 +2771,7 @@ async function mount() {
   if (typeof window !== "undefined") {
     const flushCurrentComposerDraft = () => {
       if (!composer || !(composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
+      if (composerFiled) return // KD-1004: the open composer is only showing its "sent" screen — nothing to keep
       const descEl = composer.shadowRoot.getElementById("klavity-desc") as HTMLTextAreaElement | null
       const titleEl = composer.shadowRoot.getElementById("klavity-title") as HTMLInputElement | null
       saveDraft(cfg.projectId, evOrigin, {
@@ -2508,6 +2783,40 @@ async function mount() {
     window.addEventListener("beforeunload", flushCurrentComposerDraft)
     window.addEventListener("pagehide", flushCurrentComposerDraft)
   }
+
+  // ── "Record me" across navigation: the bridge to the recorder window. Created on every page so a recording
+  // started on an earlier page of this tab re-attaches here (REC bar + Stop). A video that finishes once the
+  // original composer is gone reopens the report — with the in-progress evidence session + draft — attached.
+  // Only for embeds that opted in to the recorder window — elsewhere no bridge exists and nothing changes.
+  let arrivedRecordings: ReportRecording[] = []
+  let arrivedMultiId: string | null = null // KD-3080: the arrived clip that is a "Report Multiple Issues" walkthrough
+  const recBridge = !useRecorderWindow ? null : createRecordBridge({
+    backendUrl: cfg.backendUrl,
+    projectId: cfg.projectId,
+    notify: (text) => evBanner(text),
+    onRecordingArrived: (rec, purpose) => {
+      arrivedRecordings.push(rec)
+      if (purpose === 'multi' && rec.id) arrivedMultiId = rec.id
+      if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) {
+        evBanner("Your recording is ready — it will be attached the next time you open the report.")
+        return
+      }
+      void (async () => {
+        const initialRecordings = arrivedRecordings
+        arrivedRecordings = []
+        let active: EvidenceSession | null = null
+        try { active = await getActiveSession(cfg.projectId, evOrigin) } catch { active = null }
+        const draft = loadDraft(cfg.projectId, evOrigin)
+        if (active) {
+          evSession = active
+          if (evDockEl) evDockEl.style.display = "none"
+          openReport("bug", { evidence: { session: active }, initialDescription: draft?.desc || active.desc, initialTitle: draft?.title || active.title, initialRecordings })
+        } else {
+          openReport("bug", { initialDescription: draft?.desc, initialTitle: draft?.title, initialRecordings })
+        }
+      })()
+    },
+  })
 
   // ── KLA-412: on load, resume a still-fresh evidence session (survives navigation/reload)
   // If the composer was open when refreshed, re-opens it; otherwise displays the in-progress dock.
@@ -2543,39 +2852,20 @@ async function mount() {
   await configReady
 }
 
-// ── Non-blocking background-upload pill ─────────────────────────────────────────────────────────
-// Lives at the WIDGET layer (its OWN shadow host on document.body) so it PERSISTS after the report
-// modal + backdrop dismiss on Submit — the page is never blocked while a (possibly 16MB+) recording
-// uploads; the user can scroll/click/file another report meanwhile. Three states:
+// ── Non-blocking background-upload REPORTS PANEL ──────────────────────────────────────────────────
+// Lives at the WIDGET layer (its OWN shadow host on document.body) so it PERSISTS after the report modal +
+// backdrop dismiss on Submit — the page is never blocked while a (possibly 16MB+) recording uploads; the user can
+// scroll/click/file another report meanwhile.
+// KD-3092: every report filed this session is a ROW inside ONE "Your reports" panel (bottom-right) instead of its
+// own auto-vanishing toast — the toast disappeared ~4s after "Report sent", so with several tickets (e.g. a
+// multi-issue report) the reporter could not see all the ticket IDs. The panel stays until the reporter closes it
+// with its × ; each row shows its ticket ID as a link straight to that ticket. Row states:
 //   • uploading — spinner + progress bar + "screenshot + recording · 9.8 / 16 MB" byte readout
-//   • success   — "Report sent" + quotable ref + optional "Open in Klavity" link; auto-dismiss ~4s
-//                 (hover/focus pauses — mirrors the modal's armAutodismiss / SUBMIT_AUTOCLOSE_MS)
+//   • success   — screenshot thumbnail + "Report sent" + ticket-ID link + "Open in Klavity"
 //   • failure   — "Upload didn't finish · Retry" (Retry re-sends the RETAINED payload — no re-capture)
-// A dismiss (×) is always present. Dynamic values go in via textContent/href (never innerHTML) — XSS-safe.
-const PILL_AUTODISMISS_MS = 4000
-// #475: failed pills persist far longer than success (so the user can read the error / hit Retry) but still
-// auto-clear so a string of failures never stacks up the screen forever.
-const PILL_FAIL_AUTODISMISS_MS = 30000
-
-// #475: vertical stacking geometry + a slot registry so concurrent upload pills never overlap. The old code
-// positioned each new pill by counting existing pills (querySelectorAll(...).length); once one dismissed, the
-// stale count let a new pill land on top of an existing one. Instead we keep an ordered registry: each pill
-// takes the next slot on creation, and REMOVAL reflows every remaining pill down to compact the stack — so the
-// lowest free slot is always reused and no two pills ever share a slot.
-const PILL_BASE_PX = 78
-const PILL_SLOT_PX = 58
-const pillStack: HTMLElement[] = []
-function reflowPillStack(): void {
-  // Prune any host that left the DOM out-of-band (defensive: a pill should always exit via remove(), but this
-  // keeps the slot math correct even if a host is torn down some other way) then position the survivors.
-  for (let i = pillStack.length - 1; i >= 0; i--) { if (!pillStack[i].isConnected) pillStack.splice(i, 1) }
-  pillStack.forEach((h, i) => { h.style.bottom = `${PILL_BASE_PX + i * PILL_SLOT_PX}px` })
-}
-function addPillToStack(host: HTMLElement): void { pillStack.push(host); reflowPillStack() }
-function removePillFromStack(host: HTMLElement): void {
-  const i = pillStack.indexOf(host)
-  if (i >= 0) { pillStack.splice(i, 1); reflowPillStack() }
-}
+// Closing the panel while a report is still uploading only hides it: it comes back when that report finishes, so a
+// ticket ID is never missed. Dynamic values go in via textContent/href (never innerHTML) — XSS-safe.
+const TRAY_BOTTOM_PX = 78   // clears the launcher button
 
 function pillDisplayRef(issueKey: string): string {
   const m = /^fb_([0-9a-f]{8})[0-9a-f-]+$/i.exec(issueKey)
@@ -2644,98 +2934,154 @@ export interface UploadPill {
   dismiss: () => void
 }
 
-export function createUploadPill(opts: { totalBytesHint?: number; label?: string; thumbnail?: string } = {}): UploadPill {
-  const host = document.createElement("div")
-  host.setAttribute("data-klavity-ui", "upload-pill")
-  // #475: register in the shared slot stack (takes the lowest free slot, reflows the rest on removal) so a
-  // second report filed mid-upload sits above — never on top of — the first. `bottom` is driven by
-  // reflowPillStack(), not a stale querySelectorAll count.
-  host.style.cssText = "position:fixed;right:18px;z-index:2147483646;pointer-events:none"
-  document.body.appendChild(host)
-  addPillToStack(host)
-  const root = host.attachShadow({ mode: "open" })
-  const style = document.createElement("style")
-  style.textContent = `
-    .pill{pointer-events:auto;position:relative;display:flex;align-items:center;gap:9px;background:#19140f;color:#fff;border-radius:12px;padding:9px 12px;box-shadow:0 10px 30px rgba(0,0,0,.28);min-width:210px;max-width:330px;font:13px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;animation:klp-in .22s cubic-bezier(.16,1,.3,1) both}
+type TrayRow = { el: HTMLElement; busy: () => boolean }
+type Tray = { host: HTMLElement; panel: HTMLElement; list: HTMLElement; summary: HTMLElement; rows: TrayRow[]; refresh: () => void }
+let _tray: Tray | null = null
+
+function trayCss(): string {
+  return `
+    .tray{pointer-events:auto;display:flex;flex-direction:column;width:360px;max-width:calc(100vw - 36px);max-height:min(70vh,560px);background:linear-gradient(180deg,#fbf7f0,#f2ece1);color:#2a2119;border:1px solid #e4dccd;border-radius:16px;box-shadow:0 22px 46px -16px rgba(40,30,20,.55);font:13px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;animation:klp-in .22s cubic-bezier(.16,1,.3,1) both;overflow:hidden}
+    .tray[hidden]{display:none}
     @keyframes klp-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
     @keyframes klp-sp{to{transform:rotate(360deg)}}
-    .pill.out{opacity:0;transform:translateY(8px);transition:opacity .25s ease,transform .25s ease}
-    .ic{width:20px;height:20px;flex:0 0 auto;display:grid;place-items:center}
-    .ic svg{width:18px;height:18px}
-    .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:klp-sp .8s linear infinite}
-    .tx{flex:1;min-width:0}
-    .tx b{font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .tx .sub{opacity:.72;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
-    .x{opacity:.6;cursor:pointer;font-size:15px;line-height:1;padding:0 2px;flex:0 0 auto;user-select:none}
-    .x:hover{opacity:1}
-    .prog{position:absolute;left:10px;right:10px;bottom:5px;height:3px;background:rgba(255,255,255,.18);border-radius:999px;overflow:hidden}
-    .prog>i{display:block;height:100%;background:#6366f1;width:0;border-radius:999px;transition:width .2s ease}
-    .pill.err{background:#4a1620}
-    a{color:#c7d2fe;text-decoration:none;font-weight:600}
-    a:hover{text-decoration:underline}
-    /* #651 — SUCCESS "Report sent" = Option D (warm cream card + screenshot thumbnail, text-link flavour). */
-    .pill.ok{background:linear-gradient(180deg,#fbf7f0,#f2ece1);color:#2a2119;border:1px solid #e4dccd;border-radius:16px;padding:14px;box-shadow:0 22px 46px -16px rgba(40,30,20,.55);align-items:center;gap:13px;max-width:360px}
-    .pill.ok .thumbwrap{position:relative;flex:0 0 auto;display:block}
-    .pill.ok .thumb{display:block;width:60px;height:46px;border-radius:9px;object-fit:cover;object-position:top left;border:1px solid #d9cfbc;background:#e9e1d2;box-shadow:0 2px 6px -2px rgba(40,30,20,.3)}
-    .pill.ok .thumb.kmark{display:grid;place-items:center;font-weight:800;color:#6366f1;background:#eef0ff;font-size:22px;line-height:1}
-    .pill.ok .badge{position:absolute;right:-6px;bottom:-6px;width:22px;height:22px;border-radius:50%;background:#16a34a;color:#fff;display:grid;place-items:center;border:2px solid #f7f2ea;box-shadow:0 1px 3px rgba(40,30,20,.35);animation:klp-pop .5s cubic-bezier(.16,1,.3,1) .12s both}
-    .pill.ok .badge svg{width:12px;height:12px;stroke:currentColor;stroke-width:2.4;fill:none;stroke-linecap:round;stroke-linejoin:round}
-    .pill.ok .tx b{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:800;letter-spacing:-.01em;white-space:nowrap;overflow:visible}
-    .pill.ok .klogo{width:19px;height:19px;flex:0 0 auto;border-radius:5px;background:#6366f1;color:#fff;display:inline-grid;place-items:center;font-weight:800;font-size:11px}
-    .pill.ok .tx .sub{opacity:1;color:#6b5f4e;font-size:12.5px;white-space:normal;margin-top:3px}
-    .pill.ok .refc{font-family:ui-monospace,Menlo,monospace;background:#eadfce;padding:1px 6px;border-radius:5px;color:#4a3f2e}
-    .pill.ok a.open{color:#6366f1;font-weight:700;white-space:nowrap}
-    .pill.ok .x{color:#a89a84;align-self:flex-start}
-    .pill.ok .x:hover{color:#5a4f3e}
-    .pill.ok .prog{background:rgba(0,0,0,.07);border-radius:999px}
-    .pill.ok .prog>i{background:linear-gradient(90deg,#6366f1,#818cf8)}
     @keyframes klp-pop{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
-    @keyframes klp-shrink{from{width:100%}to{width:0}}
-    @media (prefers-reduced-motion: reduce){.pill,.spin,.prog>i,.pill.ok .badge{animation:none!important;transition:none!important}}
+    .hd{display:flex;align-items:center;gap:9px;padding:12px 12px 10px 14px;border-bottom:1px solid #e6ddcd}
+    .klogo{width:20px;height:20px;flex:0 0 auto;border-radius:5px;background:#6366f1;color:#fff;display:inline-grid;place-items:center;font-weight:800;font-size:11px}
+    .hd .tt{flex:1;min-width:0}
+    .hd .tt b{display:block;font-size:14.5px;font-weight:800;letter-spacing:-.01em}
+    .hd .tt .sm{display:block;color:#6b5f4e;font-size:12px}
+    .tray-x{flex:0 0 auto;width:28px;height:28px;border-radius:8px;border:0;background:transparent;color:#8a7c66;cursor:pointer;display:grid;place-items:center;font-size:18px;line-height:1;padding:0}
+    .tray-x:hover{background:#eadfce;color:#2a2119}
+    .tray-x:focus-visible{outline:2px solid #6366f1;outline-offset:1px}
+    .rows{overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px}
+    .pill{position:relative;display:flex;align-items:center;gap:11px;background:#fffdf9;border:1px solid #e9e0d0;border-radius:12px;padding:10px 11px 12px}
+    .ic{width:22px;height:22px;flex:0 0 auto;display:grid;place-items:center;color:#6b5f4e}
+    .ic svg{width:18px;height:18px}
+    .spin{width:16px;height:16px;border:2px solid rgba(99,102,241,.25);border-top-color:#6366f1;border-radius:50%;animation:klp-sp .8s linear infinite}
+    .tx{flex:1;min-width:0}
+    .tx b{font-weight:700;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13.5px}
+    .tx .sub{color:#6b5f4e;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;margin-top:2px}
+    .prog{position:absolute;left:11px;right:11px;bottom:5px;height:3px;background:rgba(0,0,0,.07);border-radius:999px;overflow:hidden}
+    .prog>i{display:block;height:100%;background:linear-gradient(90deg,#6366f1,#818cf8);width:0;border-radius:999px;transition:width .2s ease}
+    .pill.err{background:#fff4f4;border-color:#f3c9c9}
+    .pill.err .ic{color:#b42318}
+    a{color:#6366f1;text-decoration:none;font-weight:700}
+    a:hover{text-decoration:underline}
+    .pill.ok .thumbwrap{position:relative;flex:0 0 auto;display:block}
+    .pill.ok .thumb{display:block;width:56px;height:42px;border-radius:8px;object-fit:cover;object-position:top left;border:1px solid #d9cfbc;background:#e9e1d2}
+    .pill.ok .thumb.kmark{display:grid;place-items:center;font-weight:800;color:#6366f1;background:#eef0ff;font-size:20px;line-height:1}
+    .pill.ok .badge{position:absolute;right:-6px;bottom:-6px;width:20px;height:20px;border-radius:50%;background:#16a34a;color:#fff;display:grid;place-items:center;border:2px solid #fffdf9;animation:klp-pop .5s cubic-bezier(.16,1,.3,1) .12s both}
+    .pill.ok .badge svg{width:11px;height:11px;stroke:currentColor;stroke-width:2.4;fill:none;stroke-linecap:round;stroke-linejoin:round}
+    .pill.ok .tx .sub{white-space:normal}
+    .refc{font-family:ui-monospace,Menlo,monospace;background:#eadfce;padding:1px 6px;border-radius:5px;color:#4a3f2e;font-weight:700}
+    a.refc{color:#3f3fbf}
+    a.refc:hover{background:#e0e1ff;text-decoration:none}
+    a.open{white-space:nowrap}
+    @media (prefers-reduced-motion: reduce){.tray,.spin,.prog>i,.pill.ok .badge{animation:none!important;transition:none!important}}
   `
-  root.appendChild(style)
+}
 
+// The single "Your reports" panel — created on the first report, reused by every later one.
+function getTray(): Tray {
+  if (_tray && _tray.host.isConnected) return _tray
+  const host = document.createElement("div")
+  host.setAttribute("data-klavity-ui", "report-tray")
+  host.style.cssText = `position:fixed;right:18px;bottom:${TRAY_BOTTOM_PX}px;z-index:2147483646;pointer-events:none`
+  document.body.appendChild(host)
+  const root = host.attachShadow({ mode: "open" })
+  const style = document.createElement("style"); style.textContent = trayCss(); root.appendChild(style)
+  const panel = document.createElement("div"); panel.className = "tray"
+  panel.setAttribute("role", "region"); panel.setAttribute("aria-label", "Your reports")
+  const hd = document.createElement("div"); hd.className = "hd"
+  const logo = document.createElement("span"); logo.className = "klogo"; logo.textContent = "K"
+  const tt = document.createElement("span"); tt.className = "tt"
+  const h = document.createElement("b"); h.textContent = "Your reports"
+  const summary = document.createElement("span"); summary.className = "sm"; summary.setAttribute("aria-live", "polite")
+  tt.append(h, summary)
+  const x = document.createElement("button"); x.type = "button"; x.className = "tray-x"; x.textContent = "×"
+  x.setAttribute("aria-label", "Close"); x.title = "Close"
+  hd.append(logo, tt, x)
+  const list = document.createElement("div"); list.className = "rows"
+  panel.append(hd, list)
+  root.appendChild(panel)
+  const tray: Tray = {
+    host, panel, list, summary, rows: [],
+    refresh: () => {
+      const n = tray.rows.length
+      if (!n) { safeRemove(host); if (_tray === tray) _tray = null; return }
+      const sent = tray.rows.filter((r) => r.el.dataset.sent === "1").length
+      const busy = tray.rows.filter((r) => r.busy()).length
+      const failed = n - sent - busy
+      const parts: string[] = []
+      parts.push(n === 1 ? (sent ? "1 sent" : busy ? "Sending…" : "Not sent yet") : `${sent} of ${n} sent`)
+      if (n > 1 && busy) parts.push(`${busy} uploading`)
+      if (failed) parts.push(`${failed} need${failed === 1 ? "s" : ""} attention`)
+      summary.textContent = parts.join(" · ")
+    },
+  }
+  // × : close the panel. Finished reports leave with it; one still uploading keeps going and brings the panel
+  // back when it finishes, so its ticket ID is never missed.
+  x.addEventListener("click", () => {
+    tray.rows = tray.rows.filter((r) => { if (r.busy()) return true; safeRemove(r.el); return false })
+    if (tray.rows.length) panel.hidden = true
+    tray.refresh()
+  })
+  _tray = tray
+  return tray
+}
+
+export function createUploadPill(opts: { totalBytesHint?: number; label?: string; thumbnail?: string } = {}): UploadPill {
   const pill = document.createElement("div"); pill.className = "pill"
   const ic = document.createElement("span"); ic.className = "ic"
   const tx = document.createElement("span"); tx.className = "tx"
   const title = document.createElement("b")
   const sub = document.createElement("span"); sub.className = "sub"
   tx.append(title, sub)
-  const x = document.createElement("span"); x.className = "x"; x.textContent = "×"; x.setAttribute("role", "button"); x.setAttribute("aria-label", "Dismiss"); x.title = "Dismiss"
   const prog = document.createElement("div"); prog.className = "prog"
   const progFill = document.createElement("i"); prog.appendChild(progFill)
-  pill.append(ic, tx, x, prog)
-  root.appendChild(pill)
+  pill.append(ic, tx, prog)
+
+  let busy = true
+  let removed = false
+  const row: TrayRow = { el: pill, busy: () => busy }
+  // A row changed state: make sure it is in the (possibly re-created) panel, show the panel when the row just
+  // FINISHED (it may have been closed while this was uploading) and refresh the summary.
+  const changed = (reveal: boolean) => {
+    if (removed) return
+    const t = getTray()
+    if (!t.rows.includes(row)) { t.rows.push(row); t.list.appendChild(pill) }
+    if (reveal) t.panel.hidden = false
+    t.refresh()
+    if (reveal && !busy) { try { pill.scrollIntoView({ block: "nearest" }) } catch { /* not in a layout engine */ } }
+  }
 
   let totalBytes = opts.totalBytesHint || 0
   const label = opts.label || "report"
-  // #651: the report's own captured screenshot (raw data URL), rendered as the success toast's thumbnail.
+  // #651: the report's own captured screenshot (raw data URL), rendered as the row's thumbnail once sent.
   // Only http(s)/data image URLs are honoured; anything else falls back to the Klavity 'K' mark tile.
   const thumbnail = pillSafeImageSrc(opts.thumbnail)
-  let dismissTimer: ReturnType<typeof setTimeout> | null = null
-  let armed = false
 
   const remove = () => {
-    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
-    removePillFromStack(host) // #475: free the slot + reflow remaining pills so the next one never overlaps
-    pill.classList.add("out")
-    setTimeout(() => safeRemove(host), 260)
+    removed = true
+    safeRemove(pill)
+    const t = _tray
+    if (t) { t.rows = t.rows.filter((r) => r !== row); t.refresh() }
   }
-  x.addEventListener("click", remove)
 
-  const setSpinner = () => { ic.textContent = ""; const s = document.createElement("span"); s.className = "spin"; ic.appendChild(s) }
-  const setIcon = (name: string) => { ic.innerHTML = icon(name, { size: 18 }) } // static icon SVG, no user data
+  const restoreIc = () => { const tw = pill.querySelector(".thumbwrap"); if (tw) pill.replaceChild(ic, tw) }
+  const setSpinner = () => { restoreIc(); ic.textContent = ""; const s = document.createElement("span"); s.className = "spin"; ic.appendChild(s) }
+  const setIcon = (name: string) => { restoreIc(); ic.innerHTML = icon(name, { size: 18 }) } // static icon SVG, no user data
 
   const uploading = () => {
-    pill.classList.remove("ok", "err")
-    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
-    armed = false
+    pill.classList.remove("ok", "err"); delete pill.dataset.sent
+    busy = true
     sub.style.whiteSpace = ""; sub.title = ""   // undo the wrapped, long failure explanation
     setSpinner()
     title.textContent = "Uploading your report…"
     sub.textContent = totalBytes ? `${label} · 0 / ${fmtMB(totalBytes)} MB` : label
     prog.style.display = ""
     progFill.style.width = "0"
+    changed(false)
   }
 
   const progress = (pct: number, loaded?: number, total?: number) => {
@@ -2744,10 +3090,19 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
     if (typeof loaded === "number" && totalBytes) sub.textContent = `${label} · ${fmtMB(loaded)} / ${fmtMB(totalBytes)} MB`
   }
 
+  // The ticket-ID chip — a link straight to that ticket when the server gave us its URL.
+  const refChip = (ref: string, linkUrl: string): HTMLElement => {
+    const r = linkUrl ? document.createElement("a") : document.createElement("span")
+    r.className = "refc"; r.textContent = ref
+    if (linkUrl) { const a = r as HTMLAnchorElement; a.href = linkUrl; a.target = "_blank"; a.rel = "noopener"; a.title = `Open ${ref}` }
+    return r
+  }
+
   const success = (issueKey: string, issueUrl: string) => {
-    pill.classList.remove("err"); pill.classList.add("ok")
-    // #651 Option D: replace the leading status icon with the captured-screenshot thumbnail (green 'sent'
-    // check badge overlapping it). If no shot is available, fall back to the Klavity 'K' mark tile.
+    busy = false
+    pill.classList.remove("err"); pill.classList.add("ok"); pill.dataset.sent = "1"
+    // #651 Option D: the captured-screenshot thumbnail (green 'sent' check badge overlapping it) replaces the
+    // status icon. No shot → the Klavity 'K' mark tile.
     const thumbWrap = document.createElement("span"); thumbWrap.className = "thumbwrap"
     let thumbEl: HTMLElement
     if (thumbnail) {
@@ -2760,41 +3115,22 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
     // static check glyph (no user data) — inline SVG, no emoji (CI emoji guard)
     badge.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
     thumbWrap.append(thumbEl, badge)
+    restoreIc()
     pill.replaceChild(thumbWrap, ic)
-
-    // Title: indigo 'K' logo chip + "Report sent".
-    title.textContent = ""
-    const logo = document.createElement("span"); logo.className = "klogo"; logo.textContent = "K"
-    title.append(logo, document.createTextNode("Report sent"))
-
-    // Sub: "Filed as <ref-mono-chip> · <Open in Klavity ↗>" — graceful "We filed it." when neither exists.
-    progFill.style.width = "100%"
+    title.textContent = "Report sent"
+    // Sub: "Filed as <ID link> · Open in Klavity ↗" — graceful "We filed it." when neither exists.
+    prog.style.display = "none"
     sub.textContent = ""
     const ref = pillFriendlyRef(issueKey, issueUrl)
     const linkUrl = pillSafeHttpUrl(issueUrl)
-    if (ref) {
-      sub.appendChild(document.createTextNode("Filed as "))
-      const r = document.createElement("span"); r.className = "refc"; r.textContent = ref; sub.appendChild(r)
-    }
+    if (ref) { sub.appendChild(document.createTextNode("Filed as ")); sub.appendChild(refChip(ref, linkUrl)) }
     if (linkUrl) {
       if (ref) sub.appendChild(document.createTextNode(" · "))
       const a = document.createElement("a"); a.className = "open"; a.href = linkUrl; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Open in Klavity ↗"
       sub.appendChild(a)
     }
     if (!ref && !linkUrl) sub.textContent = "We filed it."
-
-    // Slim indigo auto-dismiss bar: countdown-shrink over ~4s, paused/resumed in lockstep with the timer.
-    progFill.style.animation = `klp-shrink ${PILL_AUTODISMISS_MS}ms linear forwards`
-    // Auto-dismiss ~4s; hover/focus pauses and resumes with only the remaining time.
-    let remaining = PILL_AUTODISMISS_MS
-    let started = 0
-    const arm = () => { if (armed) return; armed = true; started = Date.now(); dismissTimer = setTimeout(remove, remaining); progFill.style.animationPlayState = "running" }
-    const pause = () => { if (!dismissTimer) return; clearTimeout(dismissTimer); dismissTimer = null; armed = false; remaining = Math.max(0, remaining - (Date.now() - started)); progFill.style.animationPlayState = "paused" }
-    pill.addEventListener("mouseenter", pause)
-    pill.addEventListener("mouseleave", arm)
-    pill.addEventListener("focusin", pause)
-    pill.addEventListener("focusout", arm)
-    arm()
+    changed(true)
   }
 
   const retrying = (attempt: number, maxAttempts: number, reason: string) => {
@@ -2812,52 +3148,36 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
 
   // The ticket was created, but some evidence didn't reach storage: warn (not "failed") and offer to re-send just the missing parts.
   const partial = (missing: number, onRetry: () => void) => {
-    pill.classList.remove("ok"); pill.classList.add("err")
-    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
-    armed = false
+    busy = false
+    pill.classList.remove("ok"); pill.classList.add("err"); pill.dataset.sent = "1"
     setIcon("triangle-alert")
     title.textContent = "Report sent — some files didn't upload"
     sub.textContent = ""
     const a = document.createElement("a"); a.href = "#"; a.textContent = "Retry"
-    a.addEventListener("click", (e) => { e.preventDefault(); if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null } armed = false; onRetry() })
+    a.addEventListener("click", (e) => { e.preventDefault(); onRetry() })
     sub.append(document.createTextNode(`${missing} file${missing === 1 ? "" : "s"} missing · `), a)
     prog.style.display = "none"
-    dismissTimer = setTimeout(remove, PILL_FAIL_AUTODISMISS_MS)   // same long window as a failure so it never lingers forever
+    changed(true)
   }
 
   const failure = (onRetry: () => void, message?: string, retryLabel?: string) => {
-    pill.classList.remove("ok"); pill.classList.add("err")
-    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
-    armed = false
+    busy = false
+    pill.classList.remove("ok"); pill.classList.add("err"); delete pill.dataset.sent
     setIcon("x-circle")
     title.textContent = "Upload didn't finish"
     sub.textContent = ""
     const a = document.createElement("a"); a.href = "#"; a.textContent = retryLabel || "Retry"
-    a.addEventListener("click", (e) => {
-      e.preventDefault()
-      if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null } // #475: clear the fail-timer on retry
-      armed = false
-      onRetry()
-    })
+    a.addEventListener("click", (e) => { e.preventDefault(); onRetry() })
     sub.append(document.createTextNode((message || "check your connection") + " · "), a)
     // A long, important explanation (e.g. "it may already have been created") must be READABLE, not cut off by the one-line ellipsis.
     if ((message || "").length > 70) { sub.style.whiteSpace = "normal"; sub.title = message || "" }
     prog.style.display = "none"
-    // #475: failed pills used to persist forever and stack up. Auto-dismiss after a long window (30s, well past
-    // the 4s success window so the user can read the error / retry); the × dismisses instantly, retry clears it.
-    // Hover/focus pauses and resumes with only the remaining time (same affordance as success).
-    let remaining = PILL_FAIL_AUTODISMISS_MS
-    let started = 0
-    const arm = () => { if (armed) return; armed = true; started = Date.now(); dismissTimer = setTimeout(remove, remaining) }
-    const pause = () => { if (!dismissTimer) return; clearTimeout(dismissTimer); dismissTimer = null; armed = false; remaining = Math.max(0, remaining - (Date.now() - started)) }
-    pill.addEventListener("mouseenter", pause)
-    pill.addEventListener("mouseleave", arm)
-    pill.addEventListener("focusin", pause)
-    pill.addEventListener("focusout", arm)
-    arm()
+    changed(true)
   }
 
+  // A new report always opens the panel (even if the reporter closed it earlier).
   uploading()
+  changed(true)
   return { uploading, progress, success, failure, retrying, waiting, partial, dismiss: remove }
 }
 
@@ -2878,7 +3198,25 @@ export function enhancePriorityToTicket(p: string | undefined | null): "urgent" 
 export async function prepareSubmission(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
   payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; annotations?: any; reporterEmail?: string; createContact?: boolean; turnstileToken?: string; submissionKey?: string; feedbackTarget?: 'project' | 'klavity'; suggestedPriority?: string },
+  // Progress of the large-file (chunked) uploads that run before the report is sent: bytes sent / total.
+  onLargeUploadProgress?: (sent: number, total: number) => void,
 ): Promise<PreparedSubmission> {
+  // Files over the single-request caps are uploaded first, in chunks (core/large-upload.ts), and the report
+  // carries a signed ref for each. Files that fit keep the existing multipart path. If one can't be uploaded
+  // this throws (LargeUploadError) — the caller shows a retryable failure and the file stays in the payload.
+  let inlineFiles = payload.files
+  let fileRefs: string[] = []
+  if (splitForLargeUpload(payload.files).large.length) {
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = "" }   // leaving now would lose the upload
+    try { window.addEventListener("beforeunload", warn) } catch { /* non-browser */ }
+    try {
+      const r = await offloadLargeFiles(payload.files, fetchTransport(cfg.backendUrl, { firstParty: cfg.firstParty, token: cfg.token }), { projectId: cfg.projectId, onProgress: onLargeUploadProgress })
+      inlineFiles = r.inline
+      fileRefs = r.refs
+    } finally {
+      try { window.removeEventListener("beforeunload", warn) } catch { /* non-browser */ }
+    }
+  }
   // Compress screenshots (PNG → JPEG, downscale very wide ones) so the upload is fast. Best-effort,
   // parallel; each falls back to its original on failure.
   const screenshots = await Promise.all(payload.screenshots.map((s) => compressScreenshot(s)))
@@ -2903,7 +3241,7 @@ export async function prepareSubmission(
     screenshots,
     screenshotThumbs,
     // PX4 #425: non-image file attachments carried through as their own multipart field.
-    files: payload.files,
+    files: inlineFiles,
     // KLAVITYKLA-438 "Record me": video recordings carried through as their own `recording` multipart field(s).
     recordings: payload.recordings,
     context: payload.context,
@@ -2935,6 +3273,8 @@ export async function prepareSubmission(
   // status 'new' — the server's priority-self-elevation guard is unaffected.
   const enhancedPriority = enhancePriorityToTicket(payload.suggestedPriority)
   if (enhancedPriority) fd.set("priority", enhancedPriority)
+  // Large files uploaded above, as signed refs (a plain text field, so repair/retry bodies carry it too).
+  if (fileRefs.length) fd.set("file_refs", JSON.stringify(fileRefs))
 
   // One idempotency key per prepared report, reused by EVERY attempt (the server returns the existing ticket for a repeat).
   const key = payload.submissionKey || newSubmissionKey()

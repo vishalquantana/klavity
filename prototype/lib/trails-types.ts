@@ -6,7 +6,8 @@ export type AuthorKind = "llm" | "human" | "mixed"
 //   rendering after a send) instead of a blind fixed-ms `wait`.
 // upload: attach a fixture file to a file input (<input type=file>). The actionValue is the
 //   attachment NAME; the trail carries a name→storageKey manifest that the runner re-fetches.
-export type StepAction = "navigate" | "click" | "type" | "select" | "assert" | "wait" | "waitForSelector" | "upload" | "hover" | "keyPress" | "clearField" | "callModule" | "pauseForSecret"
+export const STEP_ACTIONS = ["navigate", "click", "type", "select", "assert", "wait", "waitForSelector", "upload", "hover", "keyPress", "clearField", "callModule", "pauseForSecret"] as const
+export type StepAction = typeof STEP_ACTIONS[number]
 export type Tier = "cache" | "candidate" | "vision" | "none"
 export type Verdict = "green" | "amber" | "red" | "skip"
 export type FailureKind = "crash" | "regression"
@@ -35,6 +36,8 @@ export interface Fingerprint {
   screenshotKey?: string
   inputType?: string  // the input's type attr (e.g. "password") — reliably identifies fields an
                       // accessible name / positional domPath can't (unlabeled password inputs)
+  /** True for a select-all / toggle-all checkbox (header checkbox): clicking it acts on EVERY row. Authoring-time only. */
+  allToggle?: boolean
 }
 
 /** KLA-93: named environment override for a trail — e.g. staging vs prod. */

@@ -20,7 +20,7 @@ import { expandModuleSteps } from "./trails-modules"
 import {
   getTrail, listTrailSteps, getCacheForStep, upsertLocatorCache,
   startWalk, addRunStep, mergeRunStepEvidence, finishWalk, recordFinding,
-  resolveEnvironmentUrl, pauseWalk, resumeWalk, getWalk,
+  resolveEnvironmentUrl, pauseWalk, resumeWalk, getWalk, resetWalkForRetry,
 } from "./trails"
 import { touchWalkHeartbeat, db, incrementUsageMeter, accountIdForAiCall, accountPlan, getProjectA11yEnabled } from "./db"
 import { runA11yScan, a11yUrlKey, AXE_SCAN_BUDGET_MS } from "./trails-a11y"
@@ -34,7 +34,7 @@ import { setupReplayCapture, saveReplay, type ReplayCapture } from "./trails-rep
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { contentSigFor } from "./trails-findings-dedup"
 import { captureKrefSnapshot, stableSelectorFor, structuralPathFor, isKrefSelector, recordedStepState } from "./trails-snapshot"
-import { clickWithTransitionFallback } from "./trails-click"
+import { clickWithTransitionFallback, selectOptionAnyWidget, gotoPastRedirect } from "./trails-click"
 import { matchesMock } from "./trails-browser-page"
 import type { NetworkMock } from "./trails-browser-page"
 import { notifyWalkRed } from "./walk-red-alert"
@@ -44,6 +44,8 @@ import { RunRecorder, shouldRecordWalk, captureAndPersistRecording } from "./tra
 import { WalkEvidenceCollector, type EvidenceOffsets, type WalkEvidenceSummary } from "./trails-walk-evidence"
 
 export interface WalkOptions {
+  /** Internal (walkTrailWithBrowserRetry): hold the infra "lost the browser" alert because a retry is about to run. */
+  _deferInfraAlert?: boolean
   _resolvedCreds?: Set<string>
   /** Concrete URL to walk against (overrides the trail's baseUrl). file:// or http(s)://. */
   fixtureUrl: string
@@ -91,6 +93,12 @@ export interface WalkOptions {
    * is 120000ms (see lib/trails-trigger.ts), never set here so the engine suite is unaffected.
    */
   deadlineMs?: number
+  /**
+   * Treat `deadlineMs` as the MINIMUM budget and grow it with the trail's step count (see scaledWalkDeadlineMs).
+   * Opt-in so the engine suite's tiny test deadlines are unaffected; the real callers (manual/scheduled walks and
+   * the AutoSim Verification Walk) set it. A 17-step PX4 flow needs more than a flat 120-180s on a slow QA site.
+   */
+  scaleDeadlineWithSteps?: boolean
   /**
    * Plan G — trigger reconciliation. When present, the runner ADOPTS this pre-created Walk row (from
    * runWalkNow's startWalk) instead of calling startWalk itself, so the run_steps / replay / verdict
@@ -270,6 +278,8 @@ export interface WalkSummary {
    */
   reasons: string[]
   failureKind?: FailureKind
+  /** True when the browser/CDP connection dropped mid-walk (infra, not a product result). walkTrailWithBrowserRetry re-runs these once. */
+  browserLost?: boolean
 }
 
 const CACHE_CONFIDENCE = 1.0
@@ -584,7 +594,8 @@ async function defaultShotUploader(bytes: Uint8Array, contentType: string): Prom
 async function maybeCaptureShot(page: Page, opts: WalkOptions): Promise<{ bytes: Uint8Array; contentType: "image/jpeg" } | undefined> {
   if (!opts.stepShots) return undefined
   try {
-    const buf = await page.screenshot({ type: "jpeg", quality: 45 })
+    // Capped: a busy page (PX4: 10s+ screenshots) must not eat the walk deadline; skip the shot instead.
+    const buf = await page.screenshot({ type: "jpeg", quality: 45, timeout: 5_000 })
     const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf)
     return { bytes, contentType: "image/jpeg" }
   } catch {
@@ -706,6 +717,42 @@ async function applyNetworkMocks(page: Page, mocks: NetworkMock[]) {
  * Opens the page once, replays each step (Tier 0 cache -> Tier 1 heal), evaluates checkpoints,
  * writes run_steps + the Walk verdict via Layer A, returns a summary. Zero LLM.
  */
+/** Per-walk budget model: a fixed setup allowance plus time per step, never below the caller's floor, capped. */
+const WALK_DEADLINE_FIXED_MS = 60_000
+const WALK_DEADLINE_PER_STEP_MS = 12_000
+const WALK_DEADLINE_MAX_MS = Number(process.env.AUTOSIM_WALK_MAX_MS) || 600_000
+export function scaledWalkDeadlineMs(baseMs: number, stepCount: number): number {
+  if (!(baseMs > 0)) return baseMs
+  const steps = Number.isFinite(stepCount) ? Math.max(0, stepCount) : 0
+  const scaled = WALK_DEADLINE_FIXED_MS + WALK_DEADLINE_PER_STEP_MS * steps
+  return Math.max(baseMs, Math.min(WALK_DEADLINE_MAX_MS, scaled))
+}
+
+/**
+ * Run a walk and, if the BROWSER dies mid-walk (infra: "Target page, context or browser has been closed", dropped CDP/socket), run
+ * it ONE more time on a fresh browser. Dev 2026-11-16: a replay that was green through step 9 lost its Chromium at step 10 and the
+ * AutoSim was reported red although the same trail replayed fine minutes later. Only an infra drop is retried - a real step failure,
+ * a deadline or a user cancel never is. The first attempt's "lost the browser" alert is held back (the retry will alert if it also fails).
+ *
+ * With a pre-created runId (manual/scheduled run) the same Walk row is re-armed so the UI that is polling it shows the retry;
+ * without one the retry is a new Walk row and the crashed one stays as the record of what happened.
+ */
+export async function walkTrailWithBrowserRetry(
+  projectId: string,
+  trailId: string,
+  opts: WalkOptions,
+  walkFn: (projectId: string, trailId: string, opts: WalkOptions) => Promise<WalkSummary> = walkTrail,
+): Promise<WalkSummary> {
+  const first = await walkFn(projectId, trailId, { ...opts, _deferInfraAlert: true })
+  if (!first.browserLost || opts.signal?.aborted) {
+    // Nothing to retry. A held-back alert only matters for the browserLost case, which is handled below.
+    return first
+  }
+  console.warn(`[trails-runner] walk ${first.runId} lost its browser mid-run; retrying once on a fresh browser`)
+  if (opts.runId) await resetWalkForRetry(projectId, opts.runId).catch((e) => console.warn("[trails-runner] retry reset failed:", String(e)))
+  return await walkFn(projectId, trailId, opts)
+}
+
 export async function walkTrail(projectId: string, trailId: string, opts: WalkOptions): Promise<WalkSummary> {
   const trail = await getTrail(projectId, trailId)
   if (!trail) throw new Error(`trail ${trailId} not found in project ${projectId}`)
@@ -773,7 +820,8 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
   // Walk summary is never silent. Reasons accumulate per-step and are surfaced in `finishWalk` below.
   const redReasons: string[] = []
   // Plan G hard per-walk deadline: a wall-clock budget checked at the top of each step. Infinity = off.
-  const deadline = opts.deadlineMs ? Date.now() + opts.deadlineMs : Infinity
+  const deadlineBudgetMs = opts.deadlineMs && opts.scaleDeadlineWithSteps ? scaledWalkDeadlineMs(opts.deadlineMs, steps.length) : opts.deadlineMs
+  const deadline = deadlineBudgetMs ? Date.now() + deadlineBudgetMs : Infinity
   let deadlineHit = false
   let cancelledBySignal = false
   // KLAVITYKLA-397..401: set when a step fails because the browser/CDP connection dropped mid-walk (an
@@ -1077,7 +1125,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     })
 
     if (walkVerdict === "red") {
-      notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now(), failureKind: walkFailureKind ?? undefined, ...(sawInfraDrop ? { browserUnavailable: true } : {}) }).catch(() => {})
+      if (!(sawInfraDrop && opts._deferInfraAlert)) notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now(), failureKind: walkFailureKind ?? undefined, ...(sawInfraDrop ? { browserUnavailable: true } : {}) }).catch(() => {})
     }
 
     // KLA-94: opt-in auto-file. Runs after finishWalk so the walk is already settled. Best-effort:
@@ -1092,7 +1140,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     }
     // KLAVITYKLA-126: mark a clean finish so the first-green HAR baseline is recorded only here.
     sawSuccessfulFinish = true
-    return { runId, verdict: walkVerdict, llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, ...(walkFailureKind ? { failureKind: walkFailureKind } : {}), ...(evSummary ? { evidence: evSummary } : {}) }
+    return { runId, verdict: walkVerdict, llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, ...(walkFailureKind ? { failureKind: walkFailureKind } : {}), ...(sawInfraDrop && walkVerdict === "red" && !deadlineHit && !cancelledBySignal ? { browserLost: true } : {}), ...(evSummary ? { evidence: evSummary } : {}) }
   } catch (e) {
     // Anything thrown (e.g. an unreachable fixtureUrl) must STILL finalize the run — never leave it
     // 'running'. The Walk is RED and the error is recorded in the summary for the trace viewer.
@@ -1109,8 +1157,8 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
       llmCalls,
       summary: { ...redReasons.length ? { reasons: redReasons } : {}, failureKind: failureKindForThrownError(e), error: String(e), browserKind: bh.kind, ...(infra ? { browserUnavailable: true } : {}), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) },
     })
-    notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now(), failureKind: failureKindForThrownError(e), ...(infra ? { browserUnavailable: true } : {}) }).catch(() => {})
-    return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, failureKind: failureKindForThrownError(e), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) }
+    if (!(infra && opts._deferInfraAlert)) notifyWalkRed({ trailName: trail.name, trailId, projectId, runId, reasons: redReasons, at: Date.now(), failureKind: failureKindForThrownError(e), ...(infra ? { browserUnavailable: true } : {}) }).catch(() => {})
+    return { runId, verdict: "red", llmCalls, steps: stepSummaries, healedCount, reasons: redReasons, failureKind: failureKindForThrownError(e), ...(infra ? { browserLost: true } : {}), ...(evSummaryCatch ? { evidence: evSummaryCatch } : {}) }
   } finally {
     // Usage meter (KLAVITYKLA-305): one 'autosim_walk' event per completed AutoSim/Trail walk
     // (any verdict). MEASUREMENT ONLY — fire-and-forget, never awaited, never blocks the walk.
@@ -1289,7 +1337,7 @@ async function runOneStep(
   if (step.action === "navigate") {
     // In Layer C the whole walk is scoped to fixtureUrl; re-navigate to it (origin already loaded).
     // Bound the nav at opTimeout (Plan G) so a live-network navigate step can't hang on the 30s default.
-    await page.goto(step.actionValue && /^https?:|^file:/.test(step.actionValue) ? step.actionValue : fixtureUrl, { timeout: currentTimeout })
+    await gotoPastRedirect(page, step.actionValue && /^https?:|^file:/.test(step.actionValue) ? step.actionValue : fixtureUrl, { timeout: currentTimeout })
     // KLA-790: settle after the navigate too (goto waits only for 'load'), so the NEXT step resolves
     // against a rendered page instead of tripping the drift path on async-rendered UI. Best-effort.
     await page.waitForLoadState("networkidle", { timeout: Math.min(currentTimeout, 8_000) }).catch(() => {})
@@ -1536,7 +1584,7 @@ async function runOneStep(
           await clickWithTransitionFallback(resolved.locator, actionTimeout, actionTimeout)
           break
         case "select":
-          await resolved.locator.selectOption(step.actionValue ?? "", { timeout: actionTimeout })
+          await selectOptionAnyWidget(resolved.locator, step.actionValue ?? "", actionTimeout)
           break
         case "hover":
           await resolved.locator.hover({ timeout: actionTimeout })
@@ -1865,7 +1913,7 @@ async function runVisionTier2(
             await loc.fill(val, { timeout: ACTION_TIMEOUT }); break
           }
           case "click": await clickWithTransitionFallback(loc, ACTION_TIMEOUT, ACTION_TIMEOUT); break
-          case "select": await loc.selectOption(step.actionValue ?? "", { timeout: ACTION_TIMEOUT }); break
+          case "select": await selectOptionAnyWidget(loc, step.actionValue ?? "", ACTION_TIMEOUT); break
           case "hover": await loc.hover({ timeout: ACTION_TIMEOUT }); break
           case "keyPress": await loc.press(step.actionValue ?? "Enter", { timeout: ACTION_TIMEOUT }); break
           case "clearField": await loc.clear({ timeout: ACTION_TIMEOUT }); break

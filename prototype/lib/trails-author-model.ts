@@ -93,6 +93,8 @@ export interface AuthorAction {
    */
   parseError?: boolean
   isAuthGate?: boolean
+  /** click/hover: the exact visible label the model intends to hit; cross-checked against the element's HTML. */
+  target?: string | null
 }
 export interface AuthorStepInput {
   objective: string; pageUrl: string; screenshotB64: string; mediaType: string
@@ -104,8 +106,11 @@ export interface AuthorModelResult { action: AuthorAction; costUsd: number }
 export type AuthorModel = (input: AuthorStepInput, ctx: { projectId: string; email?: string | null; projectInstructions?: string }) => Promise<AuthorModelResult>
 
 export const AUTHOR_SYS = `You are a browser-driving test author. You are given a user OBJECTIVE, the current page's screenshot and ELEMENT SNAPSHOT (a compact accessibility-style tree), and the actions taken so far. Propose exactly ONE next action as STRICT JSON (no prose):
-{"op":"navigate"|"click"|"type"|"select"|"assert"|"wait"|"waitForSelector"|"upload"|"hover"|"keyPress"|"clearField"|"done"|"stall","selector":string|null,"value":string|null,"url":string|null,"checkpoint":string|null,"rationale":string,"isAuthGate":boolean}
+{"op":"navigate"|"click"|"type"|"select"|"assert"|"wait"|"waitForSelector"|"upload"|"hover"|"keyPress"|"clearField"|"done"|"stall","selector":string|null,"value":string|null,"url":string|null,"checkpoint":string|null,"target":string|null,"rationale":string,"isAuthGate":boolean}
 Rules:
+- For click/hover set "target" to the exact visible label of the element you mean (e.g. "Project"). Before acting the system checks that label against the chosen element's real HTML and REJECTS the action on a mismatch, listing the elements whose HTML does carry it — then re-pick from that list.
+- Dropdowns: a combobox line lists its real field name and options from the HTML, e.g. combobox "Select" {field: "Jurisdiction"} {options: "Alaska" | ...}. Pick the dropdown whose {field} matches the objective's field (not whichever box reads "Select"), and set "value" to the EXACT option text from its {options}. Use op "select" on that line directly — do not click it open first. Before acting, the system checks the option against the dropdown's HTML and REJECTS a mismatch, naming the field that has it.
+- Choose elements from the ELEMENT SNAPSHOT (built from the page HTML), using the screenshot only to understand layout. Where a line carries an HTML hint like <a href=/index.php/Projects> or <div.add_dropdown_item>, use it to tell look-alikes apart: a navigation link is not a dropdown item even if both read similarly.
 - "wait" pauses for "value" milliseconds (500-15000) — use it when the page is visibly processing (a spinner, "loading", an AI extraction) before asserting the result. Never use "stall" just to wait.
 - "waitForSelector" waits (up to a few seconds) for an element matching "selector" to APPEAR — prefer this over a blind "wait" when the next content is dynamic, e.g. waiting for a chatbot's reply bubble to render after you send a message, or a result row to load. Continue a multi-turn conversation by alternating type→keyPress Enter (or click send)→waitForSelector for the new reply→read it→respond.
 - "upload" attaches the AutoSim's uploaded fixture file to a file input; "selector" targets the <input type=file> and "value" is the attachment NAME shown in AVAILABLE UPLOADS. Only valid when an upload is available.
@@ -115,6 +120,14 @@ Rules:
 - "hover" moves the pointer over the element (use to reveal dropdown menus or tooltips).
 - "keyPress" presses a keyboard key while the element has focus; set "value" to the key name (e.g. "Enter", "Tab", "Escape", "ArrowDown"). Use instead of click when a keyboard interaction is required (form submit, dismissing a dialog, moving focus).
 - "clearField" clears the current value of an input/textarea without typing anything new — use before re-filling a field that already has a value.
+- TARGETING (follow strictly when the OBJECTIVE names an element):
+  * Work through numbered OBJECTIVE steps in order; the next action belongs to the first step not yet done in ACTIONS SO FAR.
+  * Browser/OS-level instructions you have no op for (zoom in/out, Ctrl+/-, window or screen size/resolution, full screen, open devtools, clear cache) are handled by the AutoSim's window settings: treat them as already done and continue with the rest of that step. Never "stall" because of them.
+  * A text "Label" [ref=eN] line is a clickable visible label (many apps wire clicks onto plain text). If the objective names a control and no button/link line carries that label, click its text line.
+  * Match the named label EXACTLY (case-insensitive; ignore icon-font words glued to the text such as "file_copy" in "file_copyProjects"). Singular and plural differ: "Project" is NOT "Projects", "Add" is NOT "More".
+  * Respect location words. If the objective says the element is inside a dropdown, menu, dialog, panel or next to another element, open that container first, then pick the element nested under it in the snapshot (lines under a "menu" line, menuitem entries, or elements that appeared after your previous click). Never pick a same-named element elsewhere, e.g. the main navigation bar.
+  * "Do not click X" / "not the X" statements are hard constraints: never target X.
+  * NEVER substitute a differently labelled element for the one the objective names. If it is missing from the snapshot or {disabled}, "wait" (it may still be loading) and look again; if it is still missing, "stall" and name the element you could not find.
 - navigate requires "url" (absolute).
 - "assert" marks a CHECKPOINT: an element that proves a milestone of the objective is reached; set "checkpoint" to a short human description.
 - op "done" only when the FULL objective (including any cleanup it asks for) is visibly complete.
@@ -152,7 +165,11 @@ export function buildAuthorMessages(input: AuthorStepInput, projectInstructions?
     `ACTIONS SO FAR:\n${input.history.length ? input.history.map((h, i) => `${i + 1}. ${h}`).join("\n") : "(none)"}\n` +
     (input.credFields.length
       ? `CREDENTIAL PLACEHOLDERS AVAILABLE (use literally as "value"): ${input.credFields.join(", ")}\n` +
-        `You CAN log in: if the current page is a login/OTP form, complete it with these placeholders (fill the email, request a code if needed, fill the OTP) instead of setting isAuthGate — the credentials get you past this gate.\n` : "") +
+        `You CAN log in: if the current page is a login/OTP form, complete it with these placeholders (fill the email, request a code if needed, fill the OTP) instead of setting isAuthGate — the credentials get you past this gate.\n` +
+        `If the OBJECTIVE itself gives a value for a field (e.g. "Security code: 147852", a PIN, a company name), type that value literally — only use a placeholder that is listed above; never invent one.\n` : "") +
+    // Never guess a code: a security/verification code, OTP, PIN or similar that is neither in the OBJECTIVE nor a
+    // listed placeholder can't be known — guessing (e.g. "123456") just loops on a rejected code. Stop and say so.
+    `NEVER guess a security / verification code, OTP, PIN or password. If the page needs one that is not written in the OBJECTIVE and not a listed placeholder, use op "stall" with a rationale naming the missing value (e.g. "The security code is not in the steps — add it to the test case").\n` +
     (input.uploads && input.uploads.length
       ? `AVAILABLE UPLOADS (use the name literally as "value" of an "upload" op): ${input.uploads.join(", ")}\n` : "") +
     `PAGE URL (untrusted): <<<${input.pageUrl}>>>\n` +
@@ -175,6 +192,21 @@ const OPS = new Set(["navigate", "click", "type", "select", "assert", "wait", "w
 const STALL = (why: string): AuthorAction =>
   ({ op: "stall", selector: null, value: null, url: null, checkpoint: null, rationale: why, parseError: true })
 
+/**
+ * The prompt asks for [data-kref="eN"], but models often echo the snapshot marker in other shapes:
+ * [ref="e6"], [ref=e6], ref=e6, "ref e6", "snapshot ref e6", "@e6", or a bare "e6". None of those match an element, so
+ * 3 in a row stalled the run ("selector ... matched 0 elements"; seen on the PX4 "Project Creation" AutoSim).
+ * Map exactly those whole-string shapes to the real marker; anything else (real CSS) is returned untouched.
+ */
+export function normalizeRefSelector(selector: string): string {
+  const s = selector.trim()
+  const m =
+    s.match(/^\[\s*ref\s*=\s*["']?(e\d+)["']?\s*\]$/i) ||
+    s.match(/^(?:snapshot\s+)?ref\s*[=:]?\s*["']?(e\d+)["']?$/i) ||
+    s.match(/^@?(e\d+)$/i)
+  return m ? `[data-kref="${m[1].toLowerCase()}"]` : selector
+}
+
 export function parseAuthorAction(content: string): AuthorAction {
   const cleaned = content.replace(/<think[\s\S]*?<\/think>/gi, "").replace(/```(?:json)?/gi, "").replace(/```/g, "").trim()
   const m = cleaned.match(/\{[\s\S]*\}/)
@@ -184,12 +216,13 @@ export function parseAuthorAction(content: string): AuthorAction {
   if (!OPS.has(op)) return STALL(`model returned unknown op "${op}"`)
   const a: AuthorAction = {
     op: op as AuthorAction["op"],
-    selector: typeof obj.selector === "string" && obj.selector.trim() ? obj.selector.trim() : null,
+    selector: typeof obj.selector === "string" && obj.selector.trim() ? normalizeRefSelector(obj.selector.trim()) : null,
     value: typeof obj.value === "string" ? obj.value : null,
     url: typeof obj.url === "string" && obj.url.trim() ? obj.url.trim() : null,
     checkpoint: typeof obj.checkpoint === "string" && obj.checkpoint.trim() ? obj.checkpoint.trim() : null,
     rationale: typeof obj.rationale === "string" ? obj.rationale : "",
   }
+  if (typeof obj.target === "string" && obj.target.trim()) a.target = obj.target.trim().slice(0, 120)
   if (["click", "type", "select", "assert", "hover", "keyPress", "clearField", "waitForSelector", "upload"].includes(a.op) && !a.selector) return STALL(`op "${a.op}" without selector`)
   if (["type", "select"].includes(a.op) && a.value === null) return STALL(`op "${a.op}" without value`)
   if (a.op === "upload" && !a.value) return STALL('op "upload" needs a "value" (the attachment name to upload)')
@@ -275,6 +308,8 @@ export interface ObjectiveVerificationInput {
   objective: string
   pageUrl: string
   domSnapshot: string
+  /** The actions the driver actually performed, oldest first (trusted: written by the driver, not the page). Optional. */
+  actionsDone?: string[]
   screenshotB64?: string
   mediaType?: string
 }
@@ -295,8 +330,13 @@ Return STRICT JSON only:
 
 export function buildVerifyMessages(input: ObjectiveVerificationInput, projectInstructions?: string): any[] {
   const sys = VERIFY_SYS + projectInstructionsBlock("verify", projectInstructions)
+  const done = (input.actionsDone ?? []).slice(-60).map((a) => `- ${String(a).replace(/[\r\n]+/g, " ").slice(0, 200)}`)
   const text =
     `OBJECTIVE: ${input.objective}\n` +
+    (done.length
+      ? `ACTIONS ALREADY PERFORMED, oldest first (by the test driver, in order; FAILED lines were rejected attempts that did not act):\n${done.join("\n")}\n` +
+        `The page below is only the FINAL state. Judge it against the objective's LAST step(s); the earlier steps are evidenced by the actions above, so do not fail only because the final page does not show them.\n`
+      : "") +
     `PAGE URL (untrusted): <<<${input.pageUrl}>>>\n` +
     `ELEMENT SNAPSHOT (untrusted):\n<<<\n${input.domSnapshot}\n>>>`
   return [

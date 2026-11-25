@@ -31,3 +31,17 @@ test("client fetches the trends aggregate and drill endpoint, and renders an acc
   // Drill rows deep-link into the ticket detail.
   expect(html).toContain("function openTicketById(")
 })
+
+test("drill title shows the day as DD-MM-YYYY ('Reports on 12-09-2026'), the API still gets YYYY-MM-DD", () => {
+  const start = html.indexOf("function trendDayDMY(")
+  expect(start).toBeGreaterThan(-1)
+  let d = 0, i = html.indexOf("{", start)
+  for (let j = i; j < html.length; j++) { if (html[j] === "{") d++; else if (html[j] === "}" && --d === 0) { i = j + 1; break } }
+  const fmt = new Function(html.slice(start, i) + "; return trendDayDMY")() as (s: any) => string
+  expect(fmt("2026-09-12")).toBe("12-09-2026")
+  expect(fmt("2026-01-05")).toBe("05-01-2026")
+  expect(fmt("not-a-date")).toBe("not-a-date")
+  expect(fmt(undefined)).toBe("")
+  expect(html).toContain('esc(meta.label + " on " + trendDayDMY(day))')
+  expect(html).toContain('"/api/dashboard/trends?day=" + encodeURIComponent(day)')
+})

@@ -627,3 +627,50 @@ describe('screen sharing tab switching & mute/unmute stability', () => {
   })
 })
 
+
+describe('startRecording — recorder-window options (PX4)', () => {
+  it('defaults are unchanged: Entire Screen pre-selected, no capture controller, no onChunk needed', async () => {
+    const deps = makeDeps()
+    const ctrl = await startRecording({}, deps)
+    const c = (deps.mediaDevices.getDisplayMedia as any).mock.calls[0][0]
+    expect(c.video.displaySurface).toBe('monitor')
+    expect('controller' in c).toBe(false)
+    ctrl.stop(); await ctrl.done
+  })
+
+  it('preferSurface + focusCapturedSurface pre-select the tab and request Conditional Focus', async () => {
+    const setFocusBehavior = vi.fn()
+    const prev = (globalThis as any).CaptureController
+    ;(globalThis as any).CaptureController = class { setFocusBehavior = setFocusBehavior }
+    try {
+      const deps = makeDeps()
+      const ctrl = await startRecording({ preferSurface: 'browser', focusCapturedSurface: true }, deps)
+      const c = (deps.mediaDevices.getDisplayMedia as any).mock.calls[0][0]
+      expect(c.video.displaySurface).toBe('browser')
+      expect(c.controller).toBeDefined()
+      expect(setFocusBehavior).toHaveBeenCalledWith('focus-captured-surface')
+      ctrl.stop(); await ctrl.done
+    } finally { (globalThis as any).CaptureController = prev }
+  })
+
+  it('focusCapturedSurface is a no-op where CaptureController does not exist', async () => {
+    const prev = (globalThis as any).CaptureController
+    delete (globalThis as any).CaptureController
+    try {
+      const deps = makeDeps()
+      const ctrl = await startRecording({ focusCapturedSurface: true }, deps)
+      expect('controller' in (deps.mediaDevices.getDisplayMedia as any).mock.calls[0][0]).toBe(false)
+      ctrl.stop(); await ctrl.done
+    } finally { if (prev) (globalThis as any).CaptureController = prev }
+  })
+
+  it('onChunk receives each piece in order', async () => {
+    const deps = makeDeps()
+    const got: number[] = []
+    const ctrl = await startRecording({ onChunk: (b) => got.push(b.size) }, deps)
+    const rec = FakeMediaRecorder._instances[FakeMediaRecorder._instances.length - 1]
+    rec.pushChunk(10); rec.pushChunk(20)
+    expect(got).toEqual([10, 20])
+    ctrl.stop(); await ctrl.done
+  })
+})

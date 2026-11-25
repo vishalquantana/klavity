@@ -144,6 +144,112 @@ test("creating a ticket assigned to someone else notifies them", async () => {
   expect(d.notifications[0]).toMatchObject({ type: "ticket_created", actorEmail: ADMIN, ticketTitle: "Search returns nothing" })
 })
 
+// KD-3134: status and priority changes also notify the ticket's REPORTER (contact email, else whoever filed it).
+const forTicket = async (who: string, fid: string) => (await inbox(who)).notifications.filter((n: any) => n.feedbackId === fid)
+async function waitForTicket(who: string, fid: string, n: number) {
+  for (let i = 0; i < 40; i++) { const l = await forTicket(who, fid); if (l.length >= n) return l; await Bun.sleep(50) }
+  return forTicket(who, fid)
+}
+
+test("KD-3134: status and priority changes on an unassigned ticket notify its reporter", async () => {
+  const fid = `fb_ntf_rep_${RUN}`
+  await exec("INSERT INTO feedback (id, project_id, title, observation, priority, status, actor_email, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [fid, PROJ, "Avatar cropped", "Cropped on mobile", "medium", "open", DEV, NOW])
+  expect((await req("PATCH", `/api/feedback/${fid}`, ADMIN, { status: "in_progress" })).status).toBe(200)
+  expect((await req("PATCH", `/api/feedback/${fid}`, ADMIN, { priority: "urgent" })).status).toBe(200)
+  const l = await waitForTicket(DEV, fid, 2)
+  expect(l.map((n: any) => n.type).sort()).toEqual(["ticket_priority_changed", "ticket_status_changed"])
+  expect(l.find((n: any) => n.type === "ticket_status_changed")).toMatchObject({ actorEmail: ADMIN, meta: { from: "open", to: "in_progress" } })
+  expect(l.find((n: any) => n.type === "ticket_priority_changed").meta).toMatchObject({ from: "medium", to: "urgent" })
+  // The person who made the change hears nothing.
+  expect((await forTicket(ADMIN, fid)).length).toBe(0)
+})
+
+test("KD-3134: when the assignee changes status, the reporter hears it; a reporter's own change notifies only the assignee", async () => {
+  const fid = `fb_ntf_rep2_${RUN}`
+  // Reporter = the typed contact email (DEV2), not the filer (ADMIN).
+  await exec("INSERT INTO feedback (id, project_id, title, observation, priority, status, actor_email, contact_email, assignee, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [fid, PROJ, "Export fails", "CSV export 500s", "low", "open", ADMIN, DEV2, DEV, NOW])
+  expect((await req("PATCH", `/api/feedback/${fid}`, DEV, { status: "qa_review" })).status).toBe(200)
+  expect((await waitForTicket(DEV2, fid, 1)).map((n: any) => n.type)).toEqual(["ticket_status_changed"])
+  expect((await forTicket(DEV, fid)).length).toBe(0)
+  expect((await forTicket(ADMIN, fid)).length).toBe(0) // the filer isn't the reporter when a contact email was typed
+  expect((await req("PATCH", `/api/feedback/${fid}`, DEV2, { priority: "high" })).status).toBe(200)
+  expect((await waitForTicket(DEV, fid, 1)).map((n: any) => n.type)).toEqual(["ticket_priority_changed"])
+  await Bun.sleep(200)
+  expect((await forTicket(DEV2, fid)).map((n: any) => n.type)).toEqual(["ticket_status_changed"])
+})
+
+test("KD-3134: a comment still notifies only the assignee, not the reporter", async () => {
+  const fid = `fb_ntf_rep3_${RUN}`
+  await exec("INSERT INTO feedback (id, project_id, title, observation, priority, status, actor_email, assignee, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [fid, PROJ, "Tooltip clipped", "Clipped at edge", "low", "open", DEV2, DEV, NOW])
+  expect((await req("POST", `/api/feedback/${fid}/comments`, ADMIN, { body: "Seen this too" })).status).toBe(201)
+  expect((await waitForTicket(DEV, fid, 1)).map((n: any) => n.type)).toEqual(["ticket_commented"])
+  await Bun.sleep(200)
+  expect((await forTicket(DEV2, fid)).length).toBe(0)
+})
+
+test("KD-3134: bulk adding/removing a label notifies the assignee, only for tickets that actually changed", async () => {
+  const f1 = `fb_ntf_bl1_${RUN}`, f2 = `fb_ntf_bl2_${RUN}`
+  for (const fid of [f1, f2]) await exec("INSERT INTO feedback (id, project_id, title, observation, priority, status, assignee, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [fid, PROJ, "Bulk " + fid, "x", "low", "open", DEV, NOW])
+  const lbl = await (await req("POST", `/api/projects/${PROJ}/labels`, ADMIN, { name: "Bulky" })).json()
+  // f2 already has the label — adding it again isn't a change, so no notification for f2.
+  await req("POST", `/api/feedback/${f2}/labels`, DEV, { labelId: lbl.label.id })
+  expect((await req("PATCH", `/api/projects/${PROJ}/tickets/bulk`, ADMIN, { ticketIds: [f1, f2], addLabelId: lbl.label.id })).status).toBe(200)
+  const l1 = await waitForTicket(DEV, f1, 1)
+  expect(l1[0]).toMatchObject({ type: "ticket_label_added", actorEmail: ADMIN, meta: { label: "Bulky" } })
+  await Bun.sleep(200)
+  expect((await forTicket(DEV, f2)).length).toBe(0)
+  expect((await req("PATCH", `/api/projects/${PROJ}/tickets/bulk`, ADMIN, { ticketIds: [f1, f2], removeLabelId: lbl.label.id })).status).toBe(200)
+  expect((await waitForTicket(DEV, f2, 1)).map((n: any) => n.type)).toEqual(["ticket_label_removed"])
+  expect((await waitForTicket(DEV, f1, 2)).map((n: any) => n.type).sort()).toEqual(["ticket_label_added", "ticket_label_removed"])
+})
+
+test("KD-3134: deleting tickets (single and bulk) notifies assignee and reporter, not the deleter", async () => {
+  const f1 = `fb_ntf_del1_${RUN}`, f2 = `fb_ntf_del2_${RUN}`, f3 = `fb_ntf_del3_${RUN}`
+  await exec("INSERT INTO feedback (id, project_id, title, observation, priority, status, actor_email, assignee, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [f1, PROJ, "Gone ticket", "x", "low", "open", DEV2, DEV, NOW])
+  await exec("INSERT INTO feedback (id, project_id, title, observation, priority, status, actor_email, assignee, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [f2, PROJ, "Bulk gone A", "x", "low", "open", ADMIN, DEV, NOW])
+  await exec("INSERT INTO feedback (id, project_id, title, observation, priority, status, actor_email, assignee, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [f3, PROJ, "Bulk gone B", "x", "low", "open", DEV2, null, NOW])
+  // Single delete (the drawer's Delete button sends one id).
+  expect((await req("DELETE", `/api/projects/${PROJ}/tickets/bulk`, ADMIN, { ticketIds: [f1] })).status).toBe(200)
+  const d1 = await waitForTicket(DEV, f1, 1)
+  expect(d1[0]).toMatchObject({ type: "ticket_deleted", actorEmail: ADMIN, ticketTitle: "Gone ticket" })
+  expect((await waitForTicket(DEV2, f1, 1)).map((n: any) => n.type)).toEqual(["ticket_deleted"])
+  // Bulk delete: f2's reporter is the deleter (ADMIN) → only the assignee hears; f3 is unassigned → reporter hears.
+  expect((await req("POST", `/api/projects/${PROJ}/tickets/bulk-delete`, ADMIN, { ticketIds: [f2, f3] })).status).toBe(200)
+  expect((await waitForTicket(DEV, f2, 1))[0]).toMatchObject({ type: "ticket_deleted", ticketTitle: "Bulk gone A" })
+  expect((await waitForTicket(DEV2, f3, 1))[0]).toMatchObject({ type: "ticket_deleted", ticketTitle: "Bulk gone B" })
+  await Bun.sleep(200)
+  for (const fid of [f1, f2, f3]) expect((await forTicket(ADMIN, fid)).length).toBe(0)
+})
+
+test("editing and deleting a comment notify the assignee, not the actor", async () => {
+  const fid = `fb_ntf_cdel_${RUN}`
+  await exec("INSERT INTO feedback (id, project_id, title, observation, priority, status, actor_email, assignee, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [fid, PROJ, "Comment gone", "x", "low", "open", DEV2, DEV, NOW])
+  const c = await (await req("POST", `/api/feedback/${fid}/comments`, ADMIN, { body: "Please remove me" })).json()
+  const cid = c.comment?.id ?? c.id
+  expect((await waitForTicket(DEV, fid, 1)).map((n: any) => n.type)).toEqual(["ticket_commented"])
+  expect((await req("PATCH", `/api/feedback/${fid}/comments/${cid}`, ADMIN, { body: "Edited text" })).status).toBe(200)
+  const edited = await waitForTicket(DEV, fid, 2)
+  expect(edited.find((n: any) => n.type === "ticket_comment_edited")).toMatchObject({ actorEmail: ADMIN, meta: { snippet: "Edited text" } })
+  expect((await req("DELETE", `/api/feedback/${fid}/comments/${cid}`, ADMIN)).status).toBe(200)
+  const list = await waitForTicket(DEV, fid, 3)
+  expect(list.map((n: any) => n.type).sort()).toEqual(["ticket_comment_deleted", "ticket_comment_edited", "ticket_commented"])
+  expect(list.find((n: any) => n.type === "ticket_comment_deleted")).toMatchObject({ actorEmail: ADMIN, meta: { snippet: "Edited text" } })
+  await Bun.sleep(200)
+  expect((await forTicket(ADMIN, fid)).length).toBe(0)
+})
+
+test("restoring a deleted ticket notifies assignee and reporter, not the restorer", async () => {
+  const fid = `fb_ntf_rest_${RUN}`
+  await exec("INSERT INTO feedback (id, project_id, title, observation, priority, status, actor_email, assignee, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [fid, PROJ, "Back again", "x", "low", "open", DEV2, DEV, NOW])
+  expect((await req("DELETE", `/api/projects/${PROJ}/tickets/bulk`, ADMIN, { ticketIds: [fid] })).status).toBe(200)
+  await waitForTicket(DEV, fid, 1)
+  expect((await req("POST", `/api/projects/${PROJ}/tickets/deleted/${fid}/restore`, ADMIN)).status).toBe(200)
+  expect((await waitForTicket(DEV, fid, 2)).map((n: any) => n.type).sort()).toEqual(["ticket_deleted", "ticket_restored"])
+  expect((await waitForTicket(DEV2, fid, 2)).map((n: any) => n.type).sort()).toEqual(["ticket_deleted", "ticket_restored"])
+  await Bun.sleep(200)
+  expect((await forTicket(ADMIN, fid)).length).toBe(0)
+})
+
 test("the notifications API requires sign-in", async () => {
   const r = await fetch(`${BASE}/api/notifications`, { redirect: "manual" })
   expect([401, 302]).toContain(r.status)

@@ -1,7 +1,9 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
+import { slimSimRun } from "./lib/sim-run-list"
 import { reserveCredits, runMonthlyGrantReset } from "./lib/credits"
 import { setProjectPlanOverride } from "./lib/db"
+import type { TicketExportRow } from "./lib/db"
 import { listAccessibleProjects } from "./lib/db" // KLA-829: switcher lists only projects the user can open
 import { projectEntitlement } from "./lib/entitlement"
 // NOTE: re-added after a theirs-wins merge ate this import (KLAVITYKLA-352). Without it
@@ -11,9 +13,12 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, notifyAssigneeOfTicketUpdate, listNotifications, countUnreadNotifications, markNotificationsRead, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, upsertProjectContact, listProjectContacts, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, appendObservationIfUnchanged, accountRole, accountMembersRaw, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
-import { countFoundingAccounts, liveFeedbackId, deleteTicketsBulk } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, setPersonaActive, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, notifyAssigneeOfTicketUpdate, listNotifications, countUnreadNotifications, markNotificationsRead, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, upsertProjectContact, listProjectContacts, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, appendObservationIfUnchanged, accountRole, accountMembersRaw, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
+import { countFoundingAccounts, liveFeedbackId, deleteTicketsBulk, invalidateDashboardCache, notifyTicketsDeleted } from "./lib/db"
+import { listDeletedTickets, restoreDeletedTicket, RETENTION_DAYS as DELETED_TICKETS_RETENTION_DAYS } from "./lib/deleted-tickets"
 import { projectAccessAndRow } from "./lib/db" // KLA-833: access + project row in one DB round-trip (hot /api/projects/:id/* block)
+import { setFeedbackExtraScreenshots } from "./lib/db"
+import { runningSimIds, runSims, stopSims, clearSimRuns, lastRunOrigin, normOrigin, SIM_RUN_ACTIONS, type SimRunAction } from "./lib/sim-run-state"
 // KLA-838 (perf): batched helpers that collapse O(N-projects) per-request DB fan-out to a single query.
 import { listEnabledMonitoredUrlPatternsForProjects, countPersonasForAccount, insertTraitEvents, patternMatchesUrl } from "./lib/db"
 // #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
@@ -57,7 +62,11 @@ import { notifyStatusChange } from "./lib/status-notification"
 import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie, uidCookie, clearUidCookie, clearProjectCookie } from "./lib/auth"
-import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, type UploadedScreenshot } from "./lib/s3"
+import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, objectExists, type UploadedScreenshot, putUploadPart, uploadPartSize, assembleUploadParts, attachmentObjectSize, largeAttachmentKey, sweepStaleUploadParts } from "./lib/s3"
+import { CHUNK_BYTES as LARGE_CHUNK_BYTES, largeUploadMaxBytes, newUploadId, signUploadToken, verifyUploadToken, signFileRef, chunkCount, chunkLength, validateStart as validateLargeUploadStart, parseFileRefs } from "./lib/large-upload"
+import { storeVerifiedScreenshot, type StoredScreenshot } from "./lib/sim-evidence"
+import { enrichQaPersona, normalizePersonaKind, isQaPersona, qaRunPrompt, type PersonaKind } from "./lib/sim-validations"
+import { elementListForPrompt, sanitizePageMeta, type PageMeta } from "./lib/sim-ui-identity"
 import { phaseTimer } from "./lib/phase-timer"
 import { readReplayEvents, replayEvidencePresent } from "./lib/replay-intake"
 import { createLimiter, mapBounded, uploadConcurrency } from "./lib/bounded-concurrency"
@@ -76,7 +85,11 @@ import { videoMimeFromName, isVideoAttachment } from "./lib/attachment-video"
 import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines, sanitizeReporter, sanitizeClientInfo, reporterLines, clientInfoLines, buildLogAttachmentText, LOG_ATTACHMENT_FILENAME, redactSensitiveUrlsInText } from "./lib/feedback"
 import { evaluateLabelRules, hostConventionEnv } from "./lib/label-rules"
 import { encryptSecret, decryptSecret, userCacheUid } from "./lib/crypto"
-import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, getTestAccountRefs, rotateTestAccountSecret } from "./lib/test-accounts"
+import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, getTestAccountRefs, rotateTestAccountSecret, updateTestAccount } from "./lib/test-accounts"
+import * as asp from "./lib/autosim-projects"
+import * as reqExtract from "./lib/requirements-extract"
+import * as reqStore from "./lib/requirements-store"
+import * as reqRuns from "./lib/requirement-runs"
 import { assertSafeUrl } from "./lib/url-guard"
 import { genCode, isValidSlug, stampUtm, isBotRequest, hashIp } from "./lib/shortlinks"
 import { createShortLink, getShortLinkByCodeOrSlug, listShortLinks, getShortLinkDetail, updateShortLink, recordLinkClick, linkClickStats, ShortLinkConflictError, type ShortLinkRow } from "./lib/db"
@@ -87,7 +100,7 @@ import {
   MARKETING_PRESIGNUP_PROJECT_ID, makeTeaser, validateFreetoolEmail, checkFreetoolRun,
   bumpFreetoolRun, bumpFreetoolCost, ipBucket, freetoolDailyRunCap,
 } from "./lib/freetool-guard"
-import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona, classifyPreviewFailure, withPreviewTimeout } from "./lib/sim-preview"
+import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona, classifyPreviewFailure, withPreviewTimeout, selectPreviewSims } from "./lib/sim-preview"
 // KLAVITYKLA-486: COGS instrumentation + superadmin P&L.
 import { recordS3Storage, recordS3Egress, recordEmailSend } from "./lib/cost-events"
 import { buildSuperadminPL, creditsMarginByWorkspace } from "./lib/superadmin"
@@ -95,6 +108,7 @@ import { assembleWalk } from "./lib/sim-walk"
 import { publishRegressionEvent, listRegressionEvents, acknowledgeRegressionEvent } from "./lib/regression-events"
 import { buildAssertUserPrompt } from "./lib/assertion-spec"
 import { judgeWalk } from "./lib/trails-judge"
+import { normalizeGeneratedCore } from "./lib/persona-core"
 import { WEEK_MS as TRUST_REPORT_WEEK_MS, sendTrustReport, type TrustReportDeps } from "./lib/trust-report"
 import type { TrailStatus } from "./lib/trails-types"
 import type { RecurrenceMemory } from "./lib/recurrence-memory"
@@ -111,7 +125,7 @@ import { MODEL_CHOICES, MODEL_CHOICE_IDS, DEFAULT_WEIGHTS, pickModel, parseWeigh
 import { AsyncLocalStorage } from "node:async_hooks"
 import { removeFeedbackAttachment, attachmentKeyReferencedElsewhere } from "./lib/db"   // KD-193
 import { detachFeedbackScreenshot, screenshotReferencedElsewhere, screenshotById as screenshotRowById, deleteScreenshotRow, type CommentAttachment } from "./lib/db"   // KD-214, KD-217
-import { projectAccessForRow, listFeedbackWithMeta, type ProjectRow } from "./lib/db" // /api/dashboard round-trip reduction
+import { projectAccessForRow, listFeedbackWithMeta, listSimObservationsPerSim, type ProjectRow } from "./lib/db" // /api/dashboard round-trip reduction
 
 // Per-request context. A project-bound Bearer token (widget token) records its bound project here so
 // resolveProject can constrain it to that project (F5) — without threading state through every route.
@@ -132,8 +146,11 @@ import { buildOpenApiSpec } from "./lib/openapi"
 import { buildAuthoredRunStatus } from "./lib/v1-authored"
 import { listRecentWalks } from "./lib/trails"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
+import { unhandledErrorResponse } from "./lib/error-response"
+import { ticketKeyLabel } from "./lib/ticket-key-label"
 import { startCrashReaper } from "./lib/trails-reaper"
-import { runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuthorSessions, listNeedsAuthSessionsForAutoResume, AUTOSIM_DEADLINE_MS_DEFAULT } from "./lib/trails-author"
+import { ResumeConflictError, runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuthorSessions, listNeedsAuthSessionsForAutoResume, AUTOSIM_DEADLINE_MS_DEFAULT } from "./lib/trails-author"
+import { isUsableCheckpoint, userFacingStallReason } from "./lib/author-checkpoint"
 import { WalkBusyError, cancelCurrentWalk, cancelCurrentAuthor, PdfBusyError, walkPoolStats } from "./lib/trails-browser"
 import { mintShareToken, resolveShareToken, renderWalkPdf, revokeShareToken, listShareTokens, extendShareToken, recordShareView, checkSharePasscode } from "./lib/trails-share"
 import { gatherWalkReport } from "./lib/trails-report"
@@ -156,7 +173,9 @@ import { generateEnhancedDraft, renderDraftToText, formatAnnotationsForPrompt } 
 import { collectVideoTranscripts, gatherTranscriptText, isThinDescription, buildTranscriptDetailsSection, pickKeyframeTimestampsMs, fmtTimestamp, type VideoTranscript } from "./lib/video-enrich"
 import { extractKeyframes } from "./lib/keyframes"
 import { updateFeedbackTitle, updateFeedbackAnnotations } from "./lib/db"
-import { transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeAudioBytes, transcribeConfigured, TRANSCRIBE_MODEL, activeTranscribeModel } from "./lib/transcribe"
+import { transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeAudioBytes, transcribeConfigured, TRANSCRIBE_MODEL, TRANSCRIBE_MAX_BYTES, activeTranscribeModel } from "./lib/transcribe"
+// KD-995: split one Record-me walkthrough into separate tickets (POST /api/report/split).
+import { splitTranscriptIntoIssues, parseSplitFrames, SPLIT_MAX_FRAMES, SPLIT_FRAME_MAX_CHARS } from "./lib/issue-split"
 import { DeepgramRelay, deepgramConfigured, deepgramCostUsd, evaluateVoiceStreamUpgrade, createVoiceStreamWsHandlers, VOICE_STREAM_MAX_SESSION_MS, type VoiceStreamData } from "./lib/deepgram-stream"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
@@ -618,7 +637,7 @@ function personaSiteSys(countPhrase: string): string {
     "Classify each on two axes: simClass (\"user\" = actually OPERATES the product hands-on, feedback skews UI/interaction; " +
     "\"client\" = evaluates OVERALL outcomes and business results, feedback skews feature/workflow/strategy — only assign \"client\" when the persona clearly describes an executive, buyer, or outcome-judging stakeholder) " +
     "and side (\"external\" = customer/partner outside the team; \"internal\" = on the product/company team). " +
-    "Respond with ONLY a JSON object, no prose: {\"personas\":[{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"desc\":string(<=90 chars, ONE plain sentence: who this persona is and what they care about),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}]} with " + countPhrase + " personas, each with exactly 3 insights; each quote is a short first-person line that persona might say."
+    "Respond with ONLY a JSON object, no prose: {\"personas\":[{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"desc\":string(<=90 chars, ONE plain sentence: who this persona is and what they care about),\"summary\":string,\"personaKind\":\"qa\"|\"customer\" (\"qa\" ONLY if this persona IS a QA / visual-testing reviewer inspecting a UI for defects; every customer, buyer, end-user or stakeholder is \"customer\"),\"core\":{\"goals\":string[1-4 jobs-to-be-done],\"expertise\":string,\"temperament\":string,\"voice\":string(short first-person sample),\"watchFor\":string[2-5 concrete things this persona checks or validates on ANY page, e.g. form validation, labels, spelling]},\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}]} with " + countPhrase + " personas, each with exactly 3 insights; each quote is a short first-person line that persona might say."
 }
 
 const REACT_SYS =
@@ -642,7 +661,9 @@ const REACT_SYS =
   "  2. \"target\": a locator object — set \"text\" to the EXACT visible text on or immediately labelling the element, " +
   "copied VERBATIM character-for-character from the screenshot (this is the most reliable anchor, always provide it for " +
   "element-level reactions); set \"selector\" to a short CSS selector only if you can confidently infer one (else omit); " +
-  "set \"role\" and \"name\" to the element's ARIA role and accessible name when evident (else omit).\n" +
+  "set \"role\" and \"name\" to the element's ARIA role and accessible name when evident (else omit). " +
+  "When a PAGE ELEMENTS list is provided, set \"elementId\" to the id of the element that ITSELF is the subject of the reaction, copied exactly — never a neighbouring or " +
+  "containing element; use null if none of them is. Your region and text must describe that same element.\n" +
   "Set region AND target to null ONLY for genuinely page-level/outcome-level observations where no single element is the " +
   "focus (clients usually null). Do not invent coordinates or text you cannot actually see. " +
   "suggestedBug is filled only when it's a real problem worth filing to an issue tracker, else null; set its \"priority\" " +
@@ -659,7 +680,7 @@ const REACT_SYS =
   "Respond with ONLY a JSON object, no prose, in exactly this shape:\n" +
   '{"reactions":[{"observation":string(<=240 chars, first person),"sentiment":"frustrated"|"confused"|"satisfied"|"delighted"|"neutral",' +
   '"emoji":string,"targetDescription":string,' +
-  '"target":{"text":string,"selector":string,"role":string,"name":string}|null,' +
+  '"target":{"elementId":string|null,"text":string,"selector":string,"role":string,"name":string}|null,' +
   '"region":{"x":number,"y":number,"w":number,"h":number}|null,' +
   '"citedTraitIds":string[],' +
   '"suggestedBug":{"title":string,"body":string,"priority":"urgent"|"high"|"medium"|"low"}|null}]}'
@@ -1083,18 +1104,36 @@ async function extractPersonas(transcript: string, ctx?: { email?: string | null
   normalizeExtractedPersonas(data)
   return { data, usage }
 }
-async function reactToPage(persona: any, imageB64: string, mediaType: string, pageUrl: string, ctx?: { email?: string | null; projectId?: string | null }) {
+/**
+ * Store a Sim review screenshot for use as finding evidence: upload → verify the object exists → write the ledger row. Returns a
+ * screenshot id only when ALL of that succeeded; otherwise null + an explicit failure record (Phase-1 QA evidence integrity).
+ */
+function storeSimScreenshot(bytes: Uint8Array, contentType: string, projectId: string, ownerEmail: string | null, expiresAt: number): Promise<StoredScreenshot> {
+  return storeVerifiedScreenshot({
+    upload: (b, ct) => uploadScreenshotMeta(b, ct, "private"),
+    exists: (key) => objectExists(key),
+    insert: (row) => insertScreenshot({ projectId, s3Key: row.s3Key, bucket: row.bucket, contentType: row.contentType, acl: "private", bytes: row.bytes, ownerEmail, expiresAt }),
+  }, bytes, contentType)
+}
+
+async function reactToPage(persona: any, imageB64: string, mediaType: string, pageUrl: string, ctx?: { email?: string | null; projectId?: string | null }, pageMeta?: PageMeta | null) {
   // H4/LLM01: the persona is our own trusted data, but the page URL and the screenshot itself are
   // attacker-influenceable — delimit the URL and instruct the model to ignore instructions in page data.
   // Current-date awareness: without this the model assumes its training-era "current year" (e.g. 2024)
   // and wrongly flags valid future-looking dates on the page as errors (a 2026 "Founded Year" reported as
   // "impossible, it's 2024"). Stamp today's real date at call time so date reasoning is grounded in now.
   const today = new Date().toISOString().slice(0, 10)
+  // Rule 2: when the caller captured a read-only element map with the screenshot, show it to EVERY Sim so it picks a real element
+  // instead of guessing from pixels. runSimReviews verifies the answer against the same map before recording it.
+  const elementList = elementListForPrompt(pageMeta)
+  // QA Sims only: the PERSISTED QA rules (persona.validations, loaded with the Sim) are appended to the prompt. Non-QA Sims get the
+  // original prompt (plus the element list when one exists).
+  const qaAddendum = isQaPersona(persona) ? qaRunPrompt(persona, { hasElements: !!elementList }) : ""
   const { content, usage } = await chat([
-    { role: "system", content: REACT_SYS + UNTRUSTED_GUARD },
+    { role: "system", content: REACT_SYS + qaAddendum + UNTRUSTED_GUARD },
     {
       role: "user", content: [
-        { type: "text", text: `Today's date is ${today}. Treat this as the current date and year when judging whether any dates shown on the page are valid, impossible, or out of range — do NOT assume an earlier year.\n\n` + "You are this persona:\n" + JSON.stringify(persona, null, 2) + `\n\nReact to this screenshot. The page URL (untrusted) is:\n` + wrapUntrusted(pageUrl || "(unknown URL)") },
+        { type: "text", text: `Today's date is ${today}. Treat this as the current date and year when judging whether any dates shown on the page are valid, impossible, or out of range — do NOT assume an earlier year.\n\n` + "You are this persona:\n" + JSON.stringify(persona, null, 2) + `\n\nReact to this screenshot. The page URL (untrusted) is:\n` + wrapUntrusted(pageUrl || "(unknown URL)") + (elementList ? "\n\n" + wrapUntrusted(elementList) : "") },
         { type: "image_url", image_url: { url: `data:${mediaType};base64,${imageB64}` } },
       ]
     },
@@ -1375,13 +1414,20 @@ function isWidgetCorsPath(path: string): boolean {
     case "/api/widget/lead":
     case "/api/widget/sims":
     case "/api/widget/known-check":
+    // Select Sims management (member/bearer-gated, project-scoped) — called from the widget modal.
+    case "/api/widget/sim-deployments":
     case "/api/report/clarity":
     case "/api/report/enhance":
+    case "/api/report/split":
     case "/api/voice/transcribe":
     case "/api/voice/stream":
     // KLA-612: the widget's guest "Request upgrade" button POSTs here cross-origin from the customer's site.
     case "/api/upgrade-request":
     case "/api/feedback":
+    // Large-file attachments: chunked upload that runs before the /api/feedback submit (same auth model).
+    case "/api/uploads/start":
+    case "/api/uploads/chunk":
+    case "/api/uploads/complete":
     case "/api/errors":
     case "/api/consent":
     case "/api/sim/review":
@@ -2060,6 +2106,19 @@ function snapLocked(project: { id: string; planOverride?: string | null }): { er
   }
   return null
 }
+// F-01: the requirement-run queue records NEW AutoSims without going through POST /api/trails/author,
+// so it applies the same plan gates here (snap lock + configured-flow quota) before each recording.
+reqRuns.setRecordPreflight(async (pid) => {
+  const proj = await projectById(pid)
+  const lock = proj ? snapLocked(proj) : null
+  if (lock) return lock.error
+  const acctId = await accountIdForProject(pid)
+  if (acctId) {
+    const q = await quotaExceeded(acctId, "autosimFlows", () => countAccountAutosimFlows(acctId))
+    if (q) return q.error
+  }
+  return null
+})
 
 // ── /api/sim/review dedupe cache (§5: promote the klav_dev_react_* hash). In-process LRU-ish set keyed
 // by reviewDedupeKey(sim,urlPath,domSig); a page isn't re-reviewed for a Sim until its DOM sig changes.
@@ -2121,7 +2180,7 @@ const SIDE_ENUM = new Set(["external", "internal"])
 // { type (legacy shim), simClass, side, core|null }. simClass/side are validated against their
 // enums; core is assembled only when the body carries one. The legacy `type` (client|internal) is
 // derived from simClass/side when present so pre-v3 consumers keep working, else falls back to body.type.
-function v3PersonaFields(body: any): { type: string; simClass: string | null; side: string | null; core: import("./lib/db").PersonaCore | null } {
+function v3PersonaFields(body: any): { type: string; simClass: string | null; side: string | null; core: import("./lib/db").PersonaCore | null; personaKind: PersonaKind } {
   const simClass = SIM_CLASS_ENUM.has(String(body?.simClass)) ? String(body.simClass) : null
   const side = SIDE_ENUM.has(String(body?.side)) ? String(body.side) : null
   // Legacy type shim: client-class OR external-side → "client"; a user/internal persona → "internal".
@@ -2139,7 +2198,7 @@ function v3PersonaFields(body: any): { type: string; simClass: string | null; si
       watchFor: Array.isArray(c.watchFor) ? c.watchFor.map((x: any) => String(x)) : [],
     }
     : null
-  return { type, simClass, side, core }
+  return { type, simClass, side, core, personaKind: normalizePersonaKind(body?.personaKind) }
 }
 
 // ── #643: Preset Sim library ──────────────────────────────────────────────────────────────────────
@@ -2392,10 +2451,15 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
     for (const a of fb.attachments) {
       try {
         if (!a || !a.key) continue
+        const filename = String(a.filename || "attachment")
+        // A large (chunk-uploaded) file is never read into memory for export: the ticket gets the link only.
+        if (Number(a.size) > LARGE_INLINE_READ_MAX_BYTES) {
+          try { lines.push(`Attachment (${filename}, ${Math.round(Number(a.size) / 1024 / 1024)} MB): ${presignGet(String(a.key), 7 * 24 * 3600)}`) } catch { /* link is best-effort */ }
+          continue
+        }
         const { bytes, contentType } = await getObjectBytes(String(a.key))
         let url = ""
         try { url = presignGet(String(a.key), 3600) } catch { /* link is best-effort */ }
-        const filename = String(a.filename || "attachment")
         if (url) lines.push(`Attachment (${filename}): ${url}`)
         attachments.push({ filename, contentType: String(a.contentType || contentType || "application/octet-stream"), bytes, url })
       } catch (e: any) { console.warn("file attachment fetch failed for ticket (non-fatal):", e?.message || e) }
@@ -2483,6 +2547,8 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
       : fb.report_type === "task" ? "task"
         : fb.report_type === "query" ? "query"
           : fb.report_type === "bug" ? "bug" : undefined),
+    // KD-983: same reporter the Klavity ticket shows, so Jira can attribute the issue to that user.
+    reporterEmail: fb.contactEmail || fb.actorEmail || null,
   }
 }
 
@@ -2789,7 +2855,23 @@ function syncTicketFields(feedbackId: string, projectId: string, actor: string |
 // in the Tickets list. Only the autofile-on-submit path (autoFileHumanSnap, autofile-mode only) passes
 // it; the triage-accept path does NOT (the row is already 'open' there). The advance is guarded on real
 // create success AND on WHERE status='new', so a no-connector / failed autofile keeps status='new'.
+// KD-983: tickets whose background tracker export is still running (autofile: AI title → create issue).
+// GET /api/feedback/:id reports it as `exportPending` so an already-open ticket keeps checking for its Jira
+// link instead of needing a page refresh. In-memory per process; entries self-expire as a backstop so a
+// missed clear can never leave a ticket "pending" forever.
+const EXPORT_INFLIGHT_TTL_MS = 90_000
+const exportInflight = new Map<string, number>()   // feedbackId → expiresAt
+function markExportInflight(feedbackId: string): void { exportInflight.set(feedbackId, Date.now() + EXPORT_INFLIGHT_TTL_MS) }
+function clearExportInflight(feedbackId: string): void { exportInflight.delete(feedbackId) }
+function isExportInflight(feedbackId: string): boolean {
+  const exp = exportInflight.get(feedbackId)
+  if (exp === undefined) return false
+  if (exp < Date.now()) { exportInflight.delete(feedbackId); return false }
+  return true
+}
+
 function autoCopyFeedback(feedbackId: string, projectId: string, actor: string | null, effectivePriority?: string | null, opts?: { advanceStatusOnSuccess?: boolean; trustedProvenance?: boolean }): void {
+  markExportInflight(feedbackId)
   void (async () => {
     try {
       const connectors = await listAutoCopyConnectors(projectId)
@@ -2917,6 +2999,8 @@ function autoCopyFeedback(feedbackId: string, projectId: string, actor: string |
       }
     } catch (err: any) {
       console.error("auto-copy hook (non-fatal):", err?.message || err)
+    } finally {
+      clearExportInflight(feedbackId)
     }
   })().catch((err: any) => console.error("auto-copy hook outer (non-fatal):", err?.message || err))
 }
@@ -2948,11 +3032,11 @@ function autoFileHumanSnap(
   feedbackId: string, projectId: string, simId: string | null | undefined,
   actor: string | null, effectivePriority?: string | null, trusted?: boolean,
 ): void {
-  if (simId) return   // Sim/AutoSim report — not a human Snap; leave its behavior untouched.
+  if (simId) { clearExportInflight(feedbackId); return }   // Sim/AutoSim report — not a human Snap; leave its behavior untouched.
   void (async () => {
     try {
       const mode = await getSnapRouting(projectId)
-      if (mode !== "autofile") return   // 'review' mode: hold for manual transfer.
+      if (mode !== "autofile") { clearExportInflight(feedbackId); return }   // 'review' mode: hold for manual transfer.
       // KLAVITYKLA-524: autofile mode only — advance new→open on a successful file so the report
       // appears in Tickets instead of sitting in New Reports looking untriaged.
       // #534 hardening: `trusted` (authenticated workspace member) gates ONLY the connector-less
@@ -2960,6 +3044,7 @@ function autoFileHumanSnap(
       // skips triage onto the board without a real external ticket.
       autoCopyFeedback(feedbackId, projectId, actor, effectivePriority, { advanceStatusOnSuccess: true, trustedProvenance: !!trusted })
     } catch (e: any) {
+      clearExportInflight(feedbackId)
       console.warn("[snap-routing] autofile hook (non-fatal):", e?.message || e)
     }
   })().catch((e: any) => console.warn("[snap-routing] autofile hook outer (non-fatal):", e?.message || e))
@@ -3193,6 +3278,25 @@ async function runExportOutboxSweep(): Promise<void> {
 // sane "Done" fallback. STRICTLY best-effort: mirrors the export path's decrypt→call shape but NEVER
 // throws into the caller — a tracker that is unreachable, lacks the capability (webhook/GitHub), or
 // has no matching transition just yields a warning string. Returns a small summary the route relays.
+// The ticket's export badges: latest attempt per connector (rows arrive newest-first). A success
+// always wins over an older failure for the same connector; a connector whose LATEST attempt failed
+// and never succeeded surfaces as a failed badge so the UI can offer Retry (KLA-283). connectorId +
+// status ride along for that retry call. Shared by /api/dashboard and GET /api/feedback/:id (KD-983).
+function ticketExportBadges(rawExports: TicketExportRow[]): { type: string; externalKey: string | null; externalUrl: string | null; connectorId: string; status: string }[] {
+  const okConnectors = new Set<string>()
+  const seenConnector = new Set<string>()
+  const exports: { type: string; externalKey: string | null; externalUrl: string | null; connectorId: string; status: string }[] = []
+  for (const exp of rawExports) if (exp.status === "ok") okConnectors.add(exp.connectorId)
+  for (const exp of rawExports) {
+    // A later failed retry must not hide an issue that already exists in the tracker.
+    if (exp.status !== "ok" && okConnectors.has(exp.connectorId)) continue
+    if (seenConnector.has(exp.connectorId)) continue
+    seenConnector.add(exp.connectorId)
+    exports.push({ type: exp.type, externalKey: exp.externalKey, externalUrl: exp.externalUrl, connectorId: exp.connectorId, status: exp.status })
+  }
+  return exports
+}
+
 async function transitionLinkedIssuesOnQaClose(
   fbRow: any,
 ): Promise<{ attempted: number; applied: number; warnings: string[] }> {
@@ -3238,6 +3342,14 @@ const FEEDBACK_ANON_WINDOW = 60 * 60 * 1000
 const FEEDBACK_ANON_PER_IP = 20
 const FEEDBACK_ANON_PER_PROJECT = 200
 const FEEDBACK_PK_PER_KEY = 200 // per publishable key, per FEEDBACK_ANON_WINDOW (mobile SDK)
+// Large-file uploads started per hour (each one file of up to LARGE_UPLOAD_MAX_BYTES).
+const LARGE_UPLOAD_ANON_PER_IP = 20
+const LARGE_UPLOAD_PER_USER = 60
+// Files above this are never read whole into memory (export to trackers, transcription): the 1GB box can't
+// hold a multi-GB file. The existing single-request path caps videos at 100MB, so it never reaches this.
+const LARGE_INLINE_READ_MAX_BYTES = 100 * 1024 * 1024
+// Joins in progress in THIS process, by upload id — a duplicate complete waits on the same join.
+const largeUploadAssembling = new Map<string, Promise<void>>()
 
 // SECURITY (KLA-559): hard ceiling on any request body. Bun buffers the whole body before our handler
 // runs, so without this an attacker could POST an arbitrarily large body (no Origin needed) and spike
@@ -4033,6 +4145,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       headers: { "content-type": "text/html; charset=utf-8" },
     })
   }
+  // "Record me" recorder window: the widget opens this as a popup so a screen recording keeps running
+  // while the reporter's tab does full page loads (multi-page apps). Logic lives in /recorder-window.js.
+  if (req.method === "GET" && path === "/recorder-window") {
+    return new Response(Bun.file(PUB + "/recorder-window.html"), {
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache, must-revalidate" },
+    })
+  }
+  if (req.method === "GET" && path === "/recorder-window.js") {
+    return new Response(Bun.file(REPO_ROOT + "/packages/sdk/dist/klavity-recorder-window.iife.js"), {
+      headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache, must-revalidate" },
+    })
+  }
   if (req.method === "GET" && path === "/intro-reel") return file(SITE + "/intro-reel.html")
   if (req.method === "GET" && path === "/privacy") return htmlPage(SITE + "/privacy.html")
   if (req.method === "GET" && path === "/terms") return htmlPage(SITE + "/terms.html")
@@ -4111,6 +4235,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   // pages (which read window.KLAV_ICONS via kit.js). Without this route the script 404s and every page
   // throws "kicon is not defined".
   if (req.method === "GET" && path === "/icons.generated.js") return new Response(Bun.file(PUB + "/icons.generated.js"), { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=3600" } })
+  // KD-3089: stops browser Back from crossing a project switch (loaded first in <head> of every project-scoped page).
+  if (req.method === "GET" && path === "/project-history.js") return new Response(Bun.file(PUB + "/project-history.js"), { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" } })
   // ── self-hosted fonts (replaces Google Fonts CDN; same-origin under default-src 'self') ──
   if (req.method === "GET" && path === "/fonts/fonts.css") return new Response(Bun.file(SITE + "/fonts/fonts.css"), { headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public, max-age=31536000, immutable" } })
   // ── shared design tokens (canonical token set, sourced from the dashboard) ──
@@ -4234,6 +4360,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   }
   // ── canonical AutoSims copy (KLAVITYKLA-269) — single source of truth for the hero/banner
   // strings shared by /autosims (trails.html) and the dashboard AutoSims view. ──
+  // KD-2255: AutoSim Projects UI, mounted inside the dashboard's AutoSims view.
+  if (req.method === "GET" && path === "/vendor/autosim-projects.js") {
+    return new Response(Bun.file(PUB + "/vendor/autosim-projects.js"), {
+      headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" },
+    })
+  }
   if (req.method === "GET" && path === "/vendor/autosims-copy.js") {
     return new Response(Bun.file(PUB + "/vendor/autosims-copy.js"), {
       headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=86400" },
@@ -4452,13 +4584,95 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (!projectId) return wjson({ error: "project required" }, 400)
     const proj = await projectById(projectId)
     if (!proj) return wjson({ error: "not found" }, 404)
-    const personas = await listPersonas(projectId)
+    // WP-S2: the widget's Sim chips only offer active Sims.
+    const personas = await listPersonas(projectId, { activeOnly: true })
     const sims = personas.map((p) => ({
       id: p.id, name: p.name,
       initials: p.initials ?? null,
       accent: p.accent ?? null,
     }))
     return wjson({ sims })
+  }
+
+  // ── /api/widget/sim-deployments — per-USER Run / Stop of Sims (lib/sim-run-state.ts). ─────────────
+  // GET  ?project=…                          → every Sim: { id, name, …, active, run: "running" | "stopped" } for the caller.
+  // POST { project, action, simIds }         action ∈ run | stop | stop_all (stop_all needs no simIds — the card's Close).
+  // Member-gated (session cookie or widget bearer) and project-scoped. Any member can run/stop THEIR OWN Sims; a Sim that is
+  // Deactivated on the Sims tab can't be run (reported in `skipped`). Activate / Deactivate stays on the Sims tab only.
+  if (path === "/api/widget/sim-deployments" && (req.method === "GET" || req.method === "POST")) {
+    // Perf: on a remote DB every sequential query is a full round trip, so this handler keeps them to a
+    // minimum — access is ONE query (projectAccessWithRow, same decision as projectAccess) and the Sim list +
+    // deployment rows are read in parallel. Server-Timing exposes the split in DevTools → Network → Timing.
+    const pt = phaseTimer()
+    const sj = (b: unknown, status = 200) => json(b, status, { ...WIDGET_CORS, "Server-Timing": pt.header(), "Access-Control-Expose-Headers": "Server-Timing" })
+    const me = (await sessionEmail(req)) || (await bearerEmail(req))
+    pt.mark("auth")
+    if (!me) return sj({ ok: false, reason: "unauthorized", error: "Sign in to manage Sims." }, 401)
+    if (!rlAllow(`wsimdep:${me}`, 60, 60_000)) return sj({ ok: false, error: "rate limited" }, 429)
+    const body: any = req.method === "POST" ? await req.json().catch(() => ({})) : {}
+    const requested = String((req.method === "POST" ? body.project : url.searchParams.get("project")) || "")
+    if (!requested) return sj({ ok: false, error: "project required" }, 400)
+    // F5 (same rule as resolveProject): a project-bound widget token may only act on its bound project.
+    const bound = reqCtx.getStore()?.boundProject
+    const access = bound && requested !== bound ? null : (await projectAccessWithRow(me, requested)).access
+    pt.mark("access")
+    if (!access) return sj({ ok: false, reason: "unauthorized", error: "No access to this project." }, 403)
+    const projectId = requested
+    // The application the caller is on. Run / Stop and "running" are per application: a Sim started on px4 runs on px4 only. No origin
+    // (the Sims tab, older widgets) = every application for status / Stop, and the application last started on for Run.
+    const reqOrigin = normOrigin((req.method === "POST" ? body.origin : url.searchParams.get("origin")) || "")
+    const [personas, running] = await Promise.all([listPersonas(projectId), runningSimIds(db!, projectId, me, reqOrigin || null)])
+    pt.mark("db")
+    const byId = new Map(personas.map((p) => [p.id, p]))
+    // A Deactivated Sim is never "running", whatever an old row says (rows are also cleared on Deactivate).
+    const describe = (run: Set<string>) => personas.map((p) => {
+      const active = p.active !== false
+      return {
+        id: p.id, name: p.name, role: p.role || "",
+        initials: p.initials || null, accent: p.accent || null, avatar: p.avatar || null,
+        // Deactivated on the Sims tab (personas.active = 0): shown greyed out, can't be run from the widget.
+        active,
+        run: active && run.has(p.id) ? "running" : "stopped",
+      }
+    })
+    if (req.method === "GET") {
+      return sj({ ok: true, projectId, sims: describe(running) })
+    }
+    const action = String(body.action || "") as SimRunAction
+    if (!SIM_RUN_ACTIONS.includes(action)) return sj({ ok: false, error: "unknown action" }, 400)
+    if (action === "stop_all") {
+      // The feedback card's Close: stop every Sim this user has running in this project.
+      const was = [...running].filter((id) => byId.has(id))
+      await stopSims(db!, projectId, me, null, reqOrigin || null)
+      pt.mark("write")
+      return sj({ ok: true, action, applied: was, skipped: [], sims: describe(new Set()) })
+    }
+    const simIds: string[] = Array.isArray(body.simIds) ? [...new Set<string>(body.simIds.map(String))] : []
+    if (!simIds.length) return sj({ ok: false, error: "simIds required" }, 400)
+    if (simIds.length > 200) return sj({ ok: false, error: "too many Sims" }, 400)
+    const unknown = simIds.filter((id) => !byId.has(id))
+    if (unknown.length) return sj({ ok: false, error: "Some Sims are not in this project.", unknown }, 400)
+    const skipped: Array<{ simId: string; reason: string }> = []
+    let applied: string[]
+    if (action === "run") {
+      // Only an Activated Sim can run — Activate it on the Sims tab first. Reported in `skipped`, never applied.
+      for (const id of simIds) if (byId.get(id)!.active === false) skipped.push({ simId: id, reason: "deactivated on the Sims tab — activate it there first" })
+      applied = simIds.filter((id) => byId.get(id)!.active !== false && !running.has(id))
+      // A Run needs an application to run on: the page it was pressed on, else (the Sims tab) the one the user last started on.
+      const runOrigin = reqOrigin || (applied.length ? await lastRunOrigin(db!, projectId, me) : "")
+      if (applied.length && !runOrigin) {
+        for (const id of applied) skipped.push({ simId: id, reason: "open the Sims menu on the application you want them to review, then Run there" })
+        applied = []
+      }
+      await runSims(db!, projectId, me, applied, Date.now(), runOrigin)
+      for (const id of applied) running.add(id)
+    } else {
+      applied = simIds.filter((id) => running.has(id))
+      await stopSims(db!, projectId, me, applied, reqOrigin || null)
+      for (const id of applied) running.delete(id)
+    }
+    pt.mark("write")
+    return sj({ ok: true, action, applied, skipped, sims: describe(running) })
   }
 
   // ── /api/widget/known-check — anonymous, project-scoped, CORS-gated pre-submit "known issue"
@@ -4538,7 +4752,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const parsed = JSON.parse(String(content || "{}"))
         const t = typeof parsed?.tip === "string" ? parsed.tip.trim().slice(0, 240) : ""
         tip = t || null
-      } catch { /* best-effort — heuristic still returns below */ }
+      } catch (e: any) { console.error("[report-clarity] LLM call failed:", e?.message || e) /* best-effort — heuristic still returns below */ }
     }
     return wjson({ score: h.score, coverage: h.coverage, level: h.level, tip })
   }
@@ -4638,7 +4852,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       })
       try { await reservation?.settle({ ok: !!draft, aiCallId: null }) } catch { }
       return wjson({ draft }) // draft may be null → client no-ops
-    } catch {
+    } catch (e: any) {
+      console.error("[report-enhance] LLM call failed:", e?.message || e)
       try { await reservation?.settle({ ok: false, aiCallId: null }) } catch { }
       return wjson({ draft: null }) // best-effort; never 500 into the composer
     }
@@ -4739,6 +4954,101 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // the client shows a graceful message and transparently engages its Web Speech fallback (it treats any
     // non-ok response as "endpoint unavailable"). fallback:true is advisory for the client.
     return wjson({ error: "transcription failed", reason: outcome.reason, text: "", fallback: true }, 503)
+  }
+
+  // ── KD-995: POST /api/report/split — split ONE "Record me" walkthrough into SEPARATE tickets. The composer
+  // POSTs the finished recording (multipart: `audio` = the clip, `projectId`, optional `pageUrl`/`text`) BEFORE
+  // submit; we transcribe it through the shared STT core (Deepgram / OpenRouter, same as /api/voice/transcribe)
+  // and ask the LLM for every distinct issue the reporter narrates. Returns { issues, transcript }. The composer
+  // offers the review panel only for 2+ issues; the reporter edits/unticks them, then Submit files one ticket per
+  // issue. Auth + gating mirror /api/report/enhance (anonymous, project-scoped, CORS-gated, reportClarity
+  // toggle, per-IP + per-project caps). Best-effort: any failure returns { issues: [] } (never 500).
+  if (req.method === "POST" && path === "/api/report/split") {
+    if (!rlAllow(`split:ip:${clientIp(req, server)}`, 10, 60_000)) return wjson({ error: "rate limited", issues: [] }, 429)
+    // clip cap + the sampled frames (KD-3080) + multipart framing overhead
+    const SIZE_CEIL = TRANSCRIBE_MAX_BYTES + SPLIT_MAX_FRAMES * SPLIT_FRAME_MAX_CHARS + 64 * 1024
+    const declaredLen = Number(req.headers.get("content-length") || 0)
+    if (declaredLen > SIZE_CEIL) return wjson({ error: "payload too large", issues: [] }, 413)
+    const bounded = await readBodyBounded(req, SIZE_CEIL)
+    if (bounded === BODY_TOO_LARGE) return wjson({ error: "payload too large", issues: [] }, 413)
+    let form: FormData
+    try {
+      form = await new Request("http://x/", {
+        method: "POST",
+        headers: { "content-type": req.headers.get("content-type") || "" },
+        body: bounded,
+      }).formData()
+    } catch { return wjson({ error: "expected multipart form", issues: [] }, 400) }
+    const projectId = String(form.get("projectId") || form.get("project") || "")
+    if (!projectId) return wjson({ error: "project required", issues: [] }, 400)
+    const proj = db ? await projectById(projectId) : null
+    if (!proj) return wjson({ error: "not found", issues: [] }, 404)
+    // Same per-project AI toggle as clarity/enhance — a disabled project never spends an STT/LLM call here.
+    if (!proj.reportClarity) return wjson({ error: "disabled", issues: [] }, 403)
+    const audio = form.get("audio")
+    if (!(audio instanceof Blob) || audio.size === 0) return wjson({ error: "audio required", issues: [] }, 400)
+    if (!KEY || !transcribeConfigured()) return wjson({ issues: [] })
+    if (!rlAllow(`split:proj:${projectId}`, ENHANCE_PER_PROJECT_DAY, CLARITY_PROJECT_WINDOW)) {
+      return wjson({ error: "daily split limit reached", issues: [] }, 429)
+    }
+
+    const contentType = String((audio as any).type || form.get("mime") || "video/webm")
+    let outcome: Awaited<ReturnType<typeof transcribeAudioBytes>>
+    try {
+      outcome = await transcribeAudioBytes(new Uint8Array(await audio.arrayBuffer()), contentType)
+    } catch (e: any) {
+      console.warn("[split] transcribe failed (non-fatal):", e?.message || e)
+      outcome = { status: "failed", reason: "unexpected-error" }
+    }
+    if (outcome.status !== "skipped") {
+      await recordAiCall({
+        type: "transcribe", model: activeTranscribeModel(), projectId, feature: "report-split",
+        costUsd: outcome.status === "done" ? (outcome.result.usage.cost ?? null) : null,
+        ok: outcome.status === "done",
+      }).catch(() => null)
+    }
+    if (outcome.status !== "done" || !outcome.result.text.trim()) return wjson({ issues: [] })
+    const transcript = outcome.result
+
+    // KLAVITY CREDITS (Phase 1, SOFT): meter the split like a transcript enrichment, priced per minute.
+    // Best-effort — a resolution/reserve miss must never block the split; soft mode only logs wouldBlock.
+    const wsId = db ? await accountIdForAiCall(projectId, null, null) : null
+    let rv: Awaited<ReturnType<typeof reserveCredits>> | null = null
+    try {
+      const lastEnd = (transcript.segments || []).reduce((m, s) => Math.max(m, Number(s.end) || 0), 0)
+      if (wsId) rv = await reserveCredits(wsId, "transcript", { plan: await accountPlan(wsId), units: Math.max(1, lastEnd / 60), refFeedbackId: null })
+      if (rv?.wouldBlock) console.log(`[credits] split wouldBlock ws=${wsId} (soft)`)
+    } catch (e: any) { console.warn("[credits] split reserve skipped (non-fatal):", e?.message || e) }
+
+    const pageUrl = String(form.get("pageUrl") || "").slice(0, 300)
+    const note = String(form.get("text") || "").slice(0, 2000)
+    // KD-3080: screenshots the composer sampled across the clip — the model sees the screens, not just the words.
+    const frames = parseSplitFrames(form.get("frames"), { maxFrames: SPLIT_MAX_FRAMES, maxChars: SPLIT_FRAME_MAX_CHARS })
+    const issues = await splitTranscriptIntoIssues(transcript, {
+      llm: async (input, systemPrompt) => {
+        // Transcript + reporter note + page URL are UNTRUSTED (spoken/typed user content) → fenced as data.
+        const textPart = "VIDEO WALKTHROUGH TRANSCRIPT (untrusted — the reporter narrating):\n" + wrapUntrusted(input) +
+          "\n\nREPORTER NOTE (untrusted):\n" + wrapUntrusted(note || "(none)") +
+          "\n\nPAGE URL (untrusted):\n" + wrapUntrusted(pageUrl || "(unknown)")
+        const userParts: any[] = [{ type: "text", text: textPart + (frames.length ? "\n\nVIDEO FRAMES (untrusted screen content) follow, each labelled with its time in the recording." : "") }]
+        for (const f of frames) {
+          userParts.push({ type: "text", text: `FRAME at ${f.atSec.toFixed(1)}s:` })
+          userParts.push({ type: "image_url", image_url: { url: f.dataUrl } })
+        }
+        const { content } = await chat(
+          [
+            { role: "system", content: systemPrompt + UNTRUSTED_GUARD },
+            { role: "user", content: frames.length ? userParts : textPart },
+          ],
+          3000, true,
+          // feature tag 'report-split' → budget-gated + cost-logged like every other LLM call.
+          { type: "report-split", feature: "report-split", model: ENHANCE_MODEL, projectId, email: null, temperature: 0.2 },
+        )
+        return String(content ?? "")
+      },
+    })
+    try { await rv?.settle({ ok: issues.length > 0, aiCallId: null }) } catch { }
+    return wjson({ issues, transcript: transcript.text })
   }
 
   // ── inbound two-way status sync (G4): external tracker → Klavity ticket ──
@@ -5591,6 +5901,100 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   }
 
   // ── feedback intake (extension backend mode) ──
+  // ── Large-file attachments (lib/large-upload.ts) ─────────────────────────────────────────────────────
+  // Files over the single-request caps are uploaded here in CHUNK_BYTES pieces BEFORE the report is
+  // submitted; the submit then carries a signed `file_refs` entry per file. The start call applies the same
+  // gate an anonymous /api/feedback submit gets (rate limit + the project's report gate); chunk/complete
+  // are authorised by the signed upload token start returned.
+  if (req.method === "POST" && path === "/api/uploads/start") {
+    try {
+      const body = await readJsonLimited(req, 10_000)
+      if (!body.ok) return wjson({ error: body.error }, body.status)
+      const v = validateLargeUploadStart(body.data)
+      if (!v.ok) return wjson({ error: v.error }, 400)
+      const email = (await bearerEmail(req)) || (await sessionEmail(req))
+      if (email) {
+        if (!rlAllow(`lup:user:${email}`, LARGE_UPLOAD_PER_USER, FEEDBACK_ANON_WINDOW)) return wjson({ error: "rate limited" }, 429)
+      } else {
+        if (!rlAllow(`lup:ip:${clientIp(req, server)}`, LARGE_UPLOAD_ANON_PER_IP, FEEDBACK_ANON_WINDOW)) return wjson({ error: "rate limited" }, 429)
+        const reqOrigin = req.headers.get("origin") || ""
+        const baseOrigin = (() => { try { return new URL(BASE).origin } catch { return "" } })()
+        if (reqOrigin && reqOrigin !== baseOrigin) {
+          // Cross-origin widget: the same project checks the report submit itself will make.
+          if (!v.projectId) return wjson({ error: "Unknown project." }, 404)
+          const proj = await projectById(v.projectId)
+          if (!proj) return wjson({ error: "Unknown project." }, 404)
+          if ((widgetConfigFromProject(proj)?.reportGate || "anonymous") === "login") return wjson({ error: "Sign in to Klavity to report on this project." }, 401)
+        }
+      }
+      const uploadId = newUploadId()
+      const token = signUploadToken({ u: uploadId, p: v.projectId, n: v.filename, t: v.contentType, s: v.size, ts: Date.now() })
+      return wjson({ token, chunk_bytes: LARGE_CHUNK_BYTES, chunks: chunkCount(v.size) })
+    } catch (e) { return wjson(oops(e, "uploads/start"), 500) }
+  }
+
+  if (req.method === "POST" && path === "/api/uploads/chunk") {
+    try {
+      const t = verifyUploadToken(url.searchParams.get("token"))
+      if (!t) return wjson({ error: "This upload expired. Please attach the file again." }, 410)
+      const n = Number(url.searchParams.get("n"))
+      const want = Number.isInteger(n) ? chunkLength(t.s, n) : -1
+      if (want < 0) return wjson({ error: "Bad chunk number." }, 400)
+      const len = Number(req.headers.get("content-length") || 0)
+      if (Number.isFinite(len) && len > want) return wjson({ error: "Chunk is too large." }, 413)
+      const bytes = new Uint8Array(await req.arrayBuffer())
+      if (bytes.byteLength !== want) return wjson({ error: `Chunk ${n} is incomplete (${bytes.byteLength} of ${want} bytes).` }, 400)
+      await putUploadPart(t.u, n, bytes)
+      return wjson({ ok: true })
+    } catch (e) { return wjson(oops(e, "uploads/chunk"), 500) }
+  }
+
+  if (req.method === "POST" && path === "/api/uploads/complete") {
+    try {
+      const body = await readJsonLimited(req, 10_000)
+      if (!body.ok) return wjson({ error: body.error }, body.status)
+      const t = verifyUploadToken(body.data?.token)
+      if (!t) return wjson({ error: "This upload expired. Please attach the file again." }, 410)
+      const finalKey = largeAttachmentKey(t.u, t.n)
+      const makeRef = () => signFileRef({ k: finalKey, p: t.p, n: t.n, t: t.t, s: t.s, ts: Date.now() })
+      // A retried complete (e.g. the answer was lost) finds the file already joined → answer at once.
+      if ((await attachmentObjectSize(finalKey)) === t.s) return wjson({ ref: makeRef(), size: t.s })
+      // Every chunk must be present with its exact length; otherwise tell the client which to re-send.
+      const count = chunkCount(t.s)
+      const missing: number[] = []
+      for (let i = 0; i < count; i += 16) {
+        const batch = Array.from({ length: Math.min(16, count - i) }, (_, j) => i + j)
+        const sizes = await Promise.all(batch.map((n) => uploadPartSize(t.u, n)))
+        sizes.forEach((sz, j) => { if (sz !== chunkLength(t.s, batch[j])) missing.push(batch[j]) })
+      }
+      if (missing.length) return wjson({ error: "Some parts of the file did not arrive.", missing: missing.slice(0, 500) }, 409)
+      // Joining a multi-GB file can take a while: stream a space every 10s so neither Bun's idle timeout nor a
+      // proxy closes the connection, then the JSON answer (leading whitespace is valid JSON). Status is 200 from
+      // the first byte, so a failure is reported in the body ({ error }) — clients read `ref`, not the status.
+      const enc = new TextEncoder()
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          const ping = setInterval(() => { try { controller.enqueue(enc.encode(" ")) } catch { /* closed */ } }, 10_000)
+          try {
+            let job = largeUploadAssembling.get(t.u)
+            if (!job) {
+              job = assembleUploadParts(t.u, count, finalKey, t.t).finally(() => largeUploadAssembling.delete(t.u))
+              largeUploadAssembling.set(t.u, job)
+            }
+            await job
+            controller.enqueue(enc.encode(JSON.stringify({ ref: makeRef(), size: t.s })))
+          } catch (e) {
+            controller.enqueue(enc.encode(JSON.stringify({ ...oops(e, "uploads/complete"), retryable: true })))
+          } finally {
+            clearInterval(ping)
+            try { controller.close() } catch { /* already closed */ }
+          }
+        },
+      })
+      return new Response(stream, { status: 200, headers: { "content-type": "application/json", ...WIDGET_CORS } })
+    } catch (e) { return wjson(oops(e, "uploads/complete"), 500) }
+  }
+
   if (req.method === "POST" && path === "/api/feedback") {
     // Idempotent-submission bookkeeping hoisted so the failure exits can clean up: objects this request uploaded, whether a ticket
     // resulted, and the claim we own. When a request ends WITHOUT a ticket we free the claim (an immediate retry must not wait for the
@@ -5948,6 +6352,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // stored descriptor + transcript_status pipeline downstream see it as a video, not octet-stream.
         attachPlan.push({ af, uploadType: (typeIsGeneric && videoMime) ? videoMime : (af.type || "application/octet-stream"), slot: slotFor(slotMap, "files", ai) })
       }
+      // Large files uploaded beforehand through /api/uploads/* arrive as signed refs (`file_refs`). Each ref is
+      // bound to the project it was started for and names an object that is already stored, so nothing is
+      // uploaded here and the object is NOT added to createdObjectKeys (a retried submit must still find it).
+      // They share the 5-file attachment limit; the byte caps above don't apply (the size was capped at start).
+      for (const r of parseFileRefs(form.get("file_refs"), String(form.get("project_id") || ""), Math.max(0, 5 - attachFiles.length))) {
+        const ct = isVideoAttachment(r.t, r.n) ? (r.t && r.t.startsWith("video/") ? r.t : (videoMimeFromName(r.n) || "video/mp4")) : r.t
+        const desc: { key: string; filename: string; contentType: string; size: number; transcript_status?: string } = { key: r.k, filename: r.n, contentType: ct, size: r.s }
+        // Transcription reads the whole file into memory and skips anything over its 20 MB cap anyway, so a large
+        // video is marked "skipped" up front (kickTranscripts also filters by size) instead of being downloaded.
+        if (/^video\//i.test(ct)) desc.transcript_status = r.s <= LARGE_INLINE_READ_MAX_BYTES ? "pending" : "skipped"
+        attachmentDescs.push(desc)
+      }
 
       // KLAVITYKLA-438 "Record me" (Phase 1): screen+camera+mic video recordings. Uploaded PRIVATE via the
       // same uploadAttachment byte-path #425 uses, then persisted as descriptors on the feedback row
@@ -6239,8 +6655,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               json(body, status, { ...WIDGET_CORS, "Server-Timing": pt.header(), "Access-Control-Expose-Headers": "Server-Timing", ...extra })
             // Transcript + enrichment pass for videos / recordings that were attached to an existing ticket after the fact (a repair, or a
             // repeat report merged into one) — the original submit flow only starts it for rows it inserted itself.
-            const kickTranscripts = (fid: string, atts: Array<{ key: string; filename: string; contentType: string }>, recs: Array<{ id: string; key: string; contentType: string }>) => {
-              const vids = atts.filter((a) => /^video\//i.test(a.contentType || ""))
+            const kickTranscripts = (fid: string, atts: Array<{ key: string; filename: string; contentType: string; size?: number }>, recs: Array<{ id: string; key: string; contentType: string }>) => {
+              // Never pull a huge (chunk-uploaded) video into memory for STT — see LARGE_INLINE_READ_MAX_BYTES.
+              const vids = atts.filter((a) => /^video\//i.test(a.contentType || "") && !(Number(a.size) > LARGE_INLINE_READ_MAX_BYTES))
               if (!vids.length && !recs.length) return
               void (async () => {
                 const jobs: Promise<any>[] = []
@@ -6582,6 +6999,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               }
               ticketCreated = true
               createdObjectKeys.length = 0   // referenced by the ticket from here on — never cleaned up
+              // Multi-capture reports (full page + picked element + selected region …): screenshot_id holds only the
+              // FIRST shot, so link the rest to the ticket too — they were uploaded + ledgered above but referenced by
+              // nothing, which is why they never appeared on the ticket. Best-effort: never fails the submit.
+              if (feedbackId && uploaded.length > 1) {
+                try { await setFeedbackExtraScreenshots(feedbackId, projectId, uploaded.slice(1).map((u) => u.id)) }
+                catch (e: any) { console.error("extra screenshots link failed (non-fatal):", e?.message || e) }
+              }
               if (feedbackId) {
                 const newId = feedbackId
                 void (async () => {
@@ -6754,12 +7178,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // persists in the origin project (with the reroute note) for manual handling.
               const willAutofile = isHumanSnap && !feedbackSourceTag && !klavityFailsafeToOrigin
 
+              // KD-983: pending from the moment the ticket exists — the AI title runs BEFORE the export, so a
+              // ticket opened in those seconds must already know its Jira link is on the way.
+              if (willAutofile) markExportInflight(fbEnrichId)
               void (async () => {
                 // Title FIRST (bounded) so the export below re-reads the AI title, not the fallback.
                 if (titleJob) await awaitTitleWithTimeout(titleJob)
                 // THEN export. autoFileHumanSnap no-ops for Sim rows / 'review' mode / no connector.
                 if (willAutofile) autoFileHumanSnap(fbEnrichId, projectId, rawSimId, actor, priority, trustedProvenance)
-              })().catch((err: any) => console.warn("[title→export] non-fatal:", err?.message || err))
+              })().catch((err: any) => { clearExportInflight(fbEnrichId); console.warn("[title→export] non-fatal:", err?.message || err) })
 
               // KD-162: append an AI screenshot caption to the fallback description. Independent of the
               // title→export chain above (draftTitleForFeedback now stamps `title`, never `observation` —
@@ -6934,7 +7361,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // resolveProject (a brand-new account may have no project yet, but should still see presets).
     // The one-click "Add" then POSTs the chosen preset back through the normal create path below.
     if (req.method === "GET" && path === "/api/personas/presets") {
-      return wjson({ presets: PRESET_SIMS })
+      return wjson({ presets: PRESET_SIMS.map(pr => enrichQaPersona(pr, "qa")) })
     }
     const proj2 = await resolveProject(me2, url.searchParams.get("project"))
     if (!proj2) return wjson({ error: "No project." }, 400)
@@ -7000,6 +7427,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           insights: Array.isArray(body.insights) ? body.insights : [],
           avatar: body.avatar ? String(body.avatar) : null,
           simClass: v3.simClass, side: v3.side, core: v3.core,
+          personaKind: v3.personaKind,
           simSource,
         })
         const [saved] = (await listPersonas(wid)).filter(p => p.id === id)
@@ -7035,6 +7463,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             insights: Array.isArray(body.insights) ? body.insights : [],
             avatar: body.avatar ? String(body.avatar) : null,
             simClass, side, core,
+            personaKind: normalizePersonaKind(body?.personaKind ?? before.personaKind),
           })
           // Global Sims v1: if the body carries `isGlobal`, toggle the flag on the home-project row.
           // Only home-project owners can set this (already guarded above by listPersonas(wid) check).
@@ -7078,9 +7507,32 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // DELETE: only the home-project can delete. listPersonas is project-scoped (no global union).
         const ownPersona = (await listPersonas(wid)).some(p => p.id === pid)
         if (!ownPersona) return wjson({ error: "Not found" }, 404)
+        // WP-S2 (D2): the Baseline QA system Sim can be deactivated but not deleted.
+        if (pid.startsWith("sim_baseline_")) return wjson({ error: "Baseline QA can't be deleted. Deactivate it instead." }, 403)
         await deletePersona(pid, wid)
         return wjson({ ok: true })
       }
+    }
+    // WP-S2: activate / deactivate a Sim. Admin only; home project only (setPersonaActive is project-scoped, so a sibling
+    // project cannot toggle a global Sim it merely sees). An inactive Sim keeps its history and stays listed, but every
+    // review / run / offer path skips it. Logged to the append-only persona_edits audit like any other change.
+    const activeMatch = path.match(/^\/api\/personas\/([^/]+)\/active$/)
+    if (activeMatch && (req.method === "PATCH" || req.method === "PUT")) {
+      const pid = activeMatch[1]
+      if (proj2.access !== "admin") return wjson({ error: "Only project admins can activate or deactivate a Sim." }, 403)
+      const body = await req.json().catch(() => null) as any
+      if (!body || typeof body.active !== "boolean") return wjson({ error: "active must be true or false." }, 400)
+      const before = (await listPersonas(wid)).find(p => p.id === pid)
+      if (!before) return wjson({ error: "Not found" }, 404)
+      const wasActive = before.active !== false
+      if (wasActive !== body.active) {
+        await setPersonaActive(pid, wid, body.active)
+        await insertPersonaEdit({ personaId: pid, projectId: wid, field: "active", beforeVal: String(wasActive), afterVal: String(body.active), actor: me2, createdAt: Date.now() })
+      }
+      // Deactivating stops the Sim for EVERY user (clears its per-user Run state), so it leaves every Sims feedback card. Re-activating
+      // shows it as stopped ("Run") — it never silently starts running.
+      if (!body.active && db) await clearSimRuns(db, wid, pid).catch((e) => console.warn("sim deactivate → stop:", e?.message || e))
+      return wjson({ ok: true, id: pid, active: body.active })
     }
     const editsMatch = path.match(/^\/api\/personas\/([^/]+)\/edits$/)
     if (editsMatch && req.method === "GET") {
@@ -7475,8 +7927,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // same account are included in reviews — they surface via the UNION query in listPersonasForProject.
       // listPersonas is project-scoped only and silently excludes global Sims, causing them to never
       // react to a project's pages even though they're listed in that project's UI (KLAVITYKLA-257).
-      const projectSims = await listPersonasForProject(projectId)
-      const targetSims = reqSimIds.length ? projectSims.filter((p) => reqSimIds.includes(p.id)) : projectSims
+      // WP-S2: a deactivated Sim never runs, even when the caller names it in simIds.
+      const projectSims = await listPersonasForProject(projectId, { activeOnly: true })
+      let targetSims = reqSimIds.length ? projectSims.filter((p) => reqSimIds.includes(p.id)) : projectSims
+      // Widget (Sims feedback card) reviews run ONLY the Sims this user has set to Run (lib/sim-run-state.ts). A Sim the user Stopped —
+      // from the Sims tab, Select Sims, or the card's Close — never reviews again, even from a stale tab still holding the old list.
+      // Other callers (the browser extension) keep their existing behaviour.
+      if (body.runScope === "widget" && db) {
+        // Per application: Sims started on px4 never review Klavity's own pages (or another app) — the page being reviewed decides.
+        const running = await runningSimIds(db, projectId, meR, normOrigin(pageUrl) || null)
+        targetSims = targetSims.filter((p) => running.has(p.id))
+      }
 
       const seenKeys = targetSims.map((s) => reviewDedupeKey(s.id, urlPath || "", domSig))
       const allSeen = targetSims.length > 0 && seenKeys.every((k) => reviewSeen(k))
@@ -7529,18 +7990,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // Non-fatal: if S3 is not configured (e.g. test/dev env), review proceeds with a
       // placeholder screenshotId so the observation pipeline still runs end-to-end.
       const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000 // private Sim screenshots: 30-day (§6)
-      let screenshotId: string
-      try {
-        const upload = await uploadScreenshotMeta(decoded.bytes, decoded.contentType, "private")
-        screenshotId = await insertScreenshot({
-          projectId, s3Key: upload.key, bucket: upload.bucket, contentType: upload.contentType,
-          acl: "private", bytes: decoded.bytes.byteLength, ownerEmail: meR, expiresAt,
-        })
-      } catch (e: any) {
-        // S3 not configured — use a placeholder so the review pipeline still executes.
-        console.warn("[review] screenshot storage skipped (no S3):", e?.message || e)
-        screenshotId = "no-s3-" + Date.now().toString(36)
-      }
+      // Evidence integrity: the id is set ONLY when the upload was verified and the ledger row written; on failure it is null and the
+      // failure is recorded on every finding (no placeholder id). The review itself still runs.
+      const storedShot = await storeSimScreenshot(decoded.bytes, decoded.contentType, projectId, meR, expiresAt)
+      if (storedShot.evidence.screenshot === "failed") console.warn("[review] screenshot evidence NOT stored:", storedShot.evidence.error)
+      const screenshotId = storedShot.screenshotId
       const benchScreenshotAt = Date.now()
 
       // Run all Sim reviews via the extracted lib function. Each Sim reacts to the page,
@@ -7551,11 +8005,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const reviews = await runSimReviews({
         projectId, urlPath, urlHost, pageUrl, imageB64: decoded.base64, mediaType: decoded.contentType,
         targetSims: activeIndexes.map((i) => targetSims[i]),
-        actorEmail: meR, screenshotId,
+        actorEmail: meR, screenshotId, evidence: storedShot.evidence,
         seenKeys: activeIndexes.map((i) => seenKeys[i]),
         seenHashes, sessionId: sessionId ?? undefined, mode,
         adhoc,  // bypass seenHashes + near-dup dedup for manual/boot deploys
-        reactFn: (sim, b64, mt, pu) => reactToPage(sim, b64, mt, pu, { email: meR, projectId }),
+        reactFn: (sim, b64, mt, pu, pm) => reactToPage(sim, b64, mt, pu, { email: meR, projectId }, pm),
         resolveCitationsFn: resolveCitations,
         // autoCopy intentionally omitted: Sim findings are triage-gated. Auto-copy fires on
         // PATCH /api/feedback/:id when a member accepts (status → open), not on Sim insert.
@@ -7645,7 +8099,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (!meS2) return json({ error: "Sign in to continue." }, 401)
     const projS = await resolveProject(meS2, url.searchParams.get("project"))
     if (!projS) return json({ error: "No accessible project." }, 404)
-    const personas = await listPersonas(projS.id)
+    // WP-S2: only active Sims are offered for a review.
+    const personas = await listPersonas(projS.id, { activeOnly: true })
     const sims = personas.map((p) => ({ id: p.id, name: p.name, initials: p.initials ?? null, accent: p.accent ?? null, role: p.role ?? null }))
     return json({ sims })
   }
@@ -7695,7 +8150,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const limitRaw = Number(url.searchParams.get("limit") || "20")
       const limit = Math.max(1, Math.min(limitRaw, 100))
       const runs = await listSimRuns(projR.id, limit)
-      return json({ runs })
+      // KD-2877: ?slim=1 → per run only the issue count + Sim avatars (the list view), not every Sim's full reactions; the full run is
+      // fetched on demand via GET /api/sims/runs/:id. `projectId` lets the page skip /api/dashboard just to learn the active project.
+      return json({ runs: url.searchParams.get("slim") === "1" ? runs.map(slimSimRun) : runs, projectId: projR.id })
     }
   }
 
@@ -7948,7 +8405,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             name: p.name, role: p.role, type: p.type ?? (p.simClass === "client" ? "client" : "internal"),
             initials: String(p.initials || "").slice(0, 2).toUpperCase(), accent: p.accent || "#6366f1",
             summary: p.summary || "", insights: [], avatar: null,
-            simClass: p.simClass ?? null, side: p.side ?? null, core: p.core ?? null, simSource: "transcript",
+            simClass: p.simClass ?? null, side: p.side ?? null, core: p.core ?? null, personaKind: normalizePersonaKind(p.personaKind), simSource: "transcript",
           })
           const addOps = (p.insights || [])
             .map((ins: any, oi: number) => ({ ins, oi }))
@@ -8280,6 +8737,56 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // ticket. The widget enables AUTOMATIC retries only when it sees this; an older server omits it and the widget stays single-attempt.
         capabilities: { submissionKeys: 1 }
       }, 200, WIDGET_CORS)
+    }
+  }
+
+  // QPQ-31 / KD-983: people lookup behind the composer's Email typeahead — project members plus project
+  // contacts. Handled here, ahead of the cookie-only session gate, because on a customer's own site the
+  // klavity.in cookie is never sent, so gating on it left the reporter with an empty list (Create only, even
+  // for an address they had just created). KD-983: deliberately PUBLIC — the dropdown lists every member and
+  // contact whether or not the reporter is signed in (product decision; this exposes the project's roster to
+  // anyone with the project id). Rate-limited per IP so the roster can't be scraped in bulk.
+  {
+    const m = path.match(/^\/api\/projects\/([^/]+)\/people$/)
+    if (req.method === "GET" && m) {
+      const pid = m[1]
+      if (!rlAllow(`people:ip:${clientIp(req, server)}`, 60, 60_000)) return json({ error: "rate limited" }, 429)
+      const q = String(url.searchParams.get("q") || "").trim().toLowerCase().slice(0, 200)
+      // "The team for this project" is wider than project_members: an account owner/admin can open
+      // every project in the account, so they belong in the list even without a per-project row.
+      // Without this the picker was empty on a project whose only roster entry is the owner.
+      const projRow = await projectById(pid)
+      if (!projRow) return json({ error: "Not found." }, 404)
+      const [mem, acct, con] = await Promise.all([
+        membersOfProject(pid),
+        accountMembersRaw(projRow.accountId),
+        listProjectContacts(pid),
+      ])
+      const seen = new Set<string>()
+      const people: Array<{ email: string; name: string | null; kind: "member" | "contact" }> = []
+      for (const m of mem) {
+        const e = String(m.email).toLowerCase()
+        if (seen.has(e)) continue
+        seen.add(e)
+        people.push({ email: e, name: null, kind: "member" })
+      }
+      for (const a of acct) {
+        const e = String(a.email).toLowerCase()
+        if (seen.has(e)) continue
+        seen.add(e)
+        people.push({ email: e, name: null, kind: "member" })
+      }
+      for (const c of con) {
+        const e = String(c.email).toLowerCase()
+        if (seen.has(e)) continue
+        seen.add(e)
+        people.push({ email: e, name: c.name, kind: "contact" })
+      }
+      // Return the WHOLE roster (bounded only for payload sanity). Filtering is done client-side so
+      // the dropdown lists every teammate, not the first handful -- an 8-row cap silently hid most of
+      // a normal-sized team.
+      const hits = (q ? people.filter(p => p.email.includes(q)) : people).slice(0, 200)   // KD-983: email only
+      return json({ people: hits })
     }
   }
 
@@ -8670,10 +9177,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const { content } = await chat(
           [{ role: "system", content: personaSiteSys(String(walkSims)) },
           { role: "user", content: "Page URL: " + walkUrl + "\n\nPage text:\n" + walkText }],
-          1600, true, { type: "persona", feature: "simwalk", ...walkAttr },
+          2600, true, { type: "persona", feature: "simwalk", ...walkAttr },
         )
         walkSpent += DEFAULT_AI_CALL_EST_USD
         castPersonas = (parseJSON(content).personas || []).slice(0, walkSims)
+        for (const cp of castPersonas) cp.core = normalizeGeneratedCore(cp?.core, { role: cp?.role, summary: cp?.summary })
       } catch (e: any) {
         console.error("[simwalk] cast generation failed:", e?.message || e)
         return json({ error: "Couldn't work out who your customers are from that page — the scan below still ran." }, 503)
@@ -8863,6 +9371,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   if (req.method === "GET" && /^\/autosims\/walk\/[^/]+$/.test(path)) return me ? htmlPage(PUB + "/autosims-walk.html") : loginGate(path, url.search)
   // AT2 auth setup router — "Give your Sims a key" (KLAVITYKLA-267)
   if (req.method === "GET" && path === "/autosims/auth") return me ? htmlPage(PUB + "/auth-router.html") : loginGate(path, url.search)
+  // KD-2255: AutoSim Projects (list / project detail / test case detail — client-side routed).
+  // Lives inside the dashboard's AutoSims view now; keep old links working by mapping path → query.
+  if (req.method === "GET" && (path === "/autosims/projects" || path.startsWith("/autosims/projects/"))) {
+    if (!me) return loginGate(path, url.search)
+    const [apId, kind, tcId] = path.split("/").slice(3).filter(Boolean)
+    const q = new URLSearchParams()
+    const proj = url.searchParams.get("project"); if (proj) q.set("project", proj)
+    q.set("asp", apId || "list")
+    if (kind === "test-cases" && tcId) q.set("asp_tc", tcId)
+    const tab = url.searchParams.get("tab"); if (tab) q.set("asp_tab", tab)
+    return new Response(null, { status: 302, headers: { Location: "/dashboard?" + q + "#autosims" } })
+  }
   if (req.method === "GET" && path === "/sim-runs") return me ? htmlPage(PUB + "/sim-runs.html") : loginGate(path, url.search)
   // KLAVITYKLA-201: cross-project inbox — the agency's "morning screen"
   if (req.method === "GET" && path === "/inbox") return me ? htmlPage(PUB + "/inbox.html") : loginGate(path, url.search)
@@ -9135,15 +9655,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   //                        dashboard uses: GET /api/feedback/:id (+/comments), PATCH, POST comment).
   // The project is resolved from the feedback row server-side (resolveFeedbackRef) — a query param is
   // never trusted. The in-dashboard focus (?ticket=…) still works; this route is purely additive.
+  // Friendly "Ticket unavailable" page for every ticket link that can't be opened (unknown/mistyped ref, deleted ticket, or a
+  // project the viewer isn't in) — replaces the bare "Not found" text. The page is STATIC and identical in every case and the
+  // original status code is kept, so it reveals nothing more than the old plain response did (no-leak rule below).
+  const ticketUnavailablePage = async (status: 404 | 403 = 404): Promise<Response> => {
+    const headers = { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" }
+    try { return new Response(await Bun.file(PUB + "/ticket-unavailable.html").text(), { status, headers }) }
+    catch { return new Response("Not found", { status, headers: { "content-type": "text/plain; charset=utf-8" } }) }
+  }
   const ticketRefMatch = path.match(/^\/t\/([A-Za-z0-9_-]{1,80})$/)
   if (req.method === "GET" && ticketRefMatch) {
     if (!rlAllow("ticket:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
     const resolved = await resolveFeedbackRef(ticketRefMatch[1]).catch(() => null)
-    if (!resolved) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } })
+    if (!resolved) return await ticketUnavailablePage(404)
     const access = await ticketViewAccess(resolved.id, me)
     if (access === "login") {
-      // share_mode=off — members only. Anon → login gate; signed-in non-member → bare 404 (no leak).
-      return me ? new Response("Not found", { status: 404 }) : loginGate(path, url.search)
+      // share_mode=off — members only. Anon → login gate; signed-in non-member → the same 404 page as a missing ticket (no leak).
+      return me ? await ticketUnavailablePage(404) : loginGate(path, url.search)
     }
     const memberAcc = me ? await projectAccess(me, resolved.projectId).catch(() => null) : null
     // Member/admin full → the fast standalone member page (KLA-491, unchanged).
@@ -9151,7 +9679,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // reload of the in-dashboard ticket page stays in the dashboard. Non-members keep the teaser.
     if (access === "full" && memberAcc) return await dashboardPage(req, me, { id: resolved.id, projectId: resolved.projectId })
     const pagePath = (access === "full" && memberAcc) ? (PUB + "/ticket.html") : (PUB + "/ticket-teaser.html")
-    if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
+    if (!(await Bun.file(pagePath).exists())) return await ticketUnavailablePage(404)
     let _tHtml = await Bun.file(pagePath).text()
     _tHtml = _tHtml.replaceAll("__TICKET_ID__", resolved.id).replaceAll("__PROJECT_ID__", resolved.projectId)
     // KLA-738: per-type og:image so a shared link's social card reflects its ticket type. KLA-739
@@ -9183,19 +9711,21 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   // gated on !isReservedSlug, so a page/route is never shadowed; a non-existent key-shaped path 404s.
   const prettyTicketMatch =
     path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/t\/([A-Za-z0-9_-]{1,80})$/) ||
-    path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/([A-Za-z][A-Za-z0-9]{1,9}-\d+)$/)
+    // KD-1074: also <KEY>-SIM-<n> — a Sim Report's own number (separate sequence from tickets).
+    path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/([A-Za-z][A-Za-z0-9]{1,9}-(?:[Ss][Ii][Mm]-)?\d+)$/)
   if (req.method === "GET" && prettyTicketMatch && !isReservedSlug(prettyTicketMatch[1])) {
     if (!rlAllow("ticket:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
     const res = await resolveWorkspaceTicket(prettyTicketMatch[1], prettyTicketMatch[2]).catch(() => null)
-    if (!res) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } })
+    if (!res) return await ticketUnavailablePage(404)
     if (res.kind === "pretty") {
       // STRICT member-only gate — enumerable key path. No teaser, ever.
       const memberAcc = me ? await projectAccess(me, res.projectId).catch(() => null) : null
       if (!memberAcc) {
         // Non-member and anon get IDENTICAL treatment whether or not the handle was a stale alias,
         // so a 301 can never confirm an alias/slug/key exists. Signed-in non-member → 403; anon → login.
+        // The 403 now carries the same static "Ticket unavailable" page (status unchanged, so no new information is revealed).
         return me
-          ? new Response("Forbidden", { status: 403, headers: { "x-robots-tag": "noindex, nofollow" } })
+          ? await ticketUnavailablePage(403)
           : loginGate(path, url.search)
       }
       // Member: honor the stale-alias canonical 301 now (auth-gated), else serve the fast page.
@@ -9208,12 +9738,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // Opaque fb_ handle (unguessable, tenant-bound): normal share/teaser policy, same as /t/:ref.
     const access = await ticketViewAccess(res.id, me)
     if (access === "login") {
-      return me ? new Response("Not found", { status: 404 }) : loginGate(path, url.search)
+      return me ? await ticketUnavailablePage(404) : loginGate(path, url.search)
     }
     const memberAcc = me ? await projectAccess(me, res.projectId).catch(() => null) : null
     if (access === "full" && memberAcc) return await dashboardPage(req, me, { id: res.id, projectId: res.projectId })
     const pagePath = (access === "full" && memberAcc) ? (PUB + "/ticket.html") : (PUB + "/ticket-teaser.html")
-    if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
+    if (!(await Bun.file(pagePath).exists())) return await ticketUnavailablePage(404)
     let _tHtml = await Bun.file(pagePath).text()
     _tHtml = _tHtml.replaceAll("__TICKET_ID__", res.id).replaceAll("__PROJECT_ID__", res.projectId)
     try {
@@ -9614,7 +10144,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     } catch (err: any) { return json(oops(err, "audit"), 500) }
   }
 
-  if (req.method === "GET" && path === "/app") return me ? file(PUB + "/index.html") : loginGate(path, url.search)
+  if (req.method === "GET" && path === "/app") {
+    if (!me) return loginGate(path, url.search)
+    // KD-3121: the Sims Studio is a Sims feature — a Snap-only project is bounced to the upgrade prompt, same as
+    // the Sims/AutoSims pages (snapLocked). Lookup failures fall through so the studio never breaks on a hiccup.
+    const studioProj = await resolveProject(me, url.searchParams.get("project")).catch(() => null)
+    const studioRow = studioProj ? await projectById(studioProj.id).catch(() => null) : null
+    const studioLock = studioRow ? snapLocked(studioRow) : null
+    if (studioLock) return new Response(null, { status: 302, headers: { location: studioLock.upgradeUrl } })
+    return file(PUB + "/index.html")
+  }
   // Sim Profile page — clicking a Sim row in the dashboard opens /sim/:id (read-only persona +
   // its triaged feedback + the calls that seeded it). The id is read client-side from the path.
   if (req.method === "GET" && /^\/sim\/[^/]+$/.test(path)) return me ? htmlPage(PUB + "/sim-profile.html") : loginGate(path, url.search)
@@ -9671,7 +10210,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "POST" && ciTriggerMatch) {
       const trailId = ciTriggerMatch[1]
       try {
-        const { runId } = await runWalkNow(ciProject, trailId)
+        const { runId } = await runWalkNow(ciProject, trailId, { trigger: "ci" })
         return json({ runId }, 202)
       } catch (e: any) {
         if (e instanceof WalkBusyError) return json({ error: "A walk is already running" }, 409)
@@ -10100,7 +10639,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
 
       try {
-        const { runId } = await runWalkNow(projectId, trailId)
+        const { runId } = await runWalkNow(projectId, trailId, { trigger: "api" })
         // Persist git + idempotency mapping best-effort. On an idempotency race (INSERT OR IGNORE)
         // re-read to converge on the winner so both retries report the same run_id.
         let finalRunId = runId
@@ -10777,6 +11316,288 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     return json({ error: "Not found" }, 404)
   }
 
+  // ── KD-2255: AutoSim Projects → Test Case Groups → Test Cases → Trails. Project-scoped + authed
+  // exactly like the Trails block below (session/bearer → resolveProject(?project=) → member access;
+  // 'viewer' rows get no access). Any project member may organise, mirroring Trail authoring.
+  if (path === "/api/autosim-projects" || path.startsWith("/api/autosim-projects/")) {
+    const meA = (await sessionEmail(req)) || (await bearerEmail(req))
+    if (!meA) return json({ error: "Unauthorized" }, 401)
+    const resolvedA = await resolveProject(meA, url.searchParams.get("project"))
+    if (!resolvedA) return json({ error: "No access" }, 403)
+    const pid = resolvedA.id
+    // seg = [apId?, "groups"|"test-cases"?, childId?, "trails"?, trailId?]
+    const seg = path.split("/").slice(3).filter(Boolean).map(decodeURIComponent)
+    // POST /api/autosim-projects/:id/extract — "Upload & Extract": multipart `file` (PDF/DOCX/TXT ≤25 MB) →
+    // extracted requirement counts + test scenarios for the UI to pre-fill. Saves nothing. Handled before
+    // the JSON body parse below (this body is multipart).
+    if (seg.length === 2 && seg[1] === "extract" && req.method === "POST") {
+      try {
+        if (!(await asp.getAutosimProject(pid, seg[0]))) return json({ error: "Not found" }, 404)
+        const form = await req.formData().catch(() => null)
+        const file = form?.get("file")
+        if (!file || typeof file === "string") return json({ error: "Attach a document (field \"file\")." }, 400)
+        if (file.size > reqExtract.EXTRACT_MAX_BYTES) return json({ error: "The file is larger than 25 MB." }, 413)
+        const bytes = new Uint8Array(await file.arrayBuffer()), filename = (file.name || "document").slice(0, 200)
+        const result = await reqExtract.extractRequirements({ bytes, filename, contentType: file.type, projectId: pid, actorEmail: meA })
+        // DEV-01/02: keep the source document (best-effort) and store the structured extraction.
+        let sourceKey: string | null = null
+        try { const { uploadAttachment } = await import("./lib/s3"); sourceKey = (await uploadAttachment(bytes, filename, file.type || "application/octet-stream")).key }
+        catch (e: any) { console.warn("[requirements] source document not stored:", e?.message || e) }
+        const saved = await reqStore.saveExtraction(pid, seg[0], { filename, contentType: file.type || null, sizeBytes: bytes.length, sourceKey, result, createdBy: meA })
+        return json({
+          ...result, docId: saved.docId,
+          requirements: result.requirements.map(q => ({ ...q, dbId: saved.requirementIds[q.ref] })),
+          scenarios: result.scenarios.map(x => ({ ...x, dbId: saved.scenarioIds[x.id] })),
+        })
+      } catch (e) {
+        if (e instanceof reqExtract.ExtractError) return json({ error: e.message }, e.status)
+        return json(oops(e, "autosim-extract"), 500)
+      }
+    }
+    const body: any = req.method === "POST" || req.method === "PATCH" ? await req.json().catch(() => null) : {}
+    if (body === null || typeof body !== "object") return json({ error: "Invalid body" }, 400)
+    // Validated string field: undefined = absent, string = value, {error} = reject.
+    const text = (k: string, max: number, required: boolean): string | undefined | { error: string } => {
+      if (!(k in body)) return required ? { error: `${k} is required` } : undefined
+      const v = typeof body[k] === "string" ? body[k].trim() : body[k] == null ? "" : null
+      if (v === null) return { error: `${k} must be a string` }
+      if (required && !v) return { error: `${k} is required` }
+      if (v.length > max) return { error: `${k} must be at most ${max} characters` }
+      return v
+    }
+    const isErr = (v: any): v is { error: string } => !!v && typeof v === "object"
+    const dup = (e: any) => /UNIQUE/i.test(String(e?.message || e))
+    const nameDesc = (nameMax: number, descMax: number, required: boolean) => {
+      const name = text("name", nameMax, required), description = text("description", descMax, false)
+      if (isErr(name)) return name
+      if (isErr(description)) return description
+      if (name === "") return { error: "name is required" }
+      return { name, description }
+    }
+    try {
+      // /api/autosim-projects
+      if (seg.length === 0) {
+        if (req.method === "GET") return json({ projectId: pid, role: resolvedA.access, projects: await asp.listAutosimProjects(pid) })
+        if (req.method === "POST") {
+          const v: any = nameDesc(80, 2000, true); if (v.error) return json(v, 400)
+          try {
+            const id = await asp.createAutosimProject(pid, { name: v.name, description: v.description, createdBy: meA })
+            return json({ project: await asp.getAutosimProject(pid, id) }, 201)
+          } catch (e) { if (dup(e)) return json({ error: `A project named "${v.name}" already exists.` }, 409); throw e }
+        }
+        return json({ error: "Method not allowed" }, 405)
+      }
+      const ap = await asp.getAutosimProject(pid, seg[0])
+      if (!ap) return json({ error: "Not found" }, 404)
+      // /api/autosim-projects/:id
+      if (seg.length === 1) {
+        if (req.method === "GET") return json({ projectId: pid, role: resolvedA.access, ...(await asp.autosimProjectDetail(pid, ap.id)) })
+        if (req.method === "PATCH") {
+          const v: any = nameDesc(80, 2000, false); if (v.error) return json(v, 400)
+          // F-01: common setup steps (prepended to every test case created from a requirements document).
+          if ("setup_steps" in body) { const ss = text("setup_steps", 2000, false); if (isErr(ss)) return json(ss, 400); v.setupSteps = ss ?? "" }
+          try { await asp.updateAutosimProject(pid, ap.id, v) }
+          catch (e) { if (dup(e)) return json({ error: `A project named "${v.name}" already exists.` }, 409); throw e }
+          return json({ project: await asp.getAutosimProject(pid, ap.id) })
+        }
+        if (req.method === "DELETE") { await asp.deleteAutosimProject(pid, ap.id); return json({ ok: true }) }
+        return json({ error: "Method not allowed" }, 405)
+      }
+      // ── F-01 requirements: /api/autosim-projects/:id/requirement-docs[/:docId[/source|/test-cases]] ──
+      if (seg[1] === "requirement-docs") {
+        if (seg.length === 2 && req.method === "GET") return json({ docs: await reqStore.listDocs(pid, ap.id) })
+        const docId = seg[2]
+        if (!docId || !(await reqStore.getDoc(pid, ap.id, docId))) return json({ error: "Not found" }, 404)
+        if (seg.length === 3 && req.method === "GET") {
+          const [detail, runs] = await Promise.all([reqStore.docDetail(pid, ap.id, docId), reqRuns.listRuns(pid, ap.id, 10)])
+          return json({ ...detail, runs: runs.filter(r => r.docId === docId), activeRun: await reqRuns.activeRun(pid, ap.id) })
+        }
+        if (seg.length === 3 && req.method === "DELETE") { await reqStore.deleteDoc(pid, ap.id, docId); return json({ ok: true }) }
+        // GET …/source — the original uploaded document (DEV-01 source reference).
+        if (seg.length === 4 && seg[3] === "source" && req.method === "GET") {
+          const src = await reqStore.docSourceKey(pid, ap.id, docId)
+          if (!src) return json({ error: "The original document was not stored." }, 404)
+          const { getObjectBytes } = await import("./lib/s3")
+          const obj = await getObjectBytes(src.key)
+          const safe = src.filename.replace(/["\r\n\\]/g, "_")
+          return new Response(obj.bytes, { headers: { "content-type": src.contentType || obj.contentType || "application/octet-stream", "content-disposition": `inline; filename="${safe}"`, "x-content-type-options": "nosniff", "cache-control": "private,max-age=300" } })
+        }
+        // POST …/test-cases — create test cases from selected scenarios with the user's completed details.
+        if (seg.length === 4 && seg[3] === "test-cases" && req.method === "POST") {
+          const items = Array.isArray(body.items) ? body.items.slice(0, 200) : []
+          if (!items.length) return json({ error: "Pick at least one scenario." }, 400)
+          const clean: any[] = []
+          for (const it of items) {
+            const name = typeof it?.name === "string" ? it.name.trim() : ""
+            const startUrl = typeof it?.start_url === "string" ? it.start_url.trim() : ""
+            if (!name || name.length > 120) return json({ error: "Each test case needs a name (max 120 characters)." }, 400)
+            if (!/^https?:\/\/\S+$/.test(startUrl) || startUrl.length > 500) return json({ error: `"${name}": start_url must be an http(s) URL` }, 400)
+            const str = (k: string, max: number) => (typeof it?.[k] === "string" ? it[k].trim().slice(0, max) : "")
+            clean.push({ scenarioId: String(it.scenario_id || ""), name, startUrl, steps: str("steps", 4000), preconditions: str("preconditions", 1000), expectedResult: str("expected_result", 1000) })
+          }
+          let testAccountId: string | null = null
+          if (body.test_account_id) {
+            const acc = await getTestAccountById(pid, String(body.test_account_id))
+            if (!acc || (acc.autosimProjectId && acc.autosimProjectId !== ap.id)) return json({ error: "Unknown credentials for this project." }, 400)
+            testAccountId = acc.id
+          }
+          if (body.group_id && !(await asp.getGroup(pid, ap.id, String(body.group_id)))) return json({ error: "Unknown group for this project." }, 400)
+          const status = asp.TEST_CASE_STATUSES.includes(body.status) ? body.status : "active"
+          const out = await reqStore.createTestCasesFromScenarios(pid, ap.id, docId, clean, { testAccountId, groupId: body.group_id ? String(body.group_id) : null, status }, meA)
+          return json(out, 201)
+        }
+        return json({ error: "Method not allowed" }, 405)
+      }
+      // ── F-01 runs: /api/autosim-projects/:id/requirement-runs[/:runId[/cancel]] ──
+      if (seg[1] === "requirement-runs") {
+        if (seg.length === 2 && req.method === "GET") return json({ active: await reqRuns.activeRun(pid, ap.id), runs: await reqRuns.listRuns(pid, ap.id, 20) })
+        if (seg.length === 2 && req.method === "POST") {
+          const ids = Array.isArray(body.test_case_ids) ? body.test_case_ids.map(String).slice(0, 200) : []
+          const docId = body.doc_id ? String(body.doc_id) : null
+          if (docId && !(await reqStore.getDoc(pid, ap.id, docId))) return json({ error: "Unknown requirements document." }, 400)
+          const proj = await projectById(pid)
+          const lock = proj ? snapLocked(proj) : null
+          if (lock) return json(lock, 402)
+          try {
+            const runId = await reqRuns.createRun(pid, ap.id, ids, { docId, createdBy: meA })
+            reqRuns.kickRun(pid, runId)
+            return json({ run: await reqRuns.getRun(pid, ap.id, runId) }, 202)
+          } catch (e) { if (e instanceof reqRuns.RunConflictError) return json({ error: e.message }, e.status); throw e }
+        }
+        const run = seg[2] ? await reqRuns.getRun(pid, ap.id, seg[2]) : null
+        if (!run) return json({ error: "Not found" }, 404)
+        if (seg.length === 3 && req.method === "GET") return json({ run })
+        if (seg.length === 4 && seg[3] === "cancel" && req.method === "POST") {
+          const ok = await reqRuns.cancelRun(pid, ap.id, run.id)
+          // A run left queued by a stopped server isn't being processed here — let the runner finalize it.
+          if (ok && !reqRuns.isRunActive(run.id)) reqRuns.kickRun(pid, run.id)
+          return ok ? json({ ok: true }) : json({ error: "This run has already finished." }, 409)
+        }
+        return json({ error: "Method not allowed" }, 405)
+      }
+      // /api/autosim-projects/:id/groups[/:gid]
+      if (seg[1] === "groups" && seg.length <= 3) {
+        if (seg.length === 2 && req.method === "POST") {
+          const v: any = nameDesc(80, 2000, true); if (v.error) return json(v, 400)
+          try { const id = await asp.createGroup(pid, ap.id, v); return json({ group: await asp.getGroup(pid, ap.id, id) }, 201) }
+          catch (e) { if (dup(e)) return json({ error: `A group named "${v.name}" already exists.` }, 409); throw e }
+        }
+        if (seg.length === 3) {
+          if (!(await asp.getGroup(pid, ap.id, seg[2]))) return json({ error: "Not found" }, 404)
+          if (req.method === "PATCH") {
+            const v: any = nameDesc(80, 2000, false); if (v.error) return json(v, 400)
+            try { await asp.updateGroup(pid, ap.id, seg[2], v) }
+            catch (e) { if (dup(e)) return json({ error: `A group named "${v.name}" already exists.` }, 409); throw e }
+            return json({ group: await asp.getGroup(pid, ap.id, seg[2]) })
+          }
+          if (req.method === "DELETE") { await asp.deleteGroup(pid, ap.id, seg[2]); return json({ ok: true }) }
+        }
+        return json({ error: "Method not allowed" }, 405)
+      }
+      // /api/autosim-projects/:id/test-cases[/:tcid[/trails/:trailId]]
+      if (seg[1] === "test-cases" && seg.length <= 6) {
+        // POST .../test-cases/:tcid/script — import a script exported by Export script (any Klavity
+        // server) as this test case's AutoSim. Body: { script: "<file text>" }. Replaces the current one.
+        // Handled before the create/update validation below, which requires name/start_url on POST.
+        if (seg.length === 4 && seg[3] === "script" && req.method === "POST") {
+          const tcI = await asp.getTestCase(pid, seg[2])
+          if (!tcI || tcI.autosimProjectId !== ap.id) return json({ error: "Not found" }, 404)
+          const script = typeof body.script === "string" ? body.script : ""
+          if (!script || script.length > 5_000_000) return json({ error: "script file required (max 5 MB)" }, 400)
+          try {
+            return json({ trailId: await asp.importTrailScript(pid, tcI, script, meA) }, 201)
+          } catch (e) { if (e instanceof asp.ScriptImportError) return json({ error: e.message }, 400); throw e }
+        }
+        const v: any = req.method === "POST" || req.method === "PATCH" ? nameDesc(120, 4000, req.method === "POST") : {}
+        if (v.error) return json(v, 400)
+        if ("status" in body) {
+          if (!asp.TEST_CASE_STATUSES.includes(body.status)) return json({ error: `status must be one of ${asp.TEST_CASE_STATUSES.join(", ")}` }, 400)
+          v.status = body.status
+        }
+        // group_id must be a group of THIS AutoSim project; null/"" = ungrouped.
+        if ("group_id" in body) {
+          if (body.group_id && !(await asp.getGroup(pid, ap.id, String(body.group_id)))) return json({ error: "Unknown group for this project." }, 400)
+          v.groupId = body.group_id ? String(body.group_id) : null
+        }
+        // Start URL — same rule as the AutoSim wizard's base_url. Required when creating a test case.
+        if ("start_url" in body || req.method === "POST") {
+          const su = typeof body.start_url === "string" ? body.start_url.trim() : ""
+          if (!/^https?:\/\/\S+$/.test(su) || su.length > 500) return json({ error: "start_url must be an http(s) URL" }, 400)
+          v.startUrl = su
+        }
+        // F-01: preconditions + expected result (both optional free text).
+        for (const [k, key] of [["preconditions", "preconditions"], ["expected_result", "expectedResult"]] as const) {
+          if (!(k in body)) continue
+          const t = text(k, 1000, false)
+          if (isErr(t)) return json(t, 400)
+          v[key] = t ?? ""
+        }
+        // Execution mode: test_account_id null/"" = run WITHOUT credentials; otherwise the credential
+        // (reference name picked in the UI) must be in this Klavity project and either belong to this
+        // AutoSim project or be shared.
+        if ("test_account_id" in body) {
+          if (body.test_account_id) {
+            const acc = await getTestAccountById(pid, String(body.test_account_id))
+            if (!acc || (acc.autosimProjectId && acc.autosimProjectId !== ap.id)) return json({ error: "Unknown credentials for this project." }, 400)
+            v.testAccountId = acc.id
+          } else v.testAccountId = null
+        }
+        if (seg.length === 2 && req.method === "POST") {
+          const id = await asp.createTestCase(pid, ap.id, { ...v, createdBy: meA })
+          return json({ testCase: await asp.getTestCase(pid, id) }, 201)
+        }
+        const tc = seg[2] ? await asp.getTestCase(pid, seg[2]) : null
+        if (!tc || tc.autosimProjectId !== ap.id) return json({ error: "Not found" }, 404)
+        if (seg.length === 3) {
+          if (req.method === "PATCH") {
+            await asp.updateTestCase(pid, ap.id, tc.id, v)
+            return json({ testCase: await asp.getTestCase(pid, tc.id) })
+          }
+          if (req.method === "DELETE") { await asp.deleteTestCase(pid, ap.id, tc.id); return json({ ok: true }) }
+        }
+        // GET .../test-cases/:tcid/validation — F-01: the requirement it verifies + its validation history
+        // (actual vs expected, from requirement runs).
+        if (seg.length === 4 && seg[3] === "validation" && req.method === "GET") {
+          return json({ requirement: await reqStore.requirementForTestCase(pid, tc), validations: await reqRuns.testCaseValidations(pid, tc.id, 10) })
+        }
+        // GET .../test-cases/:tcid/runs — execution results summary (every Walk, re-recordings included).
+        if (seg.length === 4 && seg[3] === "runs" && req.method === "GET") {
+          const lim = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || 50))
+          return json({ runs: await asp.testCaseRuns(pid, tc.id, lim) })
+        }
+        // GET .../test-cases/:tcid/runs/:runId/steps — that run's step-by-step outcome (live while running).
+        if (seg.length === 6 && seg[3] === "runs" && seg[5] === "steps" && req.method === "GET") {
+          const steps = await asp.testCaseRunSteps(pid, tc.id, seg[4])
+          return steps ? json({ steps }) : json({ error: "Not found" }, 404)
+        }
+        // GET .../test-cases/:tcid/script — the Playwright script the current AutoSim replays (download).
+        if (seg.length === 4 && seg[3] === "script" && req.method === "GET") {
+          const trailId = await asp.currentTrailId(pid, tc.id)
+          const code = trailId ? await asp.trailPlaywrightScript(pid, trailId) : null
+          if (!code) return json({ error: "This test case has no AutoSim yet." }, 404)
+          const file = (tc.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "test-case") + ".spec.ts"
+          return new Response(code, { headers: { "content-type": "text/plain; charset=utf-8", "content-disposition": `attachment; filename="${file}"` } })
+        }
+        // PUT/DELETE .../test-cases/:tcid/trails/:trailId — link / unlink an existing AutoSim.
+        if (seg.length === 5 && seg[3] === "trails") {
+          if (!(await getTrail(pid, seg[4]))) return json({ error: "Trail not found" }, 404)
+          if (req.method === "PUT") {
+            const existing = await asp.currentTrailId(pid, tc.id)
+            if (existing && existing !== seg[4]) return json({ error: "This test case already has an AutoSim (one per test case). Re-record it instead." }, 409)
+            await asp.setTrailTestCase(pid, seg[4], tc); return json({ ok: true })
+          }
+          if (req.method === "DELETE") {
+            return (await asp.unlinkTrail(pid, seg[4], tc.id)) ? json({ ok: true }) : json({ error: "Trail is not in this test case" }, 409)
+          }
+        }
+        return json({ error: "Method not allowed" }, 405)
+      }
+      return json({ error: "Not found" }, 404)
+    } catch (e) {
+      return json(oops(e, "autosim-projects"), 500)
+    }
+  }
+
   // ── Klavity OS Trails (Layer E) — project-scoped, authed. Placed before the generic /api/ gate so
   // unauthenticated API calls return a JSON 401 (not a /login redirect), mirroring resolveProject usage.
   if (path === "/api/trails/dashboard" || path === "/api/trails/trends" || path === "/api/trails/walks" || path.startsWith("/api/trails/findings/") || path.startsWith("/api/trails/walks/")
@@ -10991,6 +11812,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const personas = await listPersonas(projectId)
           const persona = personas.find(p => p.id === personaId)
           if (!persona) return json({ error: "Persona not found in this project" }, 404)
+          // WP-S2: a deactivated Sim does not judge walks. 409 = the Sim exists but is switched off.
+          if (persona.active === false) return json({ error: `${persona.name} is inactive. Activate this Sim or pick another to judge.` }, 409)
 
           const llmFn = async (systemPrompt: string, userContent: string) => {
             const apiKey = process.env.KLAV_OPENROUTER_KEY
@@ -11032,7 +11855,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (pid !== null && pid !== undefined && typeof pid !== "string") return json({ error: "personaId must be a string or null" }, 400)
         if (pid) {
           const personas = await listPersonas(projectId)
-          if (!personas.some(p => p.id === pid)) return json({ error: "Persona not found in this project" }, 404)
+          const picked = personas.find(p => p.id === pid)
+          if (!picked) return json({ error: "Persona not found in this project" }, 404)
+          // WP-S2: an inactive Sim cannot be chosen as a trail's judge.
+          if (picked.active === false) return json({ error: `${picked.name} is inactive. Activate this Sim or pick another.` }, 409)
         }
         await updateTrail(projectId, trail.id, { judgePersonaId: pid ?? null })
         return json({ ok: true })
@@ -11224,7 +12050,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         try { viewport = normalizeTrailViewport((body as any).viewport) }
         catch (e: any) { return json({ error: e?.message || "Invalid viewport" }, 400) }
       }
-      const testAccount = body.test_account ? String(body.test_account) : undefined
+      let testAccount = body.test_account ? String(body.test_account) : undefined
       // KLAVITYKLA-149: the wizard's "Who reviews it?" step sends the picked Sim as `sim_name`
       // (the persona's name, or id as a fallback). Resolve it to a persona id here and thread it
       // through so it lands on the crystallized Trail as its judge persona — previously this field
@@ -11235,6 +12061,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const personas = await listPersonas(projectId)
         const match = personas.find((p) => p.name === simName) || personas.find((p) => p.id === simName)
         if (!match) return json({ error: `unknown reviewer Sim "${simName}"` }, 400)
+        // WP-S2: an inactive Sim cannot be the reviewer.
+        if (match.active === false) return json({ error: `reviewer Sim "${match.name}" is inactive. Activate it or pick another.` }, 409)
         judgePersonaId = match.id
       }
       // File-upload fixtures: the wizard uploads each file via /api/trails/author/attachments first,
@@ -11251,10 +12079,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
       }
       if (!name) return json({ error: "name required" }, 400)
-      // 4000 chars (was 2000): multi-turn chatbot objectives spell out several conversational turns.
-      if (objective.length < 10 || objective.length > 4000) return json({ error: "objective must be 10-4000 chars" }, 400)
+      // No maximum (was 4000, before that 2000): long multi-turn / multi-flow objectives are allowed from the wizard.
+      if (objective.length < 10) return json({ error: "objective must be at least 10 characters" }, 400)
       if (!/^https?:\/\//.test(baseUrl) || baseUrl.length > 500) return json({ error: "base_url must be an http(s) URL" }, 400)
       if (testAccount && !(await getTestAccountByName(projectId, testAccount))) return json({ error: `unknown test account "${testAccount}"` }, 400)
+      // KD-2255: optional test case to file the new AutoSim under. Looked up scoped to THIS project, so
+      // a test case id from another project is simply "unknown" (no cross-project association).
+      const testCaseId = body.test_case_id ? String(body.test_case_id) : null
+      const authorTc = testCaseId ? await asp.getTestCase(projectId, testCaseId) : null
+      if (testCaseId && !authorTc) return json({ error: "unknown test case" }, 400)
+      // One AutoSim per test case: once recorded, it is RUN (deterministic replay), not re-generated.
+      // Re-recording must be explicit ({replace:true}); the old AutoSim is archived only when the new
+      // recording succeeds (lib/autosim-projects.ts stampTrailFromAuthorSession).
+      if (authorTc && body.replace !== true && (await asp.currentTrailId(projectId, authorTc.id))) {
+        return json({ error: "This test case already has an AutoSim. Run it, or re-record to replace its script." }, 409)
+      }
+      // A test case set to "run with credentials" logs in with its credential unless the wizard picked one.
+      if (authorTc?.testAccountId && !testAccount) {
+        const tcAcc = await getTestAccountById(projectId, authorTc.testAccountId)
+        if (tcAcc) testAccount = tcAcc.name
+      }
       // KLAVITYKLA-365: configured-flow quota. Authoring is the ONLY path that creates a Trail
       // (runAuthorNow → lib/trails-crystallize.ts createTrail), so gating here gates creation
       // without touching any run/schedule path — existing flows are unaffected by construction.
@@ -11267,7 +12111,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
       }
       try {
-        const { sessionId } = await runAuthorNow(projectId, { name, objective, baseUrl, viewport, testAccountName: testAccount, createdBy: meT, judgePersonaId, attachments })
+        const { sessionId } = await runAuthorNow(projectId, { name, objective, baseUrl, viewport, testAccountName: testAccount, createdBy: meT, judgePersonaId, attachments, testCaseId })
         return json({ sessionId }, 202)
       } catch (e) {
         if (e instanceof WalkBusyError) return json({ error: "An AutoSim is already running — try again shortly." }, 409)
@@ -11284,9 +12128,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         ? json({ ...s, active: true, limitMs: AUTOSIM_DEADLINE_MS_DEFAULT })
         : json({ active: null })
     }
-    // GET /api/trails/author/stalled — KLA-152: list recent stalled sessions with a checkpoint or partial draft.
+    // GET /api/trails/author/stalled — KLA-152: list recent resumable sessions. R1: a session is listed only if it has a
+    // USABLE persisted checkpoint (the same rule as the resume gate, sweeps and runAuthorNow's verdict); a partial draft
+    // alone is not enough because Resume needs the checkpoint. stallReason is rewritten for display: the persisted
+    // reason keeps the technical detail (raw browser/DB errors) for diagnostics and server logs, the Resume banner never sees it.
     if (req.method === "GET" && path === "/api/trails/author/stalled") {
-      const sessions = await listStalledAuthorSessions(projectId)
+      const sessions = (await listStalledAuthorSessions(projectId)).map((s) => ({ ...s, stallReason: userFacingStallReason(s.stallReason, s) }))
       return json({ sessions })
     }
     // POST /api/trails/author/:sessionId/cancel — KLA-151: abort the in-flight author drive at the next step boundary.
@@ -11309,7 +12156,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const prior = await getAuthorSession(projectId, priorId)
         if (!prior) return json({ error: "Session not found" }, 404)
         if (prior.status !== "stalled") return json({ error: `Session is ${prior.status}, not stalled` }, 409)
-        if (!prior.checkpoint) return json({ error: "Session has no checkpoint to resume from" }, 409)
+        if (!isUsableCheckpoint(prior.checkpoint)) return json({ error: "Session has no usable checkpoint to resume from" }, 409)
         try {
           const { sessionId } = await runAuthorNow(projectId, {
             name: prior.name, objective: prior.objective, baseUrl: prior.baseUrl,
@@ -11319,6 +12166,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ sessionId }, 202)
         } catch (e) {
           if (e instanceof WalkBusyError) return json({ error: "An AutoSim is already running — try again shortly." }, 409)
+          // R2: an actual claim conflict (another attempt owns it, or its state changed since the pre-check) is a 409, not a server error.
+          if (e instanceof ResumeConflictError) return json({ error: e.message }, 409)
           return json(oops(e, "trails-author-resume"), 500)
         }
       }
@@ -11363,7 +12212,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
     if (req.method === "GET" && path.startsWith("/api/trails/author/")) {
       const s = await getAuthorSession(projectId, path.slice("/api/trails/author/".length))
-      return s ? json({ ...s, limitMs: AUTOSIM_DEADLINE_MS_DEFAULT }) : json({ error: "Not found" }, 404)
+      return s ? json({ ...s, stallReason: userFacingStallReason(s.stallReason, s), limitMs: AUTOSIM_DEADLINE_MS_DEFAULT }) : json({ error: "Not found" }, 404)
     }
 
     // GET /api/trails/:id/steps — return a draft trail's steps so the UI can show a review before Activate.
@@ -11677,7 +12526,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const stripped = pagePath.length > 1 ? pagePath.replace(/\/+$/, "") : pagePath
         const np = stripped === "" ? "/" : stripped
         const candidates = [pagePath, np, np === "/" ? "/" : np + "/"]
-        const rows = await feedbackByPageUrl(projectId, host, candidates)
+        const [rows, alias] = await Promise.all([
+          feedbackByPageUrl(projectId, host, candidates),
+          projectAliasInfo(projectId).catch(() => ({ slug: null, ticketKey: null, projectName: null })),
+        ])
         const counts = { open: 0, inProgress: 0, done: 0 }
         const bugs = rows.map((r) => {
           const s = r.status.toLowerCase()
@@ -11697,7 +12549,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
           const out: any = {
             id: r.id,
-            ref: r.id.split("-")[0], // human-quotable short ref "fb_1a2b3c4d" (also the /r/:ref key)
+            ref: r.id.split("-")[0], // internal short ref "fb_1a2b3c4d" (the /r/:ref key) — NOT shown to users
+            // KD-3148: the ticket ID people know ("KD-232", or "KD-SIM-12" for an untriaged Sim Report).
+            key: ticketKeyLabel({ ticketKey: alias.ticketKey, seqNum: r.seqNum, simSeqNum: r.simSeqNum, status: r.status }),
             title: r.title || r.observation || null, // prefer the explicit Title, else the observation
             status: r.status,
             severity: r.priority || r.severity || null, // effective priority wins, else stored severity
@@ -11878,7 +12732,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // Everything below depends only on the resolved project id (+ isAdmin/me), so it runs as ONE
         // parallel wave (each is an indexed query). Only replay/exports need the ticket ids and follow.
         const knownProj = allProjects.find(p => p.id === projectId)
-        const [activeProj, rawMembers, personas, feedbackTicketsRes, activityRows, simObservations, aliasInfo, widgetPing, counts, insights] = await Promise.all([
+        const [activeProj, rawMembers, personas, feedbackTicketsRes, activityRows, simObservations, aliasInfo, widgetPing, counts, insights, simObsPerSim] = await Promise.all([
           // projects / active — REAL projects from the projects table (fallback read if not in the list).
           knownProj ? Promise.resolve(knownProj) : projectById(projectId),
           // members — project roster (project_members), mapped to legacy admin|user for the UI.
@@ -11891,7 +12745,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // assigned. Raise to a bounded 50 (matches the list view's page size, well under the board's 200)
           // so quick-filters over state.tickets can surface 20+ without an unbounded per-poll payload.
           // Returns the status/assignee/notes/recurrence meta from the same rows (no second SELECT by id).
-          listFeedbackWithMeta(projectId, { limit: 50 }),
+          // boardOnly: un-accepted Sim reports (status 'new' + sim_id) stay in Sim Reports, never on the Tickets board.
+          listFeedbackWithMeta(projectId, { limit: 50, boardOnly: true }),
           // Non-admins see only their own activity (own-rows-only); admins see all.
           listActivity(projectId, { actorEmail: isAdmin ? null : me, limit: 25 }),
           // Only Sim-generated observations (sim_id IS NOT NULL) — bugs never bleed into the Sims feeds.
@@ -11909,6 +12764,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           latestWidgetPing(projectId),
           dashboardCounts(projectId),
           computeDashboardInsights(projectId),
+          // KD-2875: per-Sim newest observations + true totals for the Sims page cards (the 36-row query above is project-wide, so it
+          // starved any Sim whose reports weren't among the project's newest 36).
+          listSimObservationsPerSim(projectId, 3),
         ])
         const feedbackTickets = feedbackTicketsRes.rows
         const projectName = activeProj?.name || "Default Project"
@@ -11935,6 +12793,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           accent: p.accent || "#6366f1",
           insightsCount: Array.isArray(p.insights) ? p.insights.length : 0,
           lastActiveAt: lastActiveBySim.get(p.id) ?? null,
+          active: p.active !== false, // WP-S2: false = deactivated (shown greyed out; skipped by every review)
+          // "baseline" marks the system-provided Baseline QA Sim (UI shows a System preset chip); null for customer Sims.
+          simSource: p.simSource ?? null,
+          // KD-2875: this Sim's TOTAL Sim observations (the card badge / "See N more"), not the length of the capped list below.
+          feedbackCount: simObsPerSim.counts[p.id] ?? 0,
         }))
 
         // saying — "what your Sims are saying" overview feed: only Sim observations, newest-first.
@@ -11976,8 +12839,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // simFeedback — per-Sim observation map for the Sims tab; covers all 100 most recent
         // Sim observations grouped by simId so the Sims page can show each Sim's full history.
         const simFeedback: Record<string, Array<{ id: string; text: string; sentiment: string | null; urlPath: string | null; createdAt: number }>> = {}
-        for (const f of simObservations) {
-          if (!f.simId || !f.observation || !personaById.has(f.simId)) continue
+        // KD-2875: built from the per-Sim query (newest ≤3 per Sim, newest-first) so EVERY Sim with feedback shows its latest — see
+        // listSimObservationsPerSim. (Was: the project's newest 36 observations grouped by Sim.)
+        for (const f of simObsPerSim.rows) {
+          if (!personaById.has(f.simId)) continue
           if (!simFeedback[f.simId]) simFeedback[f.simId] = []
           simFeedback[f.simId].push({ id: f.id, text: f.observation, sentiment: f.sentiment, urlPath: f.urlPath, createdAt: f.createdAt })
         }
@@ -12001,22 +12866,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // always wins over an older failure for the same connector; a connector whose LATEST
           // attempt failed and never succeeded surfaces as a failed badge so the UI can offer
           // Retry (KLA-283). connectorId + status ride along for that retry call.
-          const rawExports = ticketExportsMap[f.id] ?? []
-          const okConnectors = new Set<string>()
-          const seenConnector = new Set<string>()
-          const exports: { type: string; externalKey: string | null; externalUrl: string | null; connectorId: string; status: string }[] = []
-          for (const exp of rawExports) if (exp.status === "ok") okConnectors.add(exp.connectorId)
-          for (const exp of rawExports) {
-            // A later failed retry must not hide an issue that already exists in the tracker.
-            if (exp.status !== "ok" && okConnectors.has(exp.connectorId)) continue
-            if (seenConnector.has(exp.connectorId)) continue
-            seenConnector.add(exp.connectorId)
-            exports.push({ type: exp.type, externalKey: exp.externalKey, externalUrl: exp.externalUrl, connectorId: exp.connectorId, status: exp.status })
-          }
+          const exports = ticketExportBadges(ticketExportsMap[f.id] ?? [])
           return {
-            id: f.id, simName: p?.name ?? null,
+            id: f.id, simName: p?.name ?? null, simSource: p?.simSource ?? null,
             // #745: pretty-permalink parts — per-project sequence + workspace slug + project key.
-            seqNum: f.seqNum ?? null, slug: aliasInfo.slug, ticketKey: aliasInfo.ticketKey,
+            seqNum: f.seqNum ?? null, simSeqNum: f.simSeqNum ?? null, slug: aliasInfo.slug, ticketKey: aliasInfo.ticketKey,
             // PX4 #411: surface the reporter's explicit composer Title when present + non-empty;
             // otherwise fall back to the historical observation-derived title (back-compat).
             title: (f.title && f.title.trim()) ? f.title : f.observation, priority: f.priority,
@@ -12061,7 +12915,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json(
           { email: me, projects, active: activeOut, members, contacts, sims, saying, simFeedback, tickets, activity, counts, insights, widgetStatus, hasTranscriptSim, hasSimReaction },
           200,
-          { "Set-Cookie": projectCookie(projectId, SECURE) },
+          // KD-3089: no-store — a Back/Forward page load otherwise reused a cached copy (no request), so this Set-Cookie
+          // never re-ran and the server-side project could disagree with the page on screen.
+          { "Set-Cookie": projectCookie(projectId, SECURE), "Cache-Control": "no-store" },
         )
       } catch (e: any) {
         return json(oops(e, "dashboard"), 500)
@@ -12936,6 +13792,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               }
             })()
           }
+          // Tell the ticket's assignee (never the person who deleted it) — fire-and-forget like the other comment notifications.
+          void notifyAssigneeOfTicketUpdate({ projectId: fbRow.projectId, type: "ticket_comment_deleted", actorEmail: me, feedbackId: fid,
+            meta: { snippet: String(existing.body || "").slice(0, 160) } }).catch((e: any) => console.warn("comment-delete notification skipped:", e?.message || e))
           return json({ ok: true })
         }
 
@@ -12957,6 +13816,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
           })()
         }
+        // Tell the ticket's assignee (never the editor) that a comment was edited.
+        void notifyAssigneeOfTicketUpdate({ projectId: fbRow.projectId, type: "ticket_comment_edited", actorEmail: me, feedbackId: fid,
+          meta: { snippet: String(updated.body || "").slice(0, 160) } }).catch((e: any) => console.warn("comment-edit notification skipped:", e?.message || e))
         return json({ comment: { ...updated, attachments: signCommentAttachments(updated.attachments) } })
       }
 
@@ -13268,12 +14130,19 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // projection so the standalone /t/:ref page renders reporter + page context without a second
           // fetch. Member-gated (fbRow already access-checked above) — never surfaced to non-members.
           reporterEmail: fbRow.contactEmail || fbRow.actorEmail || null,
+          // KD-3118: the host-supplied customer identity (sanitized to REPORTER_KEYS at ingest). It is already
+          // written into the exported Jira/connector body as "Customer details:"; the ticket detail shows the
+          // same block. Null on anonymous / older rows. Member-gated like reporterEmail above.
+          reporter: fbRow.reporter && typeof fbRow.reporter === "object" ? fbRow.reporter : null,
           pageUrl: fbRow.reportUrl || (fbRow.urlHost ? `https://${fbRow.urlHost}${fbRow.urlPath || ""}` : (fbRow.urlPath || null)),
           ref: String(fbRow.id).split("-")[0],
           sourceReferrer: fbRow.sourceReferrer,
           sourceQuote: fbRow.sourceQuote,
           sourceDate: fbRow.sourceDate,
           screenshotId: fbRow.screenshotId,
+          // The report's 2nd+ screenshots (picked element, selected region, extra full-page shots). Read through the
+          // same member-gated /api/screenshots/:id proxy as screenshotId; [] on single-shot / older tickets.
+          extraScreenshotIds: Array.isArray(fbRow.extraScreenshotIds) ? fbRow.extraScreenshotIds : [],
           // KLAVITYKLA-438 "Record me": stored recordings + a short-lived presigned playback URL each, so
           // the ticket drawer can play the clip. Additive/minimal — does not touch title/triage (#452).
           recordings: Array.isArray(fbRow.recordings)
@@ -13291,6 +14160,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           planeIssueKey: fbRow.planeIssueKey,
           planeIssueUrl: fbRow.planeIssueUrl,
           issueKey: fbRow.issueKey,
+          // KD-983: tracker links (Jira/Linear/GitHub/…) — same badges as /api/dashboard. Without them a
+          // ticket opened before its auto-file finished (or outside the dashboard's cached list) never
+          // showed its Jira link, because the open-ticket refresh carried no exports.
+          exports: ticketExportBadges(await listTicketExports(fid).catch(() => [])),
+          // KD-983: true while the background export is still running, so the open ticket re-checks.
+          exportPending: isExportInflight(fid),
           createdAt: fbRow.createdAt,
           updatedAt: fbRow.updatedAt,
           // KLA-2 recurrence-memory fields (same names consumed by the dashboard UI)
@@ -13303,6 +14178,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           suggestedLabels: await getSuggestedLabels(fid, fbRow.projectId),
           // KLA-200: human-readable sequential number
           seqNum: fbRow.seqNum ?? null,
+          simSeqNum: fbRow.simSeqNum ?? null, // KD-1074: Sim Report number (<KEY>-SIM-<n>)
           // #745: workspace slug + project ticket_key so the client can build the pretty
           // /<slug>/<KEY>-<n> permalink (falls back to /t/<fb_id> when un-backfilled). Member-gated.
           ...(await projectAliasInfo(fbRow.projectId).catch(() => ({ slug: null, ticketKey: null, projectName: null }))),
@@ -13328,8 +14204,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (body.status !== undefined && !VALID_STATUS.includes(body.status)) {
           return json({ error: `status must be one of: ${VALID_STATUS.join(", ")}` }, 400)
         }
-        const VALID_PRI = ["urgent", "high", "medium", "low"]
-        if (body.priority !== undefined && body.priority !== null && !VALID_PRI.includes(body.priority)) {
+        let rawPri = body.priority
+        if (typeof rawPri === "string") {
+          rawPri = rawPri.toLowerCase().trim()
+          if (rawPri === "none" || rawPri === "") rawPri = null
+        }
+        const VALID_PRI = ["urgent", "high", "medium", "low", "neutral"]
+        if (rawPri !== undefined && rawPri !== null && !VALID_PRI.includes(rawPri)) {
           return json({ error: `priority must be one of: ${VALID_PRI.join(", ")}` }, 400)
         }
         // KD-158: editable title — reject a blank rename (use Description/notes to clear content
@@ -13360,7 +14241,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           meta.assignee = assignee
         }
         if (body.notes !== undefined) meta.notes = body.notes ?? null
-        if (body.priority !== undefined) meta.priority = body.priority ?? null
+        if (body.priority !== undefined) meta.priority = rawPri ?? null
         const updated = await updateFeedbackMeta(fbRow.projectId, fid, meta)
         if (!updated) return json({ error: "Update failed." }, 500)
         const activityWrites: Promise<any>[] = []
@@ -13828,7 +14709,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
     }
     // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-    const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/people|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk(?:\/delete)?|\/bulk-delete|\/rev)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
+    const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/people|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk(?:\/delete)?|\/bulk-delete|\/rev|\/deleted(?:\/[^/]+\/restore)?)?|\/recurring|\/dashboard-counts|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
     if (projMatch) {
       const pid = projMatch[1]
       const sub = projMatch[2] || ""
@@ -14737,7 +15618,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (authShape === "password" && (!password || password.length > 200)) return json({ error: "password required (max 200 chars)" }, 400)
           if (authShape === "token" && (!password || password.length > 2000)) return json({ error: "token required (max 2000 chars)" }, 400)
           if (await getTestAccountByName(pid, name)) return json({ error: `A test account named "${name}" already exists.` }, 409)
-          const id = await createTestAccount(pid, { name, loginEmail, password: (authShape === "password" || authShape === "token") ? password : undefined, authShape: authShape as "password" | "otp" | "token", createdBy: me })
+          // KD-2255: optional AutoSim project scope — must belong to THIS Klavity project.
+          const autosimProjectId = body.autosim_project_id ? String(body.autosim_project_id) : null
+          if (autosimProjectId && !(await asp.getAutosimProject(pid, autosimProjectId))) return json({ error: "Unknown AutoSim project." }, 400)
+          const id = await createTestAccount(pid, { name, loginEmail, password: (authShape === "password" || authShape === "token") ? password : undefined, authShape: authShape as "password" | "otp" | "token", createdBy: me, autosimProjectId })
           const account = await getTestAccountById(pid, id)
           if (!account) return json({ error: "Internal error: account vanished after insert" }, 500)
           return json({ account }, 201)
@@ -14757,6 +15641,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               refs: trailNames,
             }, 409)
           }
+          // KD-2255: also blocked while a test case is set to execute with these credentials.
+          const tcNames = await asp.testCasesUsingAccount(pid, accId)
+          if (tcNames.length > 0) {
+            return json({ error: `Cannot delete: test case${tcNames.length !== 1 ? "s" : ""} ${tcNames.slice(0, 3).map((n) => `"${n}"`).join(", ")}${tcNames.length > 3 ? "…" : ""} run with these credentials. Switch them to another login or to "without credentials" first.`, refs: tcNames }, 409)
+          }
           const ok = await deleteTestAccount(pid, accId)
           return ok ? json({ ok: true }) : json({ error: "Not found" }, 404)
         }
@@ -14764,13 +15653,30 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (access !== "admin") return json({ error: "Only project admins can manage test accounts." }, 403)
           const accId = sub.slice("/test-accounts/".length)
           const body = await req.json().catch(() => ({}))
-          const newSecret = body.password !== undefined ? String(body.password) : ""
-          if (!newSecret || newSecret.length > 2000) return json({ error: "password required (max 2000 chars)" }, 400)
           const acc = await getTestAccountById(pid, accId)
           if (!acc) return json({ error: "Not found" }, 404)
-          if (acc.authShape === "otp") return json({ error: "OTP accounts have no stored secret to rotate." }, 400)
-          const ok = await rotateTestAccountSecret(pid, accId, newSecret)
-          return ok ? json({ ok: true }) : json({ error: "Not found" }, 404)
+          // KD-2255: non-secret edits (login email / AutoSim project scope). Body without these keys
+          // keeps the original rotate-only contract (password required).
+          const meta: { loginEmail?: string; autosimProjectId?: string | null } = {}
+          if ("login_email" in body) {
+            const le = String(body.login_email || "").trim()
+            if (!le || le.length > 200 || !le.includes("@")) return json({ error: "login_email must be a valid email" }, 400)
+            meta.loginEmail = le
+          }
+          if ("autosim_project_id" in body) {
+            const ap = body.autosim_project_id ? String(body.autosim_project_id) : null
+            if (ap && !(await asp.getAutosimProject(pid, ap))) return json({ error: "Unknown AutoSim project." }, 400)
+            meta.autosimProjectId = ap
+          }
+          const hasMeta = Object.keys(meta).length > 0
+          if (body.password !== undefined || !hasMeta) {
+            const newSecret = body.password !== undefined ? String(body.password) : ""
+            if (!newSecret || newSecret.length > 2000) return json({ error: "password required (max 2000 chars)" }, 400)
+            if (acc.authShape === "otp") return json({ error: "OTP accounts have no stored secret to rotate." }, 400)
+            if (!(await rotateTestAccountSecret(pid, accId, newSecret))) return json({ error: "Not found" }, 404)
+          }
+          if (hasMeta && !(await updateTestAccount(pid, accId, meta))) return json({ error: "Not found" }, 404)
+          return json({ ok: true })
         }
         return json({ error: "Method not allowed" }, 405)
       }
@@ -14966,7 +15872,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // GET /api/projects/:id/triage — un-triaged feedback queue (any project member)
       if (req.method === "GET" && sub === "/triage") {
         const triage = await listTriageFeedback(proj.id)
-        return json({ triage })
+        // KD-1074: attach the project key + workspace slug so Sim Reports render as <KEY>-SIM-<n> and link to
+        // /<slug>/<KEY>-SIM-<n> (one lookup per request — every item belongs to this project).
+        const alias = await projectAliasInfo(proj.id).catch(() => ({ slug: null, ticketKey: null, projectName: null }))
+        return json({ triage: triage.map((t: any) => ({ ...t, slug: t.slug ?? alias.slug, ticketKey: t.ticketKey ?? alias.ticketKey })) })
       }
 
       // ── KLA-255: needsConfirm / pending sim-match queue ───────────────────────────────────────
@@ -15065,6 +15974,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ rev })
       }
 
+      // KD-3090: GET /api/projects/:id/dashboard-counts — just the four Overview metric numbers (Feedback received,
+      // Sims, Teammates, Tickets filed), computed exactly as /api/dashboard computes them. The Overview polls this
+      // cheaply so the cards stay live even while the full dashboard poll is paused (input focused, modal open…)
+      // and right after an in-tab change, instead of waiting for (or needing) a full reload.
+      if (req.method === "GET" && sub === "/dashboard-counts") {
+        const [c, personas, members] = await Promise.all([dashboardCounts(proj.id), listPersonas(proj.id), membersOfProject(proj.id)])
+        return json({ feedback: c.feedback, tickets: c.tickets, sims: personas.length, team: members.length })
+      }
+
       // GET /api/projects/:id/tickets — paginated, filterable ticket list (any project member, KLA-169)
       if (req.method === "GET" && sub === "/tickets") {
         const sp = url.searchParams
@@ -15110,7 +16028,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (title.length > 500) return json({ error: "Title must be 500 characters or fewer." }, 400)
         const bodyText = String(body.body ?? body.description ?? "").trim()
         if (bodyText.length > 5000) return json({ error: "Body must be 5000 characters or fewer." }, 400)
-        const VALID_PRI = ["urgent", "high", "medium", "low"]
+        const VALID_PRI = ["urgent", "high", "medium", "low", "neutral"]
         const priority = VALID_PRI.includes(body.priority) ? body.priority : "medium"
         const assignee = normalizeAssigneeEmail(body.assignee)
         if (assignee === "") return json({ error: "assignee must be a valid email address." }, 400)
@@ -15184,7 +16102,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const ticketIds: string[] = Array.isArray(body.ticketIds) ? body.ticketIds.slice(0, 200).map(String) : []
           if (!ticketIds.length) return json({ error: "ticketIds must be a non-empty array." }, 400)
 
-          const result = await deleteTicketsBulk(proj.id, ticketIds)
+          const result = await deleteTicketsBulk(proj.id, ticketIds, me)
           if (result.deleted > 0) {
             await insertActivity({
               projectId: proj.id,
@@ -15192,9 +16110,36 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               actorEmail: me,
               meta: { count: result.deleted, ticketIds: result.ticketIds },
             }).catch((e: any) => console.warn("bulk delete activity skipped:", e?.message || e))
+            // KD-3134: tell each deleted ticket's assignee + reporter (top-bar bell). The single-ticket Delete
+            // button uses this same endpoint. Fire-and-forget.
+            void notifyTicketsDeleted(proj.id, result.tickets, me).catch((e: any) => console.warn("delete notification skipped:", e?.message || e))
           }
           return json({ ok: true, deleted: result.deleted, ticketIds: result.ticketIds })
         }
+      }
+
+      // GET /api/projects/:id/tickets/deleted — the "Deleted tickets" bin (last 30 days, newest first).
+      if (req.method === "GET" && sub === "/tickets/deleted") {
+        const tickets = await listDeletedTickets(db!, proj.id)
+        const alias = await projectAliasInfo(proj.id).catch(() => ({ ticketKey: null as string | null }))
+        return json({ ok: true, retentionDays: DELETED_TICKETS_RETENTION_DAYS, ticketKey: alias.ticketKey ?? null, tickets })
+      }
+
+      // POST /api/projects/:id/tickets/deleted/:ticketId/restore — put a deleted ticket back (same access as delete).
+      const restoreMatch = req.method === "POST" ? sub.match(/^\/tickets\/deleted\/([^/]+)\/restore$/) : null
+      if (restoreMatch) {
+        const fid = decodeURIComponent(restoreMatch[1])
+        const result = await restoreDeletedTicket(db!, proj.id, fid)
+        if (!result.ok) return json({ error: result.error }, result.status)
+        invalidateDashboardCache(proj.id)
+        await insertActivity({
+          projectId: proj.id,
+          type: "ticket_restored",
+          actorEmail: me,
+          feedbackId: fid,
+          meta: { seqNum: result.seqNum, renumbered: result.renumbered },
+        }).catch((e: any) => console.warn("ticket_restored activity skipped:", e?.message || e))
+        return json({ ok: true, ticketId: fid, seqNum: result.seqNum, renumbered: result.renumbered })
       }
 
       // PATCH /api/projects/:id/tickets/bulk — KLA-178: apply one action to multiple tickets at once.
@@ -15206,7 +16151,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!ticketIds.length) return json({ error: "ticketIds must be a non-empty array." }, 400)
 
         const VALID_STATUS = ["open", "new", "in_progress", "blocked", "ready_for_deployment", "deployed", "qa_review", "done", "dismissed"]
-        const VALID_PRI = ["urgent", "high", "medium", "low"]
+        let rawBulkPri = body.priority
+        if (typeof rawBulkPri === "string") {
+          rawBulkPri = rawBulkPri.toLowerCase().trim()
+          if (rawBulkPri === "none" || rawBulkPri === "") rawBulkPri = null
+        }
+        const VALID_PRI = ["urgent", "high", "medium", "low", "neutral"]
 
         const hasStatus = body.status !== undefined
         const hasPriority = body.priority !== undefined
@@ -15220,14 +16170,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (hasStatus && !VALID_STATUS.includes(body.status)) {
           return json({ error: `status must be one of: ${VALID_STATUS.join(", ")}` }, 400)
         }
-        if (hasPriority && body.priority !== null && !VALID_PRI.includes(body.priority)) {
+        if (hasPriority && rawBulkPri !== null && !VALID_PRI.includes(rawBulkPri)) {
           return json({ error: `priority must be one of: ${VALID_PRI.join(", ")}` }, 400)
         }
 
         let labelToAdd: string | null = null
         let labelToRemove: string | null = null
+        let labelNames = new Map<string, string>()
         if (hasAddLabel || hasRemoveLabel) {
           const projectLabels = await listLabels(proj.id)
+          labelNames = new Map(projectLabels.map(l => [l.id, l.name]))
           const labelIds = new Set(projectLabels.map(l => l.id))
           if (hasAddLabel) {
             if (!labelIds.has(String(body.addLabelId))) return json({ error: "addLabelId not found in this project." }, 404)
@@ -15258,7 +16210,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!row) continue  // skip tickets not in this project
           const meta: Partial<{ status: string; priority: string | null; assignee: string | null }> = {}
           if (hasStatus) meta.status = body.status
-          if (hasPriority) meta.priority = body.priority ?? null
+          if (hasPriority) meta.priority = rawBulkPri ?? null
           if (hasAssignee) meta.assignee = assigneeVal ?? null
           if (Object.keys(meta).length) {
             const changed = await updateFeedbackMeta(proj.id, tid, meta).catch(() => false)
@@ -15329,12 +16281,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
             autoCopyOnTriageAccept(tid, proj.id, row.status, meta.status, hasPriority ? meta.priority : row.priority, me)
           }
+          // KD-3134: bulk label changes notify the assignee like the single-ticket label routes do — but only
+          // for tickets whose labels actually changed (no notification when the label was already on/off).
+          const notifyLabel = (type: string, labelId: string) => void notifyAssigneeOfTicketUpdate({
+            projectId: proj.id, type, actorEmail: me, feedbackId: tid, meta: { label: labelNames.get(labelId) ?? null },
+          }).catch((e: any) => console.warn("bulk label notification skipped:", e?.message || e))
           if (labelToAdd) {
-            try { await attachLabel(labelToAdd, tid) }
+            try { if (await attachLabel(labelToAdd, tid)) notifyLabel("ticket_label_added", labelToAdd) }
             catch (e: any) { failures.push({ ticketId: tid, operation: "addLabel", error: String(e?.message || e) }) }
           }
           if (labelToRemove) {
-            try { await detachLabel(labelToRemove, tid) }
+            try { if (await detachLabel(labelToRemove, tid)) notifyLabel("ticket_label_removed", labelToRemove) }
             catch (e: any) { failures.push({ ticketId: tid, operation: "removeLabel", error: String(e?.message || e) }) }
           }
           updated++
@@ -15437,48 +16394,6 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (req.method === "GET" && sub === "/members") {
         return json({ members: await membersOfProject(pid) })
       }
-      // QPQ-31: people lookup behind the composer's "on behalf of" typeahead — project members plus
-      // project contacts, filtered by a typed prefix. SESSION-GATED by the surrounding projMatch access
-      // check, and that gate is the point: the composer also runs anonymously on a customer's own site,
-      // where handing back a directory of names and addresses would let any visitor enumerate the team.
-      // An anonymous caller never reaches here, so its typeahead simply offers Create and nothing else.
-      if (req.method === "GET" && sub === "/people") {
-        const q = String(url.searchParams.get("q") || "").trim().toLowerCase().slice(0, 200)
-        // "The team for this project" is wider than project_members: an account owner/admin can open
-        // every project in the account, so they belong in the list even without a per-project row.
-        // Without this the picker was empty on a project whose only roster entry is the owner.
-        const projRow = await projectById(pid)
-        const [mem, acct, con] = await Promise.all([
-          membersOfProject(pid),
-          projRow ? accountMembersRaw(projRow.accountId) : Promise.resolve([] as Array<{ email: string; role: string }>),
-          listProjectContacts(pid),
-        ])
-        const seen = new Set<string>()
-        const people: Array<{ email: string; name: string | null; kind: "member" | "contact" }> = []
-        for (const m of mem) {
-          const e = String(m.email).toLowerCase()
-          if (seen.has(e)) continue
-          seen.add(e)
-          people.push({ email: e, name: null, kind: "member" })
-        }
-        for (const a of acct) {
-          const e = String(a.email).toLowerCase()
-          if (seen.has(e)) continue
-          seen.add(e)
-          people.push({ email: e, name: null, kind: "member" })
-        }
-        for (const c of con) {
-          const e = String(c.email).toLowerCase()
-          if (seen.has(e)) continue
-          seen.add(e)
-          people.push({ email: e, name: c.name, kind: "contact" })
-        }
-        // Return the WHOLE roster (bounded only for payload sanity). Filtering is done client-side so
-        // the dropdown lists every teammate, not the first handful -- an 8-row cap silently hid most of
-        // a normal-sized team.
-        const hits = (q ? people.filter(p => p.email.includes(q) || (p.name || "").toLowerCase().includes(q)) : people).slice(0, 200)
-        return json({ people: hits })
-      }
       if (req.method === "POST" && sub === "/invite") {
         // Any project member (admin or plain member) can invite — was admin-only. A non-admin
         // inviter is still capped to granting the "member" role, never "admin": otherwise any
@@ -15563,8 +16478,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // brief → one persona (no transcript needed)
     if (req.method === "POST" && path === "/api/persona/brief") {
       try {
-        const { brief } = await req.json()
+        const { brief, name: briefName } = await req.json()
         if (!brief || String(brief).trim().length < 4) return json({ error: "Describe your user in a sentence." }, 400)
+        // WP-S3a: the two-step Describe flow lets the user name the Sim up front; when given, that exact name is used.
+        const chosenName = String(briefName ?? "").replace(/\s+/g, " ").trim().slice(0, 60)
         if (String(brief).length > AI_DEMO_MAX_CHARS) return json({ error: "Brief too long." }, 413)
         // simClass: "user" = operates the product hands-on (UI/interaction focus); "client" = judges outcomes/business results.
         // Default described Sims to "user" unless the brief clearly indicates an outcome-judging stakeholder (exec, buyer, decision-maker).
@@ -15572,15 +16489,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           "Classify on two axes: simClass (\"user\" = actually OPERATES the product hands-on, feedback skews UI/interaction; " +
           "\"client\" = evaluates OVERALL outcomes and business results, feedback skews feature/workflow/strategy — only assign \"client\" when the brief clearly describes an executive, buyer, or outcome-judging stakeholder) " +
           "and side (\"external\" = customer/partner outside the team; \"internal\" = on the product/company team). " +
-          "Respond with ONLY a JSON object, no prose: {\"persona\":{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}} with exactly 3 insights; each quote is a short first-person line this persona might actually say."
+          "Respond with ONLY a JSON object, no prose: {\"persona\":{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"personaKind\":\"qa\"|\"customer\" (\"qa\" ONLY if this persona IS a QA / visual-testing reviewer inspecting a UI for defects; every customer, buyer, end-user or stakeholder is \"customer\"),\"core\":{\"goals\":string[1-4 jobs-to-be-done],\"expertise\":string,\"temperament\":string,\"voice\":string(short first-person sample),\"watchFor\":string[2-5 concrete things this persona checks or validates on ANY page, e.g. form validation, labels, spelling]},\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}} with exactly 3 insights; each quote is a short first-person line this persona might actually say."
         const meB = (await sessionEmail(req)) || (await bearerEmail(req))
         if (aiDemoLimited(meB, req, server)) return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "3600" })
-        const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Brief: " + brief }], 1200, true, { type: "persona", email: meB, projectId: meB ? null : MARKETING_PRESIGNUP_PROJECT_ID })
+        const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Brief: " + brief + (chosenName ? "\nName the Sim exactly: " + chosenName : "") }], 2000, true, { type: "persona", email: meB, projectId: meB ? null : MARKETING_PRESIGNUP_PROJECT_ID })
         const data = parseJSON(content)
         // Ensure simClass is always set: default to "user" for described Sims when the model omits it.
         if (data.persona) {
           if (!SIM_CLASS_ENUM.has(String(data.persona.simClass))) data.persona.simClass = "user"
           if (!SIDE_ENUM.has(String(data.persona.side))) data.persona.side = "external"
+          data.persona.core = normalizeGeneratedCore(data.persona.core, { role: data.persona.role, summary: data.persona.summary })
+          data.persona = enrichQaPersona(data.persona)
+          if (chosenName) {
+            data.persona.name = chosenName
+            const w = chosenName.split(" ").filter(Boolean)
+            data.persona.initials = ((w[0]?.[0] || "") + (w.length > 1 ? w[w.length - 1][0] : (w[0]?.[1] || ""))).toUpperCase() || data.persona.initials
+          }
         }
         return json({ persona: data.persona, usage })
       } catch (e: any) { return json(oops(e, "create"), 500) }
@@ -15635,7 +16559,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // if the retry also fails, return a friendly 422 instead of paging P1 with a 500.
         let data: any
         let usage: { input_tokens?: number; output_tokens?: number }
-        const first = await chat([{ role: "system", content: sys }, { role: "user", content: userMsg }], 1600, true, { type: "persona", ...personaAttr })
+        const first = await chat([{ role: "system", content: sys }, { role: "user", content: userMsg }], 2600, true, { type: "persona", ...personaAttr })
         usage = first.usage
         try {
           data = parseJSON(first.content)
@@ -15657,7 +16581,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!SIDE_ENUM.has(String(p?.side))) p.side = "external"
           // desc: a short one-line bio surfaced on the onboarding persona cards. Bounded + ASCII-safe.
           p.desc = String(p?.desc || "").replace(/\s+/g, " ").trim().slice(0, 90)
-          return p
+          p.core = normalizeGeneratedCore(p?.core, { role: p?.role, summary: p?.summary })
+          return enrichQaPersona(p)
         })
         return json({ personas, usage })
       } catch (e: any) { return json(oops(e, "create"), 500) }
@@ -15681,7 +16606,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // KLAVITYKLA-371: capture the true start BEFORE any work (SSRF preflight, screenshot,
         // Sim reviews) so the sim_runs row records a real duration rather than 0ms.
         const pvRunStartedAt = Date.now()
-        let { url: pvUrl, persona, projectId: pvProjectId } = await req.json()
+        let { url: pvUrl, persona, projectId: pvProjectId, simIds: pvSimIds, env: pvEnv } = await req.json()
+        const chosenEnv = (typeof pvEnv === "string" && pvEnv.trim()) ? pvEnv.trim().toLowerCase() : null
         pvUrl = String(pvUrl || "").trim()
         if (!pvUrl) return json({ error: "Enter your product's URL." }, 400)
         if (!/^https?:\/\//i.test(pvUrl)) pvUrl = "https://" + pvUrl
@@ -15693,6 +16619,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // SSRF quota or a browser slot. SSRF and screenshotUrl run only if gates pass.
         let pvProj: { id: string; access: "admin" | "member" } | null = null
         let projectSims: any[] = []
+        let pvSelectedSims: any[] = []          // the Sims this run uses (all of them unless the Sim picker chose a subset)
+        let pvSubsetIds: string[] | null = null // null = all Sims
         if (mePv && pvProjectId) {
           const pvProjId = String(pvProjectId).trim()
           pvProj = await resolveProject(mePv, pvProjId)
@@ -15700,8 +16628,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const pvFullProj = await projectById(pvProj.id)
           const pvLock = pvFullProj ? snapLocked(pvFullProj) : null
           if (pvLock) return json(pvLock, 402)
-          projectSims = await listPersonas(pvProj.id)
-          if (!projectSims.length) return json({ error: "This project has no Sims yet. Add a Sim first." }, 400)
+          const pvAllSims = await listPersonas(pvProj.id)
+          if (!pvAllSims.length) return json({ error: "This project has no Sims yet. Add a Sim first." }, 400)
+          // WP-S2: deactivated Sims are not run (and cannot be picked).
+          projectSims = pvAllSims.filter((p) => p.active !== false)
+          if (!projectSims.length) return json({ error: "All of this project's Sims are inactive. Activate a Sim to run a preview." }, 400)
+          // Sim picker: validate the chosen Sims here, before any SSRF/screenshot work. Omitted simIds = all Sims (unchanged behaviour).
+          const pvSel = selectPreviewSims(projectSims, pvSimIds, new Set(pvAllSims.filter((p) => p.active === false).map((p) => p.id)))
+          if (!pvSel.ok) return json({ error: pvSel.error }, 400)
+          pvSelectedSims = pvSel.sims
+          pvSubsetIds = pvSel.simIds
         }
 
         // SSRF preflight: reuse safeFetch's guard (rejects private/loopback + validates each redirect
@@ -15740,37 +16676,28 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const { urlHost, urlPath } = splitUrl(pvUrl)
 
           // Store the screenshot (non-fatal if S3 not configured).
-          let screenshotId: string
-          try {
-            const shotBytes = Buffer.from(shot.imageB64, "base64")
-            const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000
-            const upload = await uploadScreenshotMeta(shotBytes, shot.mediaType, "private")
-            screenshotId = await insertScreenshot({
-              projectId: authenticatedProjectId, s3Key: upload.key, bucket: upload.bucket,
-              contentType: upload.contentType, acl: "private",
-              bytes: shotBytes.byteLength,
-              ownerEmail: mePv, expiresAt,
-            })
-          } catch (e: any) {
-            console.warn("[sim-preview] screenshot storage skipped (no S3):", e?.message || e)
-            screenshotId = "no-s3-" + Date.now().toString(36)
-          }
+          // Evidence integrity: verified id or null + a recorded failure (never a placeholder id).
+          const storedShot = await storeSimScreenshot(Buffer.from(shot.imageB64, "base64"), shot.mediaType, authenticatedProjectId, mePv, Date.now() + 30 * 24 * 60 * 60 * 1000)
+          if (storedShot.evidence.screenshot === "failed") console.warn("[sim-preview] screenshot evidence NOT stored:", storedShot.evidence.error)
+          const screenshotId = storedShot.screenshotId
 
-          // Run all Sims through the SAME pipeline as /api/sim/review.
+          // Run the chosen Sims (all of them unless the picker selected a subset) through the SAME pipeline as /api/sim/review.
           // adhoc=true: bypass seenHashes + near-dup dedup so all current Sim reactions surface.
-          const seenKeys = projectSims.map((s) => `urlprev:${s.id}:${urlPath || "/"}`)
+          const seenKeys = pvSelectedSims.map((s) => `urlprev:${s.id}:${urlPath || "/"}`)
           const reviews = await runSimReviews({
             projectId: authenticatedProjectId, urlPath, urlHost, pageUrl: pvUrl,
             imageB64: shot.imageB64, mediaType: shot.mediaType,
-            targetSims: projectSims,
-            actorEmail: mePv, screenshotId,
+            targetSims: pvSelectedSims,
+            actorEmail: mePv, screenshotId, evidence: storedShot.evidence,
             seenKeys, seenHashes: new Set(), sessionId: undefined,
             mode: "all", adhoc: true,
-            reactFn: (sim, b64, mt, pu) => reactToPage(sim, b64, mt, pu, { email: mePv, projectId: authenticatedProjectId }),
+            reactFn: (sim, b64, mt, pu, pm) => reactToPage(sim, b64, mt, pu, { email: mePv, projectId: authenticatedProjectId }, pm),
+            pageMeta: sanitizePageMeta((shot as any).pageMeta),
             resolveCitationsFn: resolveCitations,
             // autoCopy intentionally omitted: triage-gated (fires on PATCH status→open, not on insert).
             markSeen: () => { },  // no seen-key bookkeeping for one-shot URL previews
             db: db ?? null,
+            reportEnv: chosenEnv,
           })
 
           // Persist a sim_runs record for the dashboard run history.
@@ -15778,10 +16705,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             try {
               await insertSimRun({
                 projectId: authenticatedProjectId, url: pvUrl,
-                simIds: null,  // null = all Sims
+                simIds: pvSubsetIds,  // null = all Sims; otherwise exactly the Sims the picker chose
                 screenshotId, reactions: reviews,
                 actorEmail: mePv, status: "done",
                 startedAt: pvRunStartedAt, finishedAt: Date.now(),
+                label: chosenEnv,
               })
             } catch (e: any) { console.warn("[sim-preview] sim_runs insert skipped:", e?.message || e) }
           }
@@ -15908,17 +16836,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!tickProjects.length) return json({ error: "No projects found for this account." }, 403)
 
         const storeScreenshot = async (bytes: Buffer, mediaType: string, projectId: string) => {
-          const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000
-          const upload = await uploadScreenshotMeta(bytes, mediaType, "private")
-          return insertScreenshot({
-            projectId, s3Key: upload.key, bucket: upload.bucket,
-            contentType: upload.contentType, acl: "private",
-            bytes: bytes.byteLength, ownerEmail: meTick, expiresAt,
-          })
+          const st = await storeSimScreenshot(bytes, mediaType, projectId, meTick, Date.now() + 30 * 24 * 60 * 60 * 1000)
+          if (!st.screenshotId) throw new Error(st.evidence.error || "screenshot not stored")  // the scheduler records this as the evidence failure
+          return st.screenshotId
         }
 
         const deps = buildProductionDeps(
-          (sim, b64, mt, pu) => reactToPage(sim, b64, mt, pu, { email: meTick }),
+          (sim, b64, mt, pu, pm) => reactToPage(sim, b64, mt, pu, { email: meTick }, pm),
           resolveCitations,
           db ?? null,
           storeScreenshot,
@@ -16090,6 +17014,12 @@ async function handleVoiceStreamUpgrade(
   return wjson({ error: "upgrade failed" }, 400)
 }
 
+// KD-2255: one stray background rejection (a browser op that fails after its AutoSim was cancelled and the
+// browser closed) used to exit the whole server, and the container (restart: no) stayed down. Log it instead.
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection] kept server alive:", String((reason as any)?.stack || reason).split("\n").slice(0, 4).join(" | "))
+})
+
 Bun.serve({
   port: PORT,
   idleTimeout: 180,
@@ -16109,7 +17039,19 @@ Bun.serve({
     }
     // Establish per-request context (for F5 token-project binding) and apply security headers to every
     // response from a single chokepoint.
-    return reqCtx.run({}, async () => withWidgetCors(req, withSecurityHeaders(await handle(req, server))))
+    // KD-2878: an error no route caught (e.g. the DB socket dropped mid-request) must not fall through to Bun's raw
+    // error page — log it and answer with a proper 503 (a self-retrying page for browsers, JSON for API calls).
+    try {
+      return await reqCtx.run({}, async () => withWidgetCors(req, withSecurityHeaders(await handle(req, server))))
+    } catch (e) {
+      const { id } = oops(e, "unhandled")
+      return withWidgetCors(req, withSecurityHeaders(unhandledErrorResponse(req, id)))
+    }
+  },
+  // Last line of defence for anything thrown outside the try above (Bun calls this instead of its dev error page).
+  error(e) {
+    const { id } = oops(e, "unhandled")
+    return unhandledErrorResponse(null, id)
   },
 })
 
@@ -16144,10 +17086,15 @@ if (db && process.env.NODE_ENV !== "test") {
   // AI touch; this batch walk re-grants idle wallets on a month rollover. Once after boot, then daily.
   setTimeout(() => { runMonthlyGrantReset().catch((e) => console.warn("credits grant-reset failed:", e?.message || e)) }, 90_000)
   setInterval(() => { runMonthlyGrantReset().catch((e) => console.warn("credits grant-reset failed:", e?.message || e)) }, 24 * 60 * 60 * 1000)
+  // Large-file uploads: delete chunks of uploads abandoned for more than 2 days (the token itself lives 24h).
+  setInterval(() => { sweepStaleUploadParts(2 * 24 * 60 * 60 * 1000).then((n) => { if (n) console.log(`[large-upload] swept ${n} stale chunk(s)`) }).catch((e) => console.warn("large-upload sweep failed:", e?.message || e)) }, 6 * 60 * 60 * 1000)
   // KLA-88: trail cron scheduler — ticks every minute, fires scheduled walks.
   startTrailScheduler()
   // KLA-55: crash reaper — sweeps stale-heartbeat walks/sessions every 60s.
   startCrashReaper(db!)
+  // F-01: continue requirement runs that were queued/in flight when the server stopped. Delayed so the
+  // crash reaper has marked the interrupted author sessions first.
+  setTimeout(() => { reqRuns.resumeRequirementRuns().then(n => { if (n) console.log(`[requirement-runs] resumed ${n} run(s)`) }).catch((e) => console.warn("requirement-runs resume failed:", e?.message || e)) }, 20_000)
   // KLAVITYKLA-261: daily Sims digest — ticks every hour, sends per-project digest.
   startSimsDigestScheduler({ db: db!, sendEmail: sendReportAlertEmail })
   // KLAVITYKLA-330: lead nurture scheduler — ticks every hour, sends steps 2 + 3.

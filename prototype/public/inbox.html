@@ -263,7 +263,9 @@ function renderProjectCard(p) {
   if (p.topReports && p.topReports.length > 0) {
     reportsHtml = `<div class="rpt-list" role="list" aria-label="Top new reports">`
     for (const r of p.topReports) {
-      const seq = r.seqNum != null ? `<span class="rpt-seq">#${esc(r.seqNum)}</span>` : ""
+      // KD-3082: the inbox lists only waiting (status='new') reports, so a Sim Report shows its own Sim Reports count.
+      const simSeq = r.simSeqNum != null
+      const seq = simSeq ? `<span class="rpt-seq">SIM-${esc(r.simSeqNum)}</span>` : (r.seqNum != null ? `<span class="rpt-seq">#${esc(r.seqNum)}</span>` : "")
       reportsHtml += `<div class="rpt-row" role="listitem">
         ${seq}
         <span class="rpt-title">${esc(r.title)}</span>

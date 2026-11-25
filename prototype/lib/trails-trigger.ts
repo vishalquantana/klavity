@@ -10,10 +10,11 @@
 // deps.walk that calls walkTrail with a vision resolver.
 import { withWalkSlot, WalkBusyError, CHROMIUM_PROD_ARGS, setCurrentWalkRunId, getCurrentWalkAbortSignal } from "./trails-browser"
 import { ToolError } from "./mcp/tool-error"
-import { getTrail, startWalk, finishWalk, getWalk } from "./trails"
-import { walkTrail } from "./trails-runner"
+import { getTrail, startWalk, finishWalk, getWalk, type WalkTrigger } from "./trails"
+import { walkTrail, walkTrailWithBrowserRetry } from "./trails-runner"
 import type { Verdict } from "./trails-types"
 import { configuredVisionResolver } from "./trails-vision"
+import { shouldUseNodeWalkWorker, walkTrailViaNode } from "./walk-node-bridge"
 import { maybeAutoFileWalkFindings } from "./trails-findings-gate"
 import { projectById } from "./db"
 import { projectEntitlement } from "./entitlement"
@@ -52,7 +53,7 @@ async function defaultPriorWalkCount(projectId: string): Promise<number> {
 export async function maybeEmitFirstAutosim(
   projectId: string,
   runId: string,
-  trigger: "manual" | "scheduled",
+  trigger: WalkTrigger,
   priorWalkCount: number,
 ): Promise<void> {
   if (priorWalkCount !== 0) return
@@ -76,11 +77,12 @@ const realWalk: WalkFn = async (projectId, trailId, runId) => {
   if (!trail) return { verdict: "red", llmCalls: 0, summary: { error: `trail ${trailId} not found in project ${projectId}` } }
   const vision = configuredVisionResolver()
   const signal = getCurrentWalkAbortSignal() ?? undefined
-  const s = await walkTrail(projectId, trailId, {
-    fixtureUrl: trail.baseUrl, replay: true, launchArgs: CHROMIUM_PROD_ARGS, deadlineMs: WALK_DEADLINE_MS, runId,
+  // bun+Windows: Playwright can't drive a browser under Bun, so the replay runs in a Node worker (lib/walk-node-bridge.ts).
+  const s = await walkTrailWithBrowserRetry(projectId, trailId, {
+    fixtureUrl: trail.baseUrl, replay: true, launchArgs: CHROMIUM_PROD_ARGS, deadlineMs: WALK_DEADLINE_MS, scaleDeadlineWithSteps: true, runId,
     stepShots: true, signal, liveWatch: true,
     ...(vision ? { vision } : {}),
-  })
+  }, shouldUseNodeWalkWorker() ? walkTrailViaNode : walkTrail)
   return { verdict: s.verdict, llmCalls: s.llmCalls, summary: { ...(s.reasons.length ? { reasons: s.reasons } : {}) } }
 }
 
@@ -94,7 +96,7 @@ export async function runWalkNow(
   trailId: string,
   deps?: {
     walk?: WalkFn
-    trigger?: "manual" | "scheduled"
+    trigger?: WalkTrigger
     environmentName?: string | null
     /** KLA-547 test seam: count PRIOR trail_runs rows for this project. Defaults to the shared DB. */
     priorWalkCount?: () => Promise<number>

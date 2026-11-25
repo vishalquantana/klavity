@@ -200,3 +200,16 @@ describe('KLA-728 — extension composer wires the AI-assist callbacks (widget p
     await expect(opts.onDictate(new Blob(['x']))).resolves.toBeNull()
   })
 })
+
+describe('KD-988 — extension composer wires the primary Snap button (widget parity)', () => {
+  it('passes onCaptureSharp (the real-pixel full-page capture) with no share prompt and no Screen-default', async () => {
+    await openWithConfig(true)
+    const opts = captured.opts
+    expect(opts.onCaptureSharp).toBeTypeOf('function')
+    // Same real-pixel captureVisibleTab full-page path as Full Page / Retake sharp — not getDisplayMedia.
+    expect(opts.onCaptureSharp).toBe(opts.onCaptureFull)
+    expect(opts.snapWithoutSharePrompt).toBe(true)
+    // The on-open default capture stays the fast viewport shot.
+    expect(opts.screenCaptureDefault).toBeFalsy()
+  })
+})

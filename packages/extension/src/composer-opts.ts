@@ -10,6 +10,10 @@ export interface ExtComposerOpts {
   showTitleField: boolean
   allowFileAttachments: boolean
   issueTypes?: Array<{ value: IssueKind; label: string; mappingLabel?: string }>
+  // KD-988 (ext↔widget parity): "Record me" is DEFAULT-ON, exactly like the widget's resolveComposerRecord —
+  // only an EXPLICIT composer.record:false / allowRecording:false hides it. (The browser capability gate,
+  // recordingSupported(), is applied where the composer is built.)
+  record: boolean
 }
 
 const KNOWN_KINDS: IssueKind[] = ['bug', 'feature', 'task', 'query']
@@ -21,11 +25,12 @@ const KNOWN_KINDS: IssueKind[] = ['bug', 'feature', 'task', 'query']
 export function parseComposerOpts(modalConfig: any): ExtComposerOpts {
   // video-upload: file attachments (incl. video) are DEFAULT-ON for every project (opt-out, not opt-in),
   // matching the widget. Only an EXPLICIT composer.fileAttach:false / allowFileAttachments:false disables it.
-  const out: ExtComposerOpts = { showTitleField: false, allowFileAttachments: true }
+  const out: ExtComposerOpts = { showTitleField: false, allowFileAttachments: true, record: true }
   const composer = (modalConfig && typeof modalConfig === 'object' && typeof modalConfig.composer === 'object' && modalConfig.composer) || null
   if (!composer) return out
   out.showTitleField = composer.title === true || composer.showTitleField === true
   out.allowFileAttachments = !(composer.fileAttach === false || composer.allowFileAttachments === false)
+  out.record = composer.record !== false && composer.allowRecording !== false
   if (Array.isArray(composer.issueTypes) && composer.issueTypes.length) {
     const cleaned = composer.issueTypes
       .filter((t: any) => t && typeof t.value === 'string' && (KNOWN_KINDS as string[]).includes(t.value))

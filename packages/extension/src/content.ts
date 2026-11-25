@@ -8,6 +8,10 @@ import { safeRemove } from '@klavity/core'
 import { resolveModalConfig } from '@klavity/core/modal-theme'
 import { installCapture, buildReportContext, type CaptureBuffers } from '@klavity/core/capture'
 import { cropDataUrl } from '@klavity/core/crop'
+// KD-988 (ext↔widget parity): the SAME "Pick element" picker and "Record me" recorder the widget uses.
+import { pickElementOnPage } from '@klavity/core/element-picker'
+import { recordMe, recordingSupported } from '@klavity/core/recorder'
+import { offloadLargeFiles, type LargeUploadTransport } from '@klavity/core/large-upload'
 import { captureFullPage } from './fullpage'
 import { klavContentSig, shouldCapture, createTrailingDebounce, DEBOUNCE_MS, DEBOUNCE_MAX_WAIT_MS, ROUTE_COOLDOWN_MS, MAX_REVIEWS_PER_ROUTE, CAPTURE_BACKOFF_MS, CAPTURE_MAX_RETRIES } from './feedback-trigger'
 import { widgetPresent } from './coexist'
@@ -35,6 +39,9 @@ import {
   makeShot as evMakeShot,
   buildPagesTrail as evBuildPagesTrail,
   evCountText as evCountLabel,
+  hasEvidence as evHasEvidence,
+  setRecordings as evSetRecordings,
+  setFiles as evSetFiles,
   MAX_SHOTS as EV_MAX_SHOTS,
   type ExtEvidenceSession,
   type EvidenceStorage,
@@ -291,19 +298,23 @@ let _composerOpening = false
 // the widget + extension for any project that opted in.
 // video-upload: file attachments DEFAULT-ON (opt-out) even when config is missing/unreachable — mirrors
 // parseComposerOpts + the widget so the "Attach file" button shows on every project by default.
-const EMPTY_COMPOSER_OPTS: ExtComposerOpts = { showTitleField: false, allowFileAttachments: true }
-// KLA-728 (ext↔widget parity): when a matched project is reachable we also return an `assist` scope
+const EMPTY_COMPOSER_OPTS: ExtComposerOpts = { showTitleField: false, allowFileAttachments: true, record: true }
+// KLA-728 (ext↔widget parity): when a project is resolved + reachable we also return an `assist` scope
 // (resolved backend base + project id) so openComposer can wire the composer AI-assist callbacks
 // (Enhance / clarity-tip / voice) against the SAME per-project widget API the widget uses. Null when no
-// project matches / config is unreachable → classic composer with no assist (unchanged behavior).
+// project resolves / config is unreachable → classic composer with no assist (unchanged behavior).
+// KD-988: resolve the project like the rest of the extension (klavQaResolveProjectId: URL-allowlist match →
+// server match → popup selection → first project) instead of the URL allowlist ONLY. A report filed from a
+// page outside every project's monitored URLs still lands in a project, but its composer used to open with
+// no config → no "Enhance with AI" (nor the project's theme / composer opts).
 type AssistScope = { backendUrl: string; projectId: string } | null
 async function fetchModalConfig(): Promise<{ config: ReturnType<typeof resolveModalConfig>; composer: ExtComposerOpts; assist: AssistScope }> {
   try {
-    const proj = klavMatchProject(location.href)
+    const projectId = await klavQaResolveProjectId()
     const backendUrl = klavConfig?.backendUrl
-    if (proj?.id && backendUrl) {
+    if (projectId && backendUrl) {
       const base = backendUrl.replace(/\/+$/, '')
-      const r = await fetch(`${base}/api/projects/${encodeURIComponent(proj.id)}/config`)
+      const r = await fetch(`${base}/api/projects/${encodeURIComponent(projectId)}/config`)
       if (r.ok) {
         const j = await r.json()
         const modalConfig = j.modalConfig || {}
@@ -311,7 +322,7 @@ async function fetchModalConfig(): Promise<{ config: ReturnType<typeof resolveMo
         // Klavity" badge carries UTM (utm_medium=extension, utm_content=<projectId>, utm_source=host).
         if (modalConfig && typeof modalConfig === 'object') {
           ;(modalConfig as any).attributionMedium = 'extension'
-          ;(modalConfig as any).projectId = proj.id
+          ;(modalConfig as any).projectId = projectId
           // KLA-728 (ext↔widget parity): the report-clarity toggle rides at the TOP LEVEL of the config
           // response (sibling of modalConfig), NOT inside it — exactly how the widget reads it (widget.ts
           // `reportClarity = j.reportClarity !== false`). Default ON: only an explicit false disables it.
@@ -319,7 +330,7 @@ async function fetchModalConfig(): Promise<{ config: ReturnType<typeof resolveMo
           // (cfg.reportClarity) and the composer renders the clarity meter/tip when enabled.
           ;(modalConfig as any).reportClarity = j.reportClarity !== false
         }
-        return { config: resolveModalConfig(modalConfig), composer: parseComposerOpts(modalConfig), assist: { backendUrl: base, projectId: proj.id } }
+        return { config: resolveModalConfig(modalConfig), composer: parseComposerOpts(modalConfig), assist: { backendUrl: base, projectId } }
       }
     }
   } catch { /* default theme + classic composer */ }
@@ -378,6 +389,23 @@ function buildComposerAssist(assist: AssistScope, clarityOn: boolean): Partial<M
         if (!res.ok) return null
         const data = await res.json().catch(() => null)
         return (data && data.draft) ? data.draft : null
+      } catch { return null }
+    }
+    // KD-995: split a "Record me" walkthrough into separate tickets (POST /api/report/split). Same
+    // reportClarity gate as Enhance; resolve null on any failure so the composer keeps the single ticket.
+    opts.onSplitRecording = async (audio, ctx) => {
+      try {
+        const fd = new FormData()
+        fd.append('projectId', projectId)
+        fd.append('audio', audio, 'recording.webm')
+        if (audio.type) fd.append('mime', audio.type)
+        fd.append('pageUrl', location.href)
+        if (ctx?.text) fd.append('text', ctx.text)
+        if (ctx?.frames?.length) fd.append('frames', JSON.stringify(ctx.frames))
+        const res = await assistFetch(backendUrl + '/api/report/split', { method: 'POST', body: fd }, 90_000)
+        if (!res.ok) return null
+        const data = await res.json().catch(() => null)
+        return (data && Array.isArray(data.issues)) ? data.issues : null
       } catch { return null }
     }
   }
@@ -442,7 +470,8 @@ async function openComposer(
   const { config, composer, assist } = await fetchModalConfig()
   const session = opts.session ?? null
   const seedShots = session ? session.shots.slice() : []
-  const hasSeed = seedShots.length > 0
+  const seedFiles = session ? evRestoreFiles(session) : []
+  const hasSeed = seedShots.length > 0 || (session?.recordings?.length ?? 0) > 0 || seedFiles.length > 0
   modalCtrl = buildModal(type, {
     // Right-click-drag region: the cropped selection is the default first image, so skip the full-page
     // auto-capture and let the zoomed-in region lead. In session mode with already-captured shots, also
@@ -455,9 +484,38 @@ async function openComposer(
     onCaptureViewport,
     onCaptureFull,
     onRegionCapture,
+    // KD-988 (ext↔widget parity): "Pick element" — the shared core picker. The extension's own UI roots are
+    // never pickable, and the picked element's screenshot is a real-pixel crop of its box (same path as Region).
+    onPickElement: () => pickElementOnPage({
+      hostIds: ['klavity-host', 'klavity-evdock-host', 'klavity-sims-host', 'klavity-qa-host', 'klavity-toast'],
+      captureRect: onRegionCapture,
+    }),
+    // KD-988 (ext↔widget parity): "Record me" — the shared core recorder (screen + optional camera + narration),
+    // DEFAULT-ON wherever the browser can screen-record unless the project set composer.record:false. The
+    // recording threads through onSubmit as `recordings` → submitViaSW already forwards it (KLA-727).
+    allowRecording: composer.record && recordingSupported(),
+    onRecord: (composer.record && recordingSupported())
+      ? (onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => recordMe({ onPhase })
+      : undefined,
+    // KD-1074 (ext↔widget parity): a recorded video used to live ONLY in the open composer, so Minimize (─)
+    // → Resume came back without it. Seed the session's saved recordings on open and persist every
+    // add/remove to chrome.storage so the video survives minimize and cross-page navigation.
+    initialRecordings: session?.recordings?.length ? session.recordings.slice() : undefined,
+    onRecordingsChange: session ? (recs: ReportRecording[]) => {
+      void queueEvWrite(async () => { evSession = (await evSetRecordings(evStorage, recs)) ?? evSession; updateEvDock() })
+    } : undefined,
+    // Files attached via Attach used to live ONLY in the open composer, so Minimize → Resume lost them.
+    initialFiles: seedFiles.length ? seedFiles : undefined,
+    onFilesChange: session ? (files: ReportFileAttachment[]) => evPersistFiles(files) : undefined,
     // JTBD 1.9: the extension's captures are already real-pixel, but wire onRetakeSharp for parity so a
     // (rare) degraded shot — or a future non-real-pixel path — can still re-capture at full quality.
     onRetakeSharp: onCaptureFull,
+    // KD-988 (ext↔widget parity): the primary "Snap" button, like the widget's. The widget's Snap needs a
+    // getDisplayMedia tab-share to reach real pixels; captureVisibleTab already IS real-pixel, so Snap here is
+    // the full-page scroll-stitch with NO share prompt — the tooltip copy says so via snapWithoutSharePrompt.
+    // screenCaptureDefault stays unset → the on-open default capture (viewport) is unchanged.
+    onCaptureSharp: onCaptureFull,
+    snapWithoutSharePrompt: true,
     // Safely pre-compress high-res captures (especially full-page scroll-stitches) into high-quality JPEG
     // so they stay under the server's 8MB limit and prevent upload rejection / evidence loss.
     compressImage: compressExtScreenshot,
@@ -468,6 +526,8 @@ async function openComposer(
     // through onSubmit below and are forwarded to /api/feedback (see submitViaSW → background).
     showTitleField: composer.showTitleField,
     allowFileAttachments: composer.allowFileAttachments,
+    // Files over the single-request caps upload in chunks via the SW before the report is sent (submitViaSW).
+    largeFileUploads: true,
     issueTypes: composer.issueTypes,
     // KLA-727 (ext↔widget parity, B1): render the "Attach console logs" toggle (DEFAULT OFF), exactly like
     // the widget (widget.ts consoleAttachToggle:true). The reporter's opt-in threads through onSubmit as
@@ -513,8 +573,8 @@ async function openComposer(
       if (evMinimizing) { evMinimizing = false; return } // minimizeToDock already showed the dock
       void queueEvWrite(async () => {
         const latest = await evGetActive(evStorage)
-        if (latest && latest.shots.length > 0) { evSession = latest; showEvDock() }
-        else { if (latest) await evClear(evStorage); evSession = null; hideEvDock() }
+        if (latest && evHasEvidence(latest)) { evSession = latest; showEvDock() }
+        else { if (latest) await evClear(evStorage); evSession = null; evFilesMem.clear(); hideEvDock() }
       })
     },
     // KLA submit-target: the "Where should this go? · Your team / Klavity" control is a WIDGET-only
@@ -626,7 +686,7 @@ function updateEvDock(): void {
   if (evDockCount) evDockCount.textContent = evCountLabel(evSession)
 }
 function showEvDock(): void {
-  if (!evSession || evSession.shots.length === 0) return
+  if (!evHasEvidence(evSession)) return
   const root = evDockHost()
   if (!evDockEl) {
     const d = document.createElement('div'); d.className = 'kev'
@@ -665,6 +725,49 @@ async function captureHereFromDock(btn: HTMLButtonElement): Promise<void> {
     showToast('Could not capture this page — please try again.')
   }
 }
+// ── Attached files across Minimize → Resume ──
+// A File can't be put in chrome.storage, so the bytes stay here in the content script (which lives as long as
+// the page) and the session stores each file's metadata — plus the bytes themselves for small data-URL files,
+// which therefore also survive a navigation. A big file only survives on the page it was attached on; if the
+// user navigated away we say so on Resume instead of dropping it silently.
+const EV_FILE_STORE_MAX_CHARS = 12 * 1024 * 1024 // ≈ an 8 MB file as a data URL
+const evFileIds = new WeakMap<ReportFileAttachment, string>()
+const evFilesMem = new Map<string, ReportFileAttachment>()
+function evFileId(f: ReportFileAttachment): string {
+  let id = evFileIds.get(f)
+  if (!id) { id = 'f_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); evFileIds.set(f, id) }
+  return id
+}
+function evPersistFiles(files: ReportFileAttachment[]): void {
+  const keep = new Set<string>()
+  const rows = files.map((f) => {
+    const id = evFileId(f); keep.add(id); evFilesMem.set(id, f)
+    const dataUrl = f.dataUrl && f.dataUrl.length <= EV_FILE_STORE_MAX_CHARS ? f.dataUrl : ''
+    return { id, name: f.name, type: f.type, size: f.size, dataUrl }
+  })
+  for (const id of [...evFilesMem.keys()]) if (!keep.has(id)) evFilesMem.delete(id)
+  void queueEvWrite(async () => { evSession = (await evSetFiles(evStorage, rows)) ?? evSession; updateEvDock() })
+}
+function evRestoreFiles(session: ExtEvidenceSession): ReportFileAttachment[] {
+  const out: ReportFileAttachment[] = []
+  const lost: string[] = []
+  for (const row of session.files ?? []) {
+    const mem = evFilesMem.get(row.id)
+    if (mem) { out.push(mem); continue }
+    if (row.dataUrl) {
+      const f: ReportFileAttachment = { name: row.name, type: row.type, size: row.size, dataUrl: row.dataUrl }
+      evFileIds.set(f, row.id); evFilesMem.set(row.id, f); out.push(f)
+      continue
+    }
+    lost.push(row.name)
+  }
+  if (lost.length) {
+    showToast(`${lost.join(', ')} couldn't be kept after leaving the page — please attach ${lost.length === 1 ? 'it' : 'them'} again.`)
+    evPersistFiles(out) // drop the entries we can't restore so the dock count stays honest
+  }
+  return out
+}
+
 async function resumeEvidence(): Promise<void> {
   // Refresh from storage (shots may have been added on other pages) then open the composer seeded.
   try { evSession = await evGetActive(evStorage) } catch { /* keep in-memory copy */ }
@@ -693,6 +796,7 @@ async function openComposerClaimed(
 async function discardEvidence(): Promise<void> {
   const s = evSession
   evSession = null
+  evFilesMem.clear()
   hideEvDock()
   if (s) { try { await evClear(evStorage) } catch { /* best-effort */ } }
 }
@@ -701,7 +805,7 @@ function minimizeToDock(): void {
   evMinimizing = true
   void queueEvWrite(async () => {
     try { evSession = await evGetActive(evStorage) } catch { /* keep copy */ }
-    if (evSession && evSession.shots.length > 0) showEvDock()
+    if (evHasEvidence(evSession)) showEvDock()
   })
   try { closeModal() } catch { /* the modal removes its own host */ }
 }
@@ -712,7 +816,7 @@ async function evResumeDockOnBoot(): Promise<void> {
     if (location.protocol !== 'http:' && location.protocol !== 'https:') return
     if (widgetPresent()) return // the in-page widget owns reporting (and its own dock) — never double up
     const s = await evGetActive(evStorage)
-    if (s && s.shots.length > 0) { evSession = s; showEvDock() }
+    if (s && evHasEvidence(s)) { evSession = s; showEvDock() }
   } catch { /* best-effort */ }
 }
 
@@ -753,8 +857,12 @@ export async function submitViaSW(
   // dashboard list loads a lightweight preview — same idea as widget-lib buildThumbnail. Best-effort.
   // Blob-backed attachments (large videos the composer keeps as a File to avoid base64 copies) can't cross
   // chrome.runtime messaging (Blob JSON-serialises to {}), so encode them to a data URL once, here at submit.
+  // Files over the single-request caps (e.g. a video > 100 MB) are uploaded FIRST, in 8 MB chunks proxied through
+  // the background worker, and travel as signed refs. If one can't be uploaded this throws → the composer shows
+  // the error and stays open with the file still attached (never dropped). Smaller files are unchanged.
+  const { inline: inlineFiles, refs: fileRefs } = await offloadLargeFiles(p.files, swUploadTransport, { projectId: matchedProject?.id })
   const filesForSW: ReportFileAttachment[] | undefined = p.files
-    ? await Promise.all(p.files.map(async (f) => {
+    ? await Promise.all(inlineFiles.map(async (f) => {
         if (!f.blob) return f
         const dataUrl = await new Promise<string>((resolve, reject) => {
           const r = new FileReader()
@@ -784,6 +892,7 @@ export async function submitViaSW(
     // PX4 #425: non-image file attachments (PDF, .log, .har, ...) the reporter added. Screenshots keep
     // their own path; these ride the /api/feedback `files` field (forwarded in the background).
     ...(filesForSW && filesForSW.length ? { files: filesForSW } : {}),
+    ...(fileRefs.length ? { fileRefs } : {}),
     // KLA-727 (ext↔widget parity): "Record me" video recordings → /api/feedback `recording` + `recording_meta`.
     ...(p.recordings && p.recordings.length ? { recordings: p.recordings } : {}),
     // KLA-727 (ext↔widget parity): structured annotation overlay → `annotations_json`. Previously DROPPED.
@@ -803,9 +912,33 @@ export async function submitViaSW(
     })
   }).then((result) => {
     // #442: the report is filed — clear the evidence session + tear down the dock so it doesn't linger.
-    if (session) { evMinimizing = false; evSession = null; hideEvDock(); void evClear(evStorage) }
+    if (session) { evMinimizing = false; evSession = null; evFilesMem.clear(); hideEvDock(); void evClear(evStorage) }
     return result as { issueKey: string; issueUrl: string }
   })
+}
+
+// Large-file upload transport: each /api/uploads/* call goes through the background worker (it holds the auth
+// token and isn't bound by the page's CORS). Chunk bytes travel base64-encoded — runtime messaging can't carry
+// a Blob/ArrayBuffer. A dropped/cold-SW message resolves as status 0, which large-upload retries.
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = ''
+  const STEP = 0x8000
+  for (let i = 0; i < bytes.length; i += STEP) bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + STEP)))
+  return btoa(bin)
+}
+export const swUploadTransport: LargeUploadTransport = async (req) => {
+  const msg: BackgroundMessage = { kind: 'LARGE_UPLOAD', path: req.path, query: req.query, json: req.json, ...(req.bytes ? { b64: bytesToBase64(req.bytes) } : {}) }
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const r = await chrome.runtime.sendMessage(msg) as { status?: number; text?: string } | undefined
+      return { status: Number(r?.status) || 0, text: String(r?.text ?? '') }
+    } catch (err) {
+      const m = String((err as Error)?.message ?? err)
+      if (attempt < 5 && /Receiving end does not exist|Could not establish connection/i.test(m)) { await new Promise((r) => setTimeout(r, 200)); continue }
+      if (/Extension context invalidated/i.test(m)) throw new Error('Extension reloaded. Please refresh the page and attach the file again.')
+      return { status: 0, text: JSON.stringify({ error: m }) }
+    }
+  }
 }
 
 // MV3 service workers sleep and are loaded via a dynamic import (crxjs), so a cold

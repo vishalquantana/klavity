@@ -247,7 +247,8 @@ test("runSimReviews forwards normalized severity + target locator per reaction",
   // Severity: mapped from bug priority "high" → C1 (3 bananas).
   expect(obs.severity).toBe("C1")
   // Grounding: structured target forwarded (not dropped).
-  expect(obs.target).toEqual({ text: "Buy now", selector: "button.buy", role: "button", name: "Buy now" })
+  // The model's selector is unverifiable from a screenshot, so it is NOT forwarded (Rule 2: never invent selectors).
+  expect(obs.target).toEqual({ text: "Buy now", role: "button", name: "Buy now" })
   // Region still forwarded alongside target.
   expect(obs.region).toEqual({ x: 0.4, y: 0.82, w: 0.2, h: 0.06 })
 })

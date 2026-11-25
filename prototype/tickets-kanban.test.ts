@@ -110,7 +110,8 @@ test("Ticket detail priority editor persists via PATCH and is timeline-tracked (
 
 test("Tickets kanban fetch includes all board statuses by default; no fake 'Closed' status filter", () => {
   // KD-208: the literal list became ALL_STATUSES, derived from STATUS_ORDER.
-  expect(html).toContain("return ALL_STATUSES")
+  // No status picked → every status (behaviour covered in tickets-board-list-parity.test.ts).
+  expect(html).toContain('return picked.length ? picked.join(",") : ALL_STATUSES')
   expect(html).toContain('const ALL_STATUSES = STATUS_ORDER.join(",")')
   // KD-223: "Closed" isn't a real status (it was a Done+Dismissed shortcut) — removed from the Status filter,
   // and an old ?status=closed link falls back to All statuses.
@@ -147,14 +148,25 @@ test("Tickets list exposes multi-select and bulk actions", () => {
   // current selection into `ids` before PATCHing.
   expect(html).toContain("const ids = [..._bulkSelected]")
   expect(html).toContain("applyBulkAction(projId, body")
-  expect(html).toContain('id="bulkStatus"')
-  expect(html).toContain('id="bulkPriority"')
+  // Status / Priority / Label dropdowns are .kdd skins built by bulkKdd(id, …); the hidden <select>
+  // keeps the id so the change handlers stay bound to #bulkStatus etc.
+  expect(html).toContain('bulkKdd("bulkStatus"')
+  expect(html).toContain('bulkKdd("bulkPriority"')
   expect(html).toContain('id="bulkAssignee"')
   expect(html).toContain('id="bulkAssign"')
   expect(html).toContain('id="bulkClearAssignee"')
-  expect(html).toContain('id="bulkAddLabel"')
-  expect(html).toContain('id="bulkRemoveLabel"')
+  expect(html).toContain('bulkKdd("bulkAddLabel"')
+  expect(html).toContain('bulkKdd("bulkRemoveLabel"')
   expect(html).toContain('id="bulkClose"')
+})
+
+test("bulk-bar dropdowns use the styled .kdd menu, not a bare native <select> (unstyled OS option list)", () => {
+  expect(html).toContain('<span class="kdd bulk-kdd">')
+  expect(html).toContain('<select class="kdd-native" id="${id}"')
+  expect(html).not.toContain('<select class="bulk-sel" id="bulkAddLabel"')
+  expect(html).toContain(".bulk-kdd .kdd-menu {")
+  // A pick drives the hidden select's `change` (existing handlers), then resets it to the placeholder.
+  expect(html).toMatch(/sel\.dispatchEvent\(new Event\("change", \{ bubbles: true \}\)\)\s+sel\.value = ""/)
 })
 
 test("JTBD 2.14: bulk mutations are guarded by an undo toast that restores prior values", () => {
@@ -166,8 +178,10 @@ test("JTBD 2.14: bulk mutations are guarded by an undo toast that restores prior
   // ...and undo replays the API's per-ticket `prior` values (grouped by value) rather than guessing.
   expect(html).toContain("async function bulkUndo(projId, prior, field)")
   expect(html).toContain("Array.isArray(data.prior)")
-  // Non-reversible label ops get an explicit confirm instead of a silent instant mutation.
-  expect(html).toContain("if (!confirm(")
+  // Non-reversible label ops get an explicit confirm instead of a silent instant mutation — the in-app
+  // klavConfirm modal, never the native browser confirm() dialog.
+  expect(html).toMatch(/const ok = await klavConfirm\(\{\s+title: adding \? `Add label to \$\{tickets\}\?`/)
+  expect(html).not.toContain("if (!confirm(`${bulkActionLabel(body)}")
 })
 
 test("JTBD 2.14: partial bulk failures are surfaced, not silently dropped", () => {

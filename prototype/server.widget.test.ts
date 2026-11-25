@@ -438,3 +438,132 @@ test("a self-ping (Origin = app's own host) does not satisfy install verificatio
   expect(j.seen).toBe(true)
   expect(j.host).toBe("real-install.example.com")
 })
+
+// ── Select Sims management: /api/widget/sim-deployments (isolated, additive) ─────────────
+const SIM1 = `sim_w1_${ts}`
+const SIM2 = `sim_w2_${ts}`
+const setSimActive = (id: string, active: boolean) => fetch(base + `/api/personas/${id}/active?project=` + projectId, {
+  method: "PATCH", headers: { cookie: sessionCookie, "content-type": "application/json" }, body: JSON.stringify({ active }),
+})
+// The widget always says which application it is on (its page origin) — Run / Stop / status are per application. Tests that don't
+// care use one app origin; the origin-scoping tests below pass their own.
+const APP = "http://app-one.test", APP2 = "http://app-two.test"
+const simDep = (body?: unknown, headers: Record<string, string> = {}, origin: string | null = APP) => body === undefined
+  ? fetch(base + "/api/widget/sim-deployments?project=" + projectId + (origin ? "&origin=" + encodeURIComponent(origin) : ""), { headers: { cookie: sessionCookie, ...headers } })
+  : fetch(base + "/api/widget/sim-deployments", {
+      method: "POST",
+      headers: { cookie: sessionCookie, "content-type": "application/json", ...headers },
+      body: JSON.stringify(origin && typeof body === "object" && body ? { origin, ...(body as object) } : body),
+    })
+
+test("GET /api/widget/sim-deployments requires a signed-in caller", async () => {
+  const r = await fetch(base + "/api/widget/sim-deployments?project=" + projectId)
+  expect(r.status).toBe(401)
+})
+
+test("GET /api/widget/sim-deployments lists every Sim as stopped by default, with CORS", async () => {
+  const r = await simDep(undefined, { origin: X_ORIGIN })
+  expect(r.status).toBe(200)
+  expect(r.headers.get("access-control-allow-origin")).toBe(X_ORIGIN)
+  const d = await r.json()
+  const s1 = d.sims.find((s: any) => s.id === SIM1)
+  expect(s1).toMatchObject({ name: "Alex", role: "End User", active: true, run: "stopped" })
+  expect(s1.summary).toBeUndefined()
+  expect(s1.deployment).toBeUndefined()
+})
+
+test("Run / Stop round-trip: run two Sims, stop one, Stop all (the card's Close)", async () => {
+  let d = await (await simDep({ project: projectId, action: "run", simIds: [SIM1, SIM2] })).json()
+  expect(d.applied.sort()).toEqual([SIM1, SIM2].sort())
+  expect(d.sims.filter((s: any) => [SIM1, SIM2].includes(s.id)).every((s: any) => s.run === "running")).toBe(true)
+  // Already running → nothing applied, nothing skipped.
+  d = await (await simDep({ project: projectId, action: "run", simIds: [SIM1] })).json()
+  expect(d.applied).toEqual([])
+  expect(d.skipped).toEqual([])
+  d = await (await simDep({ project: projectId, action: "stop", simIds: [SIM1] })).json()
+  expect(d.applied).toEqual([SIM1])
+  expect(d.sims.find((s: any) => s.id === SIM1).run).toBe("stopped")
+  expect(d.sims.find((s: any) => s.id === SIM2).run).toBe("running")
+  // GET reflects it (state is persisted).
+  expect((await (await simDep()).json()).sims.find((s: any) => s.id === SIM2).run).toBe("running")
+  d = await (await simDep({ project: projectId, action: "stop_all" })).json()
+  expect(d.applied).toEqual([SIM2])
+  expect(d.sims.every((s: any) => s.run === "stopped")).toBe(true)
+})
+
+test("Deactivating a Sim on the Sims tab stops it; re-activating shows it stopped (never auto-runs)", async () => {
+  await simDep({ project: projectId, action: "run", simIds: [SIM2] })
+  expect((await setSimActive(SIM2, false)).status).toBe(200)
+  let s2 = (await (await simDep()).json()).sims.find((s: any) => s.id === SIM2)
+  expect(s2).toMatchObject({ active: false, run: "stopped" })
+  expect((await setSimActive(SIM2, true)).status).toBe(200)
+  s2 = (await (await simDep()).json()).sims.find((s: any) => s.id === SIM2)
+  expect(s2).toMatchObject({ active: true, run: "stopped" })
+})
+
+test("sim-deployments rejects unknown / retired actions and foreign Sims", async () => {
+  for (const action of ["nuke", "deploy", "deactivate", "pause", "resume"]) {
+    expect((await simDep({ project: projectId, action, simIds: [SIM1] })).status).toBe(400)
+  }
+  expect((await simDep({ project: projectId, action: "run", simIds: ["sim_not_here"] })).status).toBe(400)
+  expect((await simDep({ project: projectId, action: "run", simIds: [] })).status).toBe(400)
+})
+
+test("a Sim Deactivated on the Sims tab can't be run — reported in skipped; the active one still runs", async () => {
+  expect((await setSimActive(SIM1, false)).status).toBe(200)
+  try {
+    let d = await (await simDep({ project: projectId, action: "run", simIds: [SIM1] })).json()
+    expect(d.applied).toEqual([])
+    expect(d.skipped).toEqual([expect.objectContaining({ simId: SIM1 })])
+    expect(d.sims.find((s: any) => s.id === SIM1)).toMatchObject({ active: false, run: "stopped" })
+    d = await (await simDep({ project: projectId, action: "run", simIds: [SIM1, SIM2] })).json()
+    expect(d.applied).toEqual([SIM2])
+    expect(d.skipped.map((x: any) => x.simId)).toContain(SIM1)
+  } finally {
+    await setSimActive(SIM1, true)
+    await simDep({ project: projectId, action: "stop_all" })
+  }
+})
+
+test("widget reviews (runScope=widget) only include the Sims this user has running", async () => {
+  const src = await Bun.file(import.meta.dir + "/server.ts").text()
+  const i = src.indexOf('if (body.runScope === "widget" && db)')
+  expect(i).toBeGreaterThan(-1)
+  expect(src.slice(i, i + 420)).toContain("runningSimIds(db, projectId, meR, normOrigin(pageUrl) || null)")   // the REVIEWED page's application decides
+})
+
+test("KD-origin: Sims run on one application only — a Run on app one is not running on app two or on Klavity", async () => {
+  try {
+    const d = await (await simDep({ project: projectId, action: "run", simIds: [SIM1] })).json()
+    expect(d.applied).toEqual([SIM1])
+    const on = async (origin: string | null) => (await (await simDep(undefined, {}, origin)).json()).sims.find((s: any) => s.id === SIM1).run
+    expect(await on(APP)).toBe("running")
+    expect(await on(APP2)).toBe("stopped")
+    expect(await on(base)).toBe("stopped")             // Klavity's own pages
+    expect(await on(null)).toBe("running")             // the Sims tab (no origin) sees it running somewhere
+    // Stop on the other application doesn't touch it; Stop with no origin (Sims tab) stops it everywhere.
+    await simDep({ project: projectId, action: "stop_all" }, {}, APP2)
+    expect(await on(APP)).toBe("running")
+    await simDep({ project: projectId, action: "stop", simIds: [SIM1] }, {}, null)
+    expect(await on(APP)).toBe("stopped")
+  } finally { await simDep({ project: projectId, action: "stop_all" }, {}, null) }
+})
+
+test("KD-origin: a Run from the Sims tab (no origin) goes to the application last started on; with none it is skipped", async () => {
+  try {
+    let d = await (await simDep({ project: projectId, action: "run", simIds: [SIM1] }, {}, null)).json()
+    expect(d.applied).toEqual([])
+    expect(d.skipped).toEqual([expect.objectContaining({ simId: SIM1 })])
+    await simDep({ project: projectId, action: "run", simIds: [SIM2] }, {}, APP2)      // last started on app two
+    d = await (await simDep({ project: projectId, action: "run", simIds: [SIM1] }, {}, null)).json()
+    expect(d.applied).toEqual([SIM1])
+    const on = async (origin: string) => (await (await simDep(undefined, {}, origin)).json()).sims.find((s: any) => s.id === SIM1).run
+    expect(await on(APP2)).toBe("running")
+    expect(await on(APP)).toBe("stopped")
+  } finally { await simDep({ project: projectId, action: "stop_all" }, {}, null) }
+})
+
+test("sim-deployments leaves the legacy /api/widget/sims contract unchanged", async () => {
+  const d = await (await fetch(base + "/api/widget/sims?project=" + projectId)).json()
+  for (const s of d.sims) expect(Object.keys(s).sort()).toEqual(["accent", "id", "initials", "name"])
+})

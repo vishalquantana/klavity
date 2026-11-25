@@ -44,35 +44,34 @@ describe('buildModal "Record me" gating', () => {
 })
 
 describe('buildModal "Record me" attach + submit', () => {
-  it('clicking Record → onRecord resolves → a video chip appears in the recordings strip', async () => {
+  it('clicking Record → onRecord resolves → a video tile appears in the gallery strip', async () => {
     const onRecord = vi.fn(async () => sampleRecording)
     const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', allowRecording: true, onRecord, onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
     ;(q(ctrl, '#klavity-record') as HTMLButtonElement).click()
     await new Promise(r => setTimeout(r, 0))
     expect(onRecord).toHaveBeenCalledTimes(1)
-    const strip = q(ctrl, '#klavity-recordings')!
-    expect(strip.hidden).toBe(false)
-    const chip = strip.querySelector('.kl-rec-chip')
-    expect(chip).not.toBeNull()
-    expect(chip!.textContent).toContain('0:41') // 41s duration rendered
+    const tile = q(ctrl, '.klavity-strip .kl-rec-tile')
+    expect(tile).not.toBeNull()
+    expect(tile!.textContent).toContain('0:41') // 41s duration rendered
     ctrl.close()
   })
 
-  it('a null onRecord result (cancel) adds no chip', async () => {
+  it('a null onRecord result (cancel) adds no tile', async () => {
     const onRecord = vi.fn(async () => null)
     const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', allowRecording: true, onRecord, onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
     ;(q(ctrl, '#klavity-record') as HTMLButtonElement).click()
     await new Promise(r => setTimeout(r, 0))
-    expect(q(ctrl, '#klavity-recordings')!.querySelector('.kl-rec-chip')).toBeNull()
+    expect(q(ctrl, '.klavity-strip .kl-rec-tile')).toBeNull()
     ctrl.close()
   })
 
-  it('remove button drops the recording chip', async () => {
+  it('remove button drops the recording tile', async () => {
     const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', allowRecording: true, onRecord: async () => sampleRecording, onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
     ;(q(ctrl, '#klavity-record') as HTMLButtonElement).click()
     await new Promise(r => setTimeout(r, 0))
-    ;(q(ctrl, '#klavity-recordings')!.querySelector('.kl-file-rm') as HTMLButtonElement).click()
-    expect(q(ctrl, '#klavity-recordings')!.querySelector('.kl-rec-chip')).toBeNull()
+    expect(q(ctrl, '.klavity-strip .kl-rec-tile')).not.toBeNull()
+    ;(q(ctrl, '.klavity-strip .kl-rec-tile .klavity-rm') as HTMLButtonElement).click()
+    expect(q(ctrl, '.klavity-strip .kl-rec-tile')).toBeNull()
     ctrl.close()
   })
 
@@ -89,6 +88,31 @@ describe('buildModal "Record me" attach + submit', () => {
     const payload = onSubmit.mock.calls[0][0]
     expect(payload.recordings).toHaveLength(1)
     expect(payload.recordings[0].id).toBe('rec_test123')
+    ctrl.close()
+  })
+})
+
+// KD-1074: minimizing the composer and resuming lost the recorded video. The composer now reports every
+// recordings change to the host (which persists it) and re-shows recordings seeded on open.
+describe('buildModal "Record me" persistence (KD-1074)', () => {
+  it('fires onRecordingsChange when a recording is attached and again when it is removed', async () => {
+    const onRecordingsChange = vi.fn()
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', allowRecording: true, onRecord: async () => sampleRecording, onRecordingsChange, onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    ;(q(ctrl, '#klavity-record') as HTMLButtonElement).click()
+    await new Promise(r => setTimeout(r, 0))
+    expect(onRecordingsChange).toHaveBeenCalledTimes(1)
+    expect(onRecordingsChange.mock.calls[0][0].map((r: ReportRecording) => r.id)).toEqual(['rec_test123'])
+    ;(q(ctrl, '.klavity-strip .kl-rec-tile .klavity-rm') as HTMLButtonElement).click()
+    expect(onRecordingsChange).toHaveBeenCalledTimes(2)
+    expect(onRecordingsChange.mock.calls[1][0]).toEqual([])
+    ctrl.close()
+  })
+
+  it('shows initialRecordings on open without echoing them back as a change', () => {
+    const onRecordingsChange = vi.fn()
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', allowRecording: true, onRecord: async () => null, initialRecordings: [sampleRecording], onRecordingsChange, onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    expect(q(ctrl, '.klavity-strip .kl-rec-tile')).not.toBeNull()
+    expect(onRecordingsChange).not.toHaveBeenCalled()
     ctrl.close()
   })
 })

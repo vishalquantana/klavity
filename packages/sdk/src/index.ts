@@ -159,6 +159,23 @@ export function openModal(type: ReportType = 'bug') {
         return (data && data.draft) ? data.draft : null
       } catch { return null }
     },
+    // KD-995: split a "Record me" walkthrough into separate tickets (POST /api/report/split → the issues the
+    // reporter narrated). Resolve null on any failure so the composer keeps the single ticket.
+    onSplitRecording: async (audio: Blob, ctx?: { text?: string; frames?: Array<{ atSec: number; dataUrl: string }> }) => {
+      try {
+        const fd = new FormData()
+        fd.append('projectId', _projectId)
+        fd.append('audio', audio, 'recording.webm')
+        if (audio.type) fd.append('mime', audio.type)
+        fd.append('pageUrl', location.href)
+        if (ctx?.text) fd.append('text', ctx.text)
+        if (ctx?.frames?.length) fd.append('frames', JSON.stringify(ctx.frames))
+        const res = await fetchWithTimeout(backendBase() + '/api/report/split', { method: 'POST', body: fd }, 90_000)
+        if (!res.ok) return null
+        const data = await res.json().catch(() => null)
+        return (data && Array.isArray(data.issues)) ? data.issues : null
+      } catch { return null }
+    },
     // KLA-505 server-side dictation (POST /api/voice/transcribe): the Voice button hands each mic clip here;
     // resolve null on any failure so the composer falls back to Web Speech.
     onDictate: async (audio: Blob) => {
@@ -189,6 +206,8 @@ export function openModal(type: ReportType = 'bug') {
     onRecord: (onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => recordMe({ onPhase }),
     // PX4 #425: allow non-image file attachments through the unified attach control (parity with widget).
     allowFileAttachments: true,
+    // Files over the single-request caps upload in chunks first (core submitReport → large-upload).
+    largeFileUploads: true,
     onSubmit: async (p) => {
       // KLA-729 full-payload parity: compress screenshots + build index-aligned thumbnails (as the widget
       // does), attach the picked-element / drawn annotations, recordings, files, the required-email gate

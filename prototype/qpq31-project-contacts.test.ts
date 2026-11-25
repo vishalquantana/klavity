@@ -91,6 +91,26 @@ test("the flag only ships alongside an email", () => {
   expect(WIDGET).toContain('if (payload.reporterEmail && payload.createContact) fd.set("create_contact", "1")')
 })
 
+// ── KD-983: the lookup works for a signed-in widget on a customer's site ─────
+test("the people lookup lists the roster whether or not the reporter is signed in", () => {
+  // On a third-party site the klavity.in cookie is never sent, so a cookie-only gate left the reporter
+  // with an empty dropdown and re-offered Create for an address they had already created.
+  const block = SERVER.match(/const m = path\.match\(\/\^\\\/api\\\/projects\\\/\(\[\^\/\]\+\)\\\/people\$\/\)[\s\S]*?return json\(\{ people: hits \}\)/)
+  expect(block).not.toBeNull()
+  expect(block![0]).not.toContain("Sign in to continue.")                            // no login gate
+  expect(block![0]).toContain('rlAllow(`people:ip:')                                 // but scrape-limited
+  expect(block![0]).toContain("listProjectContacts(pid)")
+  // and the old cookie-only copy is gone, so there is exactly one handler
+  expect(SERVER).not.toContain('sub === "/people"')
+})
+
+test("the widget sends its token with the people lookup", () => {
+  const fn = WIDGET.match(/onLookupPeople: async \(q: string\) => \{[\s\S]*?\n      \},/)
+  expect(fn).not.toBeNull()
+  expect(fn![0]).toContain("headers.authorization = `Bearer ${getToken()}`")
+  expect(fn![0]).toContain('{ credentials: "include", headers }')
+})
+
 // ── visible + taggable in the project ────────────────────────────────────────
 test("contacts feed the @mention and assignee pickers", () => {
   const fn = HTML.match(/function projectMemberEmails\(\)[\s\S]*?\n\}/)
@@ -106,17 +126,12 @@ test("the dashboard payload sends contacts as their own array, not merged into m
   expect(SERVER).toContain("members: [], contacts: [],")
 })
 
-test("a contact is labelled as such so nobody mistakes one for a teammate", () => {
-  expect(HTML).toContain("tkt-contact-tag")
-  expect(HTML).toContain("function isProjectContact(")
-  // isProjectContact must exclude real members, or a teammate would be mislabelled
-  const fn = HTML.match(/function isProjectContact\(email\)[\s\S]*?\n\}/)
-  expect(fn![0]).toContain("state.members")
-  expect(fn![0]).toContain("return false")
+test("the ticket's Reporter carries no contact tag", () => {
+  expect(HTML).not.toContain("tkt-contact-tag")
+  expect(HTML).not.toContain("isProjectContact(")
 })
 
-test("the ticket shows the contact's name when known, with the address beneath", () => {
-  expect(HTML).toContain("function contactNameFor(")
-  expect(HTML).toContain("contactNameFor(t.reporterEmail) || t.reporterEmail")
-  expect(HTML).toContain("tkt-reporter-sub")
+test("the ticket's Reporter shows only the email, never the contact's name", () => {
+  expect(HTML).not.toContain("contactNameFor(t.reporterEmail)")
+  expect(HTML).toContain('<span class="tkt-reporter" title="${esc(t.reporterEmail)}">${esc(t.reporterEmail)}</span>')
 })

@@ -90,8 +90,29 @@ function fingerprintOnly(target: TrajectoryStep["target"]): Fingerprint | undefi
  * Crystallize a resolved trajectory into a persisted Trail.
  * Project-scoped (projectId first). Pure of browser/LLM — only Layer A helpers + cacheKey.
  */
-export async function crystallize(projectId: string, traj: Trajectory): Promise<CrystallizeResult> {
-  const trailId = await createTrail(projectId, {
+/** A dropped/failed network call to the DB or an API ("The socket connection was closed unexpectedly", ECONNRESET, fetch failed). */
+export function isTransientNetworkError(err: unknown): boolean {
+  const msg = String((err as any)?.message ?? err ?? "")
+  return /socket connection was closed|socket hang up|econnreset|econnrefused|etimedout|epipe|fetch failed|network (error|connection)|connection (closed|reset|terminated)|unexpected eof|\b50[234]\b/i.test(msg)
+}
+
+/** Retry one DB write a few times when the network drops; any other error propagates unchanged. */
+export async function retryTransient<T>(fn: () => Promise<T>, onRetry?: (attempt: number, err: unknown) => void, tries = 4): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try { return await fn() }
+    catch (e) {
+      if (attempt >= tries || !isTransientNetworkError(e)) throw e
+      onRetry?.(attempt, e)
+      await new Promise((r) => setTimeout(r, 500 * attempt))
+    }
+  }
+}
+
+export async function crystallize(projectId: string, traj: Trajectory, onProgress?: () => void): Promise<CrystallizeResult> {
+  // Every write is a round trip to the (remote) DB: retry a dropped connection per write instead of losing the whole authored run,
+  // and tell the caller it is still alive so a long crystallize is not mistaken for a hang.
+  const retry = <T,>(fn: () => Promise<T>) => retryTransient(fn, (n, e) => { console.warn(`[trails-crystallize] DB write failed (${String((e as any)?.message ?? e).slice(0, 120)}), retry ${n}`); onProgress?.() })
+  const trailId = await retry(() => createTrail(projectId, {
     name: traj.name,
     intent: traj.intent,
     baseUrl: traj.baseUrl,
@@ -104,21 +125,22 @@ export async function crystallize(projectId: string, traj: Trajectory): Promise<
     sourceSimId: traj.sourceSimId ?? null,
     schedule: traj.schedule ?? null,
     scheduleTz: traj.scheduleTz ?? null,
-  })
+  }))
 
   const stepIds: string[] = []
   const cacheKeys: Record<string, string> = {}
 
   for (let i = 0; i < traj.steps.length; i++) {
+    onProgress?.()
     const step = traj.steps[i]
-    const stepId = await addTrailStep(projectId, trailId, {
+    const stepId = await retry(() => addTrailStep(projectId, trailId, {
       idx: i,
       action: step.action,
       actionValue: step.actionValue,
       target: fingerprintOnly(step.target),
       checkpoint: step.checkpoint,
       timeoutMs: step.timeoutMs,
-    })
+    }))
     stepIds.push(stepId)
 
     // Seed a cache row for every step that resolves a concrete element — every actionable step AND
@@ -127,7 +149,7 @@ export async function crystallize(projectId: string, traj: Trajectory): Promise<
     const sel = resolvedSelector(step)
     if (sel) {
       const key = await stepCacheKey(projectId, trailId, step, sel)
-      await upsertLocatorCache(projectId, {
+      await retry(() => upsertLocatorCache(projectId, {
         trailId,
         stepId,
         cacheKey: key,
@@ -135,7 +157,7 @@ export async function crystallize(projectId: string, traj: Trajectory): Promise<
         fingerprint: fingerprintOnly(step.target),
         confidence: 1.0,
         source: "crystallize",
-      })
+      }))
       cacheKeys[stepId] = key
     }
   }

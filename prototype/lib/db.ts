@@ -1,11 +1,15 @@
 // Turso / libSQL access: users, email-OTP login, sessions, accounts, projects, memberships.
 import { createClient, type Client } from "@libsql/client"
+import { usableCheckpointFromJson, isNewerUsableCheckpoint } from "./author-checkpoint"
 import { insightsFromTraits, type Trait, type TraitKind, type TraitStatus, type TraitEventRow } from "./provenance"
 import { encryptSecret, sha256hex } from "./crypto"
 import type { SanitizedAttr } from "./attr"
 import type { ParsedLine } from "./transcript-parse"
 import { sanitizeLabelRules, type LabelRule } from "./label-rules"
+import { snapshotStatements } from "./deleted-tickets"
 import { normalizeReferer, coarsenUa } from "./shortlinks"
+import { BASELINE_QA_SIM, BASELINE_QA_SOURCE, baselineQaId } from "./baseline-qa"
+import { normalizePersonaKind, parseValidations, canonicalValidations, VALIDATIONS_VERSION, QA_RULES, type PersonaKind, type PersonaValidations } from "./sim-validations"
 
 const url = process.env.TURSO_DATABASE_URL
 const authToken = process.env.TURSO_AUTH_TOKEN
@@ -15,12 +19,39 @@ const authToken = process.env.TURSO_AUTH_TOKEN
 // SQL + duration (surfaces in prod journalctl). Wall-clock captures network RTT to remote Turso, which is
 // the cost that actually dominates hot paths. Args are deliberately NOT logged (avoid PII/emails/tokens).
 const SLOW_QUERY_MS = Number(process.env.KLAV_SLOW_QUERY_MS) || 200
-function instrumentClient(c: Client): Client {
+
+// KD-2878: a dropped connection to remote Turso ("The socket connection was closed unexpectedly", ECONNRESET,
+// "fetch failed"…) is almost always a one-off network blip. It used to fail the whole request — on a page load
+// that surfaced as Bun's raw error page. Retry ONCE, but only for READ statements: a write whose socket dropped
+// may already have been applied, so repeating it could duplicate it.
+const TRANSIENT_DB_ERROR = /socket connection was closed|ECONNRESET|ECONNREFUSED|EPIPE|ETIMEDOUT|fetch failed|network (?:error|connection was lost)|connection (?:reset|closed)|other side closed|UND_ERR_SOCKET/i
+export function isTransientDbError(e: unknown): boolean {
+  const err = e as any
+  const parts = [err?.message, err?.code, err?.cause?.message, err?.cause?.code].filter(Boolean).map(String)
+  return parts.some((p) => TRANSIENT_DB_ERROR.test(p))
+}
+export function isReadOnlySql(sql: unknown): boolean {
+  const s = String(sql || "").replace(/^\s*(?:--[^\n]*\n|\/\*[\s\S]*?\*\/|\s)*/, "").toUpperCase()
+  if (s.startsWith("SELECT") || s.startsWith("PRAGMA") || s.startsWith("EXPLAIN")) return true
+  // WITH … SELECT (a CTE that ends in a read); a CTE feeding INSERT/UPDATE/DELETE is a write.
+  return s.startsWith("WITH") && !/\b(INSERT|UPDATE|DELETE|REPLACE)\b/.test(s)
+}
+const DB_RETRY_DELAY_MS = 150
+
+export function instrumentClient(c: Client): Client {
   const orig = c.execute.bind(c)
   ;(c as any).execute = async (stmt: any, ...rest: any[]) => {
     const t0 = performance.now()
     try {
-      return await orig(stmt, ...rest)
+      try {
+        return await orig(stmt, ...rest)
+      } catch (e) {
+        const sql = typeof stmt === "string" ? stmt : stmt?.sql
+        if (!isTransientDbError(e) || !isReadOnlySql(sql)) throw e
+        console.warn(`[db-retry] ${String((e as any)?.message || e).slice(0, 120)} — retrying read once`)
+        await new Promise((r) => setTimeout(r, DB_RETRY_DELAY_MS))
+        return await orig(stmt, ...rest)
+      }
     } finally {
       const ms = performance.now() - t0
       if (ms >= SLOW_QUERY_MS) {
@@ -285,7 +316,8 @@ export async function applySchema(c: Client) {
        screenshot_id TEXT,
        source_quote TEXT,
        reporter_email TEXT,
-       created_at INTEGER NOT NULL
+       created_at INTEGER NOT NULL,
+       evidence_json TEXT
      )`,
     `CREATE INDEX IF NOT EXISTS feedback_occ_idx ON feedback_occurrences (feedback_id, seen_at)`,
     // ── A.10 dedup override memory (additive): records human merge/split decisions so intake
@@ -734,6 +766,76 @@ export async function applySchema(c: Client) {
        created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
        UNIQUE(project_id, name))`,
     `CREATE INDEX IF NOT EXISTS test_acc_proj_idx ON test_accounts (project_id)`,
+    // ── AutoSim Projects (KD-2255): organisational hierarchy INSIDE a Klavity project:
+    //    autosim_project → test_case_group (optional) → test_case → trails (= AutoSims).
+    //    Every row carries the Klavity project_id so all reads/writes stay tenant-scoped. No SQL FKs
+    //    (libsql has foreign_keys off); deletion rules live in lib/autosim-projects.ts and never
+    //    delete a Trail or a Test Account — they only unlink. ──
+    `CREATE TABLE IF NOT EXISTS autosim_projects (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL,
+       description TEXT NOT NULL DEFAULT '',
+       created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+       UNIQUE(project_id, name))`,
+    `CREATE TABLE IF NOT EXISTS autosim_test_case_groups (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, autosim_project_id TEXT NOT NULL,
+       name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+       UNIQUE(autosim_project_id, name))`,
+    `CREATE TABLE IF NOT EXISTS autosim_test_cases (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, autosim_project_id TEXT NOT NULL,
+       group_id TEXT, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+       status TEXT NOT NULL DEFAULT 'active',
+       test_account_id TEXT,                 -- NULL = run without credentials; else the login to use
+       start_url TEXT,                       -- where its AutoSims start (prefills the wizard)
+       created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS atc_group_ap_idx ON autosim_test_case_groups (project_id, autosim_project_id)`,
+    `CREATE INDEX IF NOT EXISTS atc_case_ap_idx ON autosim_test_cases (project_id, autosim_project_id)`,
+    // ── F-01 Requirements-driven validation: an uploaded requirements document → its requirements
+    //    (REQ-001…) → generated test scenarios (TS-001…, each linked to requirement(s) and, once created,
+    //    to a test case) → requirement runs (a queue of test cases executed one after another) whose
+    //    items hold the validation result (actual vs expected) + evidence. Tenant-scoped by project_id. ──
+    `CREATE TABLE IF NOT EXISTS autosim_requirement_docs (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, autosim_project_id TEXT NOT NULL,
+       filename TEXT NOT NULL, content_type TEXT, size_bytes INTEGER NOT NULL DEFAULT 0,
+       source_key TEXT,                      -- stored original document (object storage), NULL if not kept
+       title TEXT NOT NULL DEFAULT '', start_url TEXT,
+       features_json TEXT, workflows_json TEXT, issues_json TEXT, clarifications_json TEXT,
+       created_by TEXT, created_at INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS areqdoc_ap_idx ON autosim_requirement_docs (project_id, autosim_project_id)`,
+    `CREATE TABLE IF NOT EXISTS autosim_requirements (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, doc_id TEXT NOT NULL, autosim_project_id TEXT NOT NULL,
+       ref TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0,
+       title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', type TEXT NOT NULL DEFAULT 'functional',
+       feature TEXT NOT NULL DEFAULT '', section TEXT NOT NULL DEFAULT '', quote TEXT NOT NULL DEFAULT '',
+       preconditions TEXT NOT NULL DEFAULT '', expected_result TEXT NOT NULL DEFAULT '',
+       ambiguous INTEGER NOT NULL DEFAULT 0, clarification TEXT NOT NULL DEFAULT '',
+       created_at INTEGER NOT NULL, UNIQUE(doc_id, ref))`,
+    `CREATE INDEX IF NOT EXISTS areq_doc_idx ON autosim_requirements (project_id, doc_id)`,
+    `CREATE TABLE IF NOT EXISTS autosim_req_scenarios (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, doc_id TEXT NOT NULL,
+       ref TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0, title TEXT NOT NULL,
+       requirement_ids_json TEXT NOT NULL DEFAULT '[]',
+       preconditions TEXT NOT NULL DEFAULT '', steps TEXT NOT NULL DEFAULT '', expected_result TEXT NOT NULL DEFAULT '',
+       start_url TEXT, needs_login INTEGER NOT NULL DEFAULT 0, missing_json TEXT NOT NULL DEFAULT '[]',
+       status TEXT NOT NULL DEFAULT 'ready',
+       test_case_id TEXT,                    -- set once the user creates a test case from it
+       created_at INTEGER NOT NULL, UNIQUE(doc_id, ref))`,
+    `CREATE INDEX IF NOT EXISTS areqsc_doc_idx ON autosim_req_scenarios (project_id, doc_id)`,
+    `CREATE TABLE IF NOT EXISTS autosim_requirement_runs (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, autosim_project_id TEXT NOT NULL, doc_id TEXT,
+       status TEXT NOT NULL DEFAULT 'queued',  -- queued | running | cancelling | done | cancelled
+       created_by TEXT, created_at INTEGER NOT NULL, started_at INTEGER, finished_at INTEGER)`,
+    `CREATE INDEX IF NOT EXISTS areqrun_ap_idx ON autosim_requirement_runs (project_id, autosim_project_id)`,
+    `CREATE TABLE IF NOT EXISTS autosim_requirement_run_items (
+       id TEXT PRIMARY KEY, run_id TEXT NOT NULL, project_id TEXT NOT NULL, position INTEGER NOT NULL,
+       test_case_id TEXT NOT NULL,
+       status TEXT NOT NULL DEFAULT 'queued',  -- queued | running | passed | failed | blocked | error | cancelled
+       mode TEXT,                              -- record (no AutoSim yet) | replay
+       author_session_id TEXT, trail_id TEXT, walk_run_id TEXT,
+       expected_result TEXT NOT NULL DEFAULT '', observed TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '',
+       evidence_json TEXT, started_at INTEGER, finished_at INTEGER)`,
+    `CREATE INDEX IF NOT EXISTS areqitem_run_idx ON autosim_requirement_run_items (run_id, position)`,
+    `CREATE INDEX IF NOT EXISTS areqitem_tc_idx ON autosim_requirement_run_items (project_id, test_case_id)`,
     // ── AutoSim auth setup (AT3): short-lived write-only setup token + encrypted login config. ──
     `CREATE TABLE IF NOT EXISTS autosim_auth_setup_tokens (
        id TEXT PRIMARY KEY,
@@ -1115,6 +1217,13 @@ export async function applySchema(c: Client) {
     // reads never drag a 100s-of-KB BLOB out of remote Turso. Preload so an established DB issues zero
     // ALTERs on reboot.
     "feedback_replays",
+    // Phase-1 QA evidence integrity: feedback_occurrences.evidence_json records whether each repeat sighting's screenshot was
+    // actually captured. Preloaded so an established DB issues zero ALTERs on reboot.
+    "feedback_occurrences",
+    // KD-2255: test_accounts gains autosim_project_id; autosim_test_cases gains test_account_id/start_url.
+    "test_accounts", "autosim_test_cases",
+    // F-01: autosim_projects gains setup_steps (common steps run before every test case, e.g. PX4 login).
+    "autosim_projects",
   ]
   const _cols = await loadTableColumns(c, ALTERED_TABLES)
   const needCol = (table: string, col: string) => !(_cols.get(table)?.has(col) ?? false)
@@ -1165,6 +1274,12 @@ export async function applySchema(c: Client) {
     await c.execute("ALTER TABLE personas ADD COLUMN is_global INTEGER NOT NULL DEFAULT 0")
       .catch((e: any) => console.warn("personas.is_global ALTER skipped:", e?.message || e))
   }
+  // WP-S2 (Sim Active/Deactivate): active=0 keeps the Sim, its history and its row, but every path that RUNS or OFFERS Sims skips it
+  // (callers opt in with { activeOnly: true }). DEFAULT 1 so every existing Sim stays active with no data migration.
+  if (needCol("personas", "active")) {
+    await c.execute("ALTER TABLE personas ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+      .catch((e: any) => console.warn("personas.active ALTER skipped:", e?.message || e))
+  }
   // Additive idempotent ALTERs for new feedback management columns.
   const feedbackAlters: [string, string][] = [
     ["status",     "TEXT NOT NULL DEFAULT 'open'"],
@@ -1208,6 +1323,11 @@ export async function applySchema(c: Client) {
     // PX4 #428: captured client/browser/app info as a JSON object { browser,browserVersion,os,viewport,
     // locale,timezone,... }. Null on older rows / when the client sent none.
     ["client_info_json",       "TEXT"],
+    // KD (multi-capture tickets): the 2nd+ report screenshots (picked element, selected region, extra full-page
+    // shots) as a JSON array of screenshot ids. screenshot_id keeps the FIRST shot exactly as before; the rest
+    // used to be uploaded + ledgered but linked to nothing, so they never showed on the ticket. Null on older
+    // rows / single-shot reports — additive, back-compat.
+    ["extra_screenshots_json", "TEXT"],
     // KLAVITYKLA-453: count of report evidence items (screenshots + attachments + recordings) whose BYTES
     // failed to upload to object storage at ingest (S3 misconfigured / write error). The report is still
     // persisted, but this stamp makes the silent evidence loss visible (dashboard render is a follow-up).
@@ -1233,6 +1353,7 @@ export async function applySchema(c: Client) {
         console.warn(`feedback.${col} ALTER skipped:`, e?.message || e))
     }
   }
+  if (needCol("feedback_occurrences", "evidence_json")) await c.execute("ALTER TABLE feedback_occurrences ADD COLUMN evidence_json TEXT").catch((e: any) => console.warn("feedback_occurrences.evidence_json ALTER skipped:", e?.message || e))
   await c.execute(`CREATE INDEX IF NOT EXISTS feedback_issue_idx ON feedback (project_id, issue_key)`)
     .catch((e: any) => console.warn("feedback_issue_idx skipped:", e?.message || e))
   await c.execute(`CREATE INDEX IF NOT EXISTS feedback_sig_idx ON feedback (project_id, signature)`)
@@ -1430,6 +1551,31 @@ export async function applySchema(c: Client) {
   // Additive, nullable — most trails are authored directly and never carry a source Sim.
   if (needCol("trails", "source_sim_id")) await c.execute("ALTER TABLE trails ADD COLUMN source_sim_id TEXT").catch((e: any) =>
     console.warn("trails.source_sim_id ALTER skipped:", e?.message || e))
+  // KD-2255: AutoSim Projects hierarchy links. All nullable → existing Trails / Test Accounts /
+  // author sessions are untouched ("Unassigned" / shared-across-projects) until a user assigns them.
+  if (needCol("trails", "autosim_project_id")) await c.execute("ALTER TABLE trails ADD COLUMN autosim_project_id TEXT").catch((e: any) =>
+    console.warn("trails.autosim_project_id ALTER skipped:", e?.message || e))
+  if (needCol("trails", "test_case_id")) await c.execute("ALTER TABLE trails ADD COLUMN test_case_id TEXT").catch((e: any) =>
+    console.warn("trails.test_case_id ALTER skipped:", e?.message || e))
+  if (needCol("author_sessions", "test_case_id")) await c.execute("ALTER TABLE author_sessions ADD COLUMN test_case_id TEXT").catch((e: any) =>
+    console.warn("author_sessions.test_case_id ALTER skipped:", e?.message || e))
+  // autosim_test_cases shipped to local dev DBs before these two columns existed.
+  if (needCol("autosim_test_cases", "test_account_id")) await c.execute("ALTER TABLE autosim_test_cases ADD COLUMN test_account_id TEXT").catch((e: any) =>
+    console.warn("autosim_test_cases.test_account_id ALTER skipped:", e?.message || e))
+  if (needCol("autosim_test_cases", "start_url")) await c.execute("ALTER TABLE autosim_test_cases ADD COLUMN start_url TEXT").catch((e: any) =>
+    console.warn("autosim_test_cases.start_url ALTER skipped:", e?.message || e))
+  // F-01: common setup steps per AutoSim project (login / security code / pick company …) prepended to test cases.
+  if (needCol("autosim_projects", "setup_steps")) await c.execute("ALTER TABLE autosim_projects ADD COLUMN setup_steps TEXT").catch((e: any) =>
+    console.warn("autosim_projects.setup_steps ALTER skipped:", e?.message || e))
+  // F-01: test cases carry their own preconditions + expected result and the requirement they verify.
+  for (const col of ["preconditions", "expected_result", "requirement_id"]) {
+    if (needCol("autosim_test_cases", col)) await c.execute(`ALTER TABLE autosim_test_cases ADD COLUMN ${col} TEXT`).catch((e: any) =>
+      console.warn(`autosim_test_cases.${col} ALTER skipped:`, e?.message || e))
+  }
+  if (needCol("test_accounts", "autosim_project_id")) await c.execute("ALTER TABLE test_accounts ADD COLUMN autosim_project_id TEXT").catch((e: any) =>
+    console.warn("test_accounts.autosim_project_id ALTER skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS trail_tc_idx ON trails(project_id, test_case_id)").catch((e: any) =>
+    console.warn("trail_tc_idx skipped:", e?.message || e))
   // KLA-73: walk_judgments — one row per (run, persona) judgment session.
   await c.execute(`CREATE TABLE IF NOT EXISTS walk_judgments (
     id TEXT PRIMARY KEY,
@@ -1545,7 +1691,7 @@ export async function applySchema(c: Client) {
       WHERE f2.project_id = feedback.project_id
         AND (f2.created_at < feedback.created_at
           OR (f2.created_at = feedback.created_at AND f2.id <= feedback.id))
-    ) WHERE seq_num IS NULL
+    ) WHERE seq_num IS NULL AND sim_id IS NULL   -- KD-3082: a Sim Report gets its ticket number only when accepted
   `).catch((e: any) => console.warn("feedback.seq_num backfill skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS feedback_seq_idx ON feedback (project_id, seq_num)")
     .catch((e: any) => console.warn("feedback_seq_idx skipped:", e?.message || e))
@@ -1577,6 +1723,14 @@ export async function applySchema(c: Client) {
   // duplicates deterministically FIRST (renumber the affected projects by created_at,id), THEN
   // create the unique index and VERIFY it exists — an unrepairable failure is a loud CRITICAL.
   await dedupeAndIndexFeedbackSeq(c)
+  // KD-3082: while a Sim Report waits in Sim Reports it has its OWN per-project count (sim_seq_num from projects.sim_ticket_seq,
+  // shown <KEY>-SIM-<n>). When a person ACCEPTS it, it takes the next number of the Tickets sequence (seq_num from
+  // projects.ticket_seq) and shows <KEY>-SIM-<ticket number> on the Tickets board. Additive, idempotent.
+  if (needCol("feedback", "sim_seq_num")) await c.execute("ALTER TABLE feedback ADD COLUMN sim_seq_num INTEGER")
+    .catch((e: any) => console.warn("feedback.sim_seq_num ALTER skipped:", e?.message || e))
+  if (needCol("projects", "sim_ticket_seq")) await c.execute("ALTER TABLE projects ADD COLUMN sim_ticket_seq INTEGER NOT NULL DEFAULT 0")
+    .catch((e: any) => console.warn("projects.sim_ticket_seq ALTER skipped:", e?.message || e))
+  await backfillSimSeq(c)
   // Redirect map for renamed slugs/keys (never-404 contract). Populated by Phase-2 rename flows;
   // the resolver already consults it so an old handle 301s to the current pretty URL.
   await c.execute(`CREATE TABLE IF NOT EXISTS alias_redirects (
@@ -1635,6 +1789,17 @@ export async function applySchema(c: Client) {
   // rows = unknown origin; these are NOT treated as transcript Sims (step 4 stays unticked).
   if (needCol("personas", "sim_source")) await c.execute("ALTER TABLE personas ADD COLUMN sim_source TEXT")
     .catch((e: any) => console.warn("personas.sim_source ALTER skipped:", e?.message || e))
+  // Visual-QA validations: persona_kind ('qa' | 'customer'; NULL = legacy = customer) is the explicit, persistent QA classification;
+  // validations_json holds the structured mandatory rules for QA Sims (see lib/sim-validations.ts). Additive + idempotent.
+  if (needCol("personas", "persona_kind")) await c.execute("ALTER TABLE personas ADD COLUMN persona_kind TEXT")
+    .catch((e: any) => console.warn("personas.persona_kind ALTER skipped:", e?.message || e))
+  if (needCol("personas", "validations_json")) await c.execute("ALTER TABLE personas ADD COLUMN validations_json TEXT")
+    .catch((e: any) => console.warn("personas.validations_json ALTER skipped:", e?.message || e))
+  await c.execute({ sql: "UPDATE personas SET persona_kind='qa' WHERE sim_source=? AND persona_kind IS NULL", args: [BASELINE_QA_SOURCE] })
+    .catch((e: any) => console.warn("personas.persona_kind baseline backfill skipped:", e?.message || e))
+  // Rules were reduced to the three mandatory QA rules (version 2): refresh any QA Sim still holding the retired 7-category set.
+  await c.execute({ sql: "UPDATE personas SET validations_json=? WHERE persona_kind='qa' AND (validations_json IS NULL OR validations_json NOT LIKE '%\"version\":2%')", args: [JSON.stringify(canonicalValidations())] })
+    .catch((e: any) => console.warn("personas.validations_json refresh skipped:", e?.message || e))
   // KLAVITYKLA-253 (JTBD B.13): carry the ORIGINATING grounded quote through graduation.
   // source_quote      — the verbatim complaint/evidence the expectation was born from (Snap/Sim/AutoSim).
   // source_quote_verified — 1 = verified against source text (trait provenance / page text), 0 = present but
@@ -2105,17 +2270,94 @@ export async function backfillTrailStatus(c: Client): Promise<{ activated: numbe
 
 // Authoring runs in-process holding the walk slot; a service restart (the merge-train restarts on
 // every deploy) kills it mid-flight and leaves its author_sessions row 'running' forever — the UI
-// polls a zombie. At boot no authoring can legitimately be in flight (single-process design), so
-// mark every 'running' session failed with an honest reason. Observed live 2026-07-04.
-export async function sweepOrphanedAuthorSessions(c: Client): Promise<{ swept: number }> {
-  const r = await c.execute({
-    sql: `UPDATE author_sessions SET status='failed',
-            stall_reason='interrupted by a server restart - please retry', updated_at=?
-          WHERE status='running'`,
-    args: [Date.now()],
+// polls a zombie. Boot sweep: every 'running' session that is not demonstrably alive is ended. Observed live 2026-07-04.
+// R1 (A4): blue/green deploys run two processes against one DB, so a row with a FRESH heartbeat may belong to the other
+// slot - leave it to the stale reaper. Rows with no heartbeat (pre-KLA-55) are swept.
+// R1 (A1): a row with a USABLE checkpoint (the single shared rule in lib/author-checkpoint.ts) is resumable -> 'stalled';
+// anything else has nothing to resume -> 'failed'.
+async function endRunningAuthorSessions(
+  c: Client, beatSql: string, beatArgs: any[],
+  reasons: { resumable: string; failed: string },
+): Promise<number> {
+  const rows = await c.execute({ sql: `SELECT id, checkpoint_json FROM author_sessions WHERE status='running' AND ${beatSql}`, args: beatArgs })
+  let swept = 0
+  for (const row of rows.rows as any[]) {
+    const resumable = usableCheckpointFromJson(row.checkpoint_json) !== null
+    // Re-assert the 'running' + heartbeat predicate so a session that beats between the SELECT and this UPDATE is left alone.
+    const r = await c.execute({
+      sql: `UPDATE author_sessions SET status=?, stall_reason=?, updated_at=? WHERE id=? AND status='running' AND ${beatSql}`,
+      args: [resumable ? "stalled" : "failed", resumable ? reasons.resumable : reasons.failed, Date.now(), row.id, ...beatArgs],
+    })
+    swept += Number(r.rowsAffected ?? 0)
+  }
+  return swept
+}
+
+// R2: a prior session sits in `resuming` while a resume child owns it. If that child is gone, or ended in failure, nothing else would
+// ever move the prior again - its checkpoint would be unreachable. Runs after the child sweep, from BOTH the boot sweep and the
+// stale reaper, so it also sees the children those sweeps just ended. Idempotent: a crash part-way is simply redone next tick.
+//   - child row missing AND the claim older than the grace window   -> prior restored to 'stalled'
+//   - child 'failed' (retryable failure / process died)             -> prior restored to 'stalled', carrying the child's latest USABLE
+//                                                                      checkpoint if it is further along than the prior's (one transaction)
+//   - child 'failed' because the USER cancelled                     -> prior terminal 'failed' (never made resumable again; no transfer)
+//   - child running / crystallized / stalled / needs_auth           -> untouched (live, or the prior was consumed by progress)
+// Every UPDATE re-asserts `status='resuming' AND resumed_by=<that child>` (and the child's state), so it can never act on a claim a
+// newer attempt has since taken. Restoring never touches updated_at, so it cannot extend the seven-day retention window.
+//
+// BLUE/GREEN: an OLD (pre-R2) process claims with two statements (UPDATE prior, then INSERT child) and stamps updated_at=now when it
+// claims. A claim with no child row is therefore only provably orphaned once it is older than RESUME_CLAIM_GHOST_GRACE_MS; inside the
+// window the old process is (at most milliseconds) from inserting its child. New-code claims are one transaction and can never be
+// ghosts, so the window never delays recovery of anything R2 itself created. Needs clocks of the two slots to agree to within seconds.
+export const RESUME_CLAIM_GHOST_GRACE_MS = 5 * 60 * 1000
+export async function recoverOrphanedResumeClaims(c: Client, ghostGraceMs = RESUME_CLAIM_GHOST_GRACE_MS): Promise<number> {
+  const ghostCutoff = Date.now() - ghostGraceMs
+  const rows = await c.execute(`SELECT p.id AS pid, p.project_id AS proj, p.resumed_by AS rby, p.updated_at AS pupd, p.checkpoint_json AS pcp,
+                                       ch.id AS cid, ch.status AS cstatus, ch.stall_reason AS creason, ch.checkpoint_json AS ccp
+                                FROM author_sessions p LEFT JOIN author_sessions ch ON ch.id = p.resumed_by AND ch.project_id = p.project_id
+                                WHERE p.status='resuming'`)
+  let recovered = 0
+  for (const r of rows.rows as any[]) {
+    if (r.cid == null) {                                                         // ghost: claim without a child row
+      if (Number(r.pupd) >= ghostCutoff) continue                                // too fresh: an old process may be about to insert the child
+      const res = await c.execute({
+        sql: `UPDATE author_sessions SET status='stalled', resumed_by=NULL
+              WHERE id=? AND project_id=? AND status='resuming' AND resumed_by IS ? AND updated_at < ?
+                AND NOT EXISTS (SELECT 1 FROM author_sessions x WHERE x.id IS ?)`,
+        args: [r.pid, r.proj, r.rby ?? null, ghostCutoff, r.rby ?? null],
+      })
+      recovered += Number(res.rowsAffected ?? 0)
+      continue
+    }
+    if (String(r.cstatus) !== "failed") continue
+    const cancelled = String(r.creason) === "cancelled by user"
+    const stmts: Array<{ sql: string; args: any[] }> = []
+    if (!cancelled && r.ccp != null && isNewerUsableCheckpoint(usableCheckpointFromJson(r.ccp), usableCheckpointFromJson(r.pcp))) {
+      stmts.push({
+        sql: `UPDATE author_sessions SET checkpoint_json=?
+              WHERE id=? AND project_id=? AND status='resuming' AND resumed_by=?
+                AND EXISTS (SELECT 1 FROM author_sessions x WHERE x.id=? AND x.status='failed' AND x.checkpoint_json=?)`,
+        args: [String(r.ccp), r.pid, r.proj, r.rby, r.rby, String(r.ccp)],
+      })
+    }
+    stmts.push({
+      sql: `UPDATE author_sessions SET ${cancelled ? "status='failed', stall_reason='resume cancelled by user'" : "status='stalled', resumed_by=NULL"}
+            WHERE id=? AND project_id=? AND status='resuming' AND resumed_by=? AND EXISTS (SELECT 1 FROM author_sessions x WHERE x.id=? AND x.status='failed')`,
+      args: [r.pid, r.proj, r.rby, r.rby],
+    })
+    const rs = await c.batch(stmts, "write")
+    recovered += Number(rs[rs.length - 1].rowsAffected ?? 0)
+  }
+  if (recovered) console.log(`[author-sessions] recovered ${recovered} orphaned resume claim(s)`)
+  return recovered
+}
+
+export async function sweepOrphanedAuthorSessions(c: Client, freshMs = DEFAULT_STALE_MS): Promise<{ swept: number }> {
+  const swept = await endRunningAuthorSessions(c, "(last_beat_at IS NULL OR last_beat_at < ?)", [Date.now() - freshMs], {
+    resumable: "interrupted by a server restart - Resume to continue from the last checkpoint",
+    failed: "interrupted by a server restart - please retry",
   })
-  const swept = Number(r.rowsAffected ?? 0)
-  if (swept) console.log(`[author-sessions] swept ${swept} orphaned running session(s) → failed`)
+  if (swept) console.log(`[author-sessions] swept ${swept} orphaned running session(s) → stalled/failed`)
+  await recoverOrphanedResumeClaims(c)
   return { swept }
 }
 
@@ -2142,7 +2384,8 @@ export async function touchWalkHeartbeat(runId: string, c?: Client): Promise<voi
 }
 
 export async function touchAuthorHeartbeat(sessionId: string, c?: Client): Promise<void> {
-  await (c ?? db!).execute({ sql: `UPDATE author_sessions SET last_beat_at=? WHERE id=?`, args: [Date.now(), sessionId] })
+  // R2 fence: only a still-running session takes heartbeats (a recovered / ended row is never touched by its stale worker).
+  await (c ?? db!).execute({ sql: `UPDATE author_sessions SET last_beat_at=? WHERE id=? AND status='running'`, args: [Date.now(), sessionId] })
 }
 
 // KLA-55: Stale-heartbeat reaper — sweeps rows whose heartbeat is older than thresholdMs.
@@ -2165,16 +2408,13 @@ export async function sweepStaleWalks(c: Client, thresholdMs = DEFAULT_STALE_MS)
 }
 
 export async function sweepStaleAuthorSessions(c: Client, thresholdMs = DEFAULT_STALE_MS): Promise<{ swept: number }> {
-  const cutoff = Date.now() - thresholdMs
-  const now = Date.now()
-  const r = await c.execute({
-    sql: `UPDATE author_sessions SET status='failed', updated_at=?,
-            stall_reason='stale heartbeat — process may have crashed, please retry'
-          WHERE status='running' AND last_beat_at IS NOT NULL AND last_beat_at < ?`,
-    args: [now, cutoff],
+  // R1 (A1): usable checkpoint (shared rule) -> 'stalled' (resumable); otherwise 'failed'.
+  const swept = await endRunningAuthorSessions(c, "(last_beat_at IS NOT NULL AND last_beat_at < ?)", [Date.now() - thresholdMs], {
+    resumable: "stale heartbeat - process may have crashed. Resume to continue from the last checkpoint",
+    failed: "stale heartbeat — process may have crashed, please retry",
   })
-  const swept = Number(r.rowsAffected ?? 0)
-  if (swept) console.log(`[author-sessions] stale reaper swept ${swept} session(s) → failed`)
+  if (swept) console.log(`[author-sessions] stale reaper swept ${swept} session(s) → stalled/failed`)
+  await recoverOrphanedResumeClaims(c)
   return { swept }
 }
 
@@ -2494,6 +2734,8 @@ export async function ensureAccount(email: string, attr?: SanitizedAttr | null):
   // leaves the row un-slugged. Best-effort — never blocks signup (opaque fb_ permalink always works).
   await claimAccountSlug(aid, `${local}'s Workspace`).catch((e: any) => { console.warn("ensureAccount slug mint skipped:", e?.message || e); return null })
   await claimProjectKey(aid, "proj_" + aid, "Default Project").catch((e: any) => { console.warn("ensureAccount key mint skipped:", e?.message || e); return null })
+  // Baseline QA Sim: every new project starts with the system-provided QA persona. Best-effort + idempotent — never blocks signup.
+  await ensureBaselineQaSim("proj_" + aid).catch((e: any) => { console.warn("ensureAccount baseline-qa provision skipped:", e?.message || e); return false })
   if (attr) await setAccountAttribution(aid, attr)
   return membershipsFor(email)
 }
@@ -2592,6 +2834,7 @@ export async function createProject(accountId: string, name: string, siteUrl?: s
   })
   // #728: derive a ticket key unique within this account (KLAV, KLAV2, …), race-safe (finding 9).
   await claimProjectKey(accountId, id, name).catch((e: any) => { console.warn("createProject ticket_key mint skipped:", e?.message || e); return null })
+  await ensureBaselineQaSim(id).catch((e: any) => { console.warn("createProject baseline-qa provision skipped:", e?.message || e); return false })
   const p = await projectById(id)
   return p!
 }
@@ -3528,6 +3771,11 @@ export type PersonaRow = {
   isGlobal?: boolean
   // KLAVITYKLA-301: which Add-a-Sim path created this Sim. NULL = legacy/unknown.
   simSource?: string | null
+  // Visual-QA classification. 'qa' Sims carry `validations` (mandatory screenshot-inspection rules); everything else is 'customer'.
+  personaKind?: PersonaKind
+  validations?: PersonaValidations
+  // WP-S2: false = deactivated (kept, but skipped by every review/run/offer path). Absent/undefined is treated as active.
+  active?: boolean
 }
 // Parse a JSON string-array column defensively (bad/absent JSON → []).
 function parseStrArray(raw: any): string[] {
@@ -3545,7 +3793,13 @@ function rowToPersona(x: any): PersonaRow {
   const temperament = x.temperament != null ? String(x.temperament) : ""
   const voice = x.voice != null ? String(x.voice) : ""
   const hasCore = goals.length || watchFor.length || expertise || temperament || voice
+  // Baseline QA is always QA, whatever the stored kind says; a stored 'qa' is never downgraded on read.
+  const personaKind = x.sim_source === BASELINE_QA_SOURCE ? "qa" : normalizePersonaKind(x.persona_kind)
+  // The runtime reads the PERSISTED rules; a missing / malformed / outdated stored set (legacy rows) falls back to the canonical set.
+  const stored = personaKind === "qa" ? parseValidations(x.validations_json) : null
+  const validations = personaKind === "qa" ? (stored && stored.version === VALIDATIONS_VERSION && stored.rules.length === QA_RULES.length ? stored : canonicalValidations()) : undefined
   return {
+    personaKind, ...(validations ? { validations } : {}),
     id: String(x.id), projectId: String(x.project_id), name: String(x.name),
     role: String(x.role || ""), type: String(x.type || "client"),
     initials: String(x.initials || ""), accent: String(x.accent || "#6366f1"),
@@ -3556,9 +3810,14 @@ function rowToPersona(x: any): PersonaRow {
     core: hasCore ? { goals, expertise, temperament, voice, watchFor } : null,
     isGlobal: !!x.is_global,
     simSource: x.sim_source != null ? String(x.sim_source) : null,
+    active: x.active == null ? true : Number(x.active) !== 0,
   }
 }
-export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
+export type ListPersonasOpts = {
+  /** Run/offer paths pass true to skip deactivated Sims. Default false: management views, id lookups and history keep every Sim. */
+  activeOnly?: boolean
+}
+export async function listPersonas(projectId: string, opts: ListPersonasOpts = {}): Promise<PersonaRow[]> {
   const r = await db!.execute({
     sql: `SELECT p.*, (SELECT COUNT(*) FROM sim_traits t WHERE t.sim_id=p.id AND t.status='active') AS trait_count
           FROM personas p WHERE p.project_id=? ORDER BY p.created_at ASC`,
@@ -3570,7 +3829,7 @@ export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
   // a data migration. Prevention happens at write time in POST /api/personas, but this is a
   // belt-and-suspenders guard that makes the list always clean regardless of DB state.
   const seen = new Map<string, boolean>()
-  return all.filter(p => {
+  const deduped = all.filter(p => {
     const key = String(p.name || "").trim().toLowerCase().replace(/\s+/g, " ") +
                 "\x00" +
                 String(p.role || "").trim().toLowerCase().replace(/\s+/g, " ")
@@ -3578,6 +3837,35 @@ export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
     seen.set(key, true)
     return true
   })
+  // Filter AFTER the dedup so the active and full lists agree on which duplicate row represents a Sim.
+  return opts.activeOnly ? deduped.filter(p => p.active !== false) : deduped
+}
+
+// Baseline QA Sim provisioning. ONE atomic INSERT OR IGNORE with a deterministic id (sim_baseline_<projectId>): a retried
+// workspace/project creation, a concurrent request or a re-run of the backfill can never create a second one, and an existing
+// row — including one the customer has since edited — is never overwritten. Returns true only when a row was actually created.
+// A failure leaves nothing behind (single statement); callers treat it as best-effort so it never blocks workspace/project creation.
+export async function ensureBaselineQaSim(projectId: string): Promise<boolean> {
+  const q = BASELINE_QA_SIM
+  const now = Date.now()
+  const r = await db!.execute({
+    sql: `INSERT OR IGNORE INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,sim_source,persona_kind,validations_json,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    args: [baselineQaId(projectId), projectId, q.name, q.role, q.type, q.initials, q.accent, q.summary,
+           JSON.stringify(q.insights), null, q.simClass, q.side,
+           JSON.stringify(q.core.goals), q.core.expertise, q.core.temperament, q.core.voice, JSON.stringify(q.core.watchFor),
+           BASELINE_QA_SOURCE, "qa", JSON.stringify(canonicalValidations()), now, now],
+  })
+  return (r.rowsAffected ?? 0) > 0
+}
+
+// One-off, idempotent backfill for projects that existed before Baseline QA shipped. NOT run automatically (no startup hook,
+// no migration) — it is invoked explicitly (see scripts/backfill-baseline-qa.ts), so deploying never mutates existing data.
+export async function backfillBaselineQaSims(): Promise<{ projects: number; created: number }> {
+  const r = await db!.execute({ sql: "SELECT id FROM projects", args: [] })
+  let created = 0
+  for (const row of r.rows) { if (await ensureBaselineQaSim(String((row as any).id))) created++ }
+  return { projects: r.rows.length, created }
 }
 
 // KLA-838 (perf): count personas across an ACCOUNT in ONE aggregate query, for the Sim-creation quota
@@ -3589,7 +3877,8 @@ export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
 // can count 1 higher — which is the stricter (more correct) number for a creation quota.
 export async function countPersonasForAccount(accountId: string): Promise<number> {
   const r = await db!.execute({
-    sql: `SELECT COUNT(*) AS c FROM personas WHERE project_id IN (SELECT id FROM projects WHERE account_id=?)`,
+    // The system-provided Baseline QA Sim is not the customer's Sim: it must never consume their plan quota.
+    sql: `SELECT COUNT(*) AS c FROM personas WHERE project_id IN (SELECT id FROM projects WHERE account_id=?) AND COALESCE(sim_source,'') <> '${BASELINE_QA_SOURCE}'`,
     args: [accountId],
   })
   return Number((r.rows[0] as any)?.c || 0)
@@ -3611,12 +3900,12 @@ export async function countPersonasForAccount(accountId: string): Promise<number
 //
 // The function resolves the account_id for `projectId` in one round-trip (projectById is cached-ish
 // by the in-memory SQLite file), then does a UNION ALL query: own rows + sibling global rows.
-export async function listPersonasForProject(projectId: string): Promise<PersonaRow[]> {
+export async function listPersonasForProject(projectId: string, opts: ListPersonasOpts = {}): Promise<PersonaRow[]> {
   // Step 1: resolve the account this project belongs to (needed for tenant-safe global lookup).
   const projRow = await db!.execute({ sql: "SELECT account_id FROM projects WHERE id=?", args: [projectId] })
   if (!projRow.rows.length) {
     // Unknown project → fall back to project-scoped list (safe: returns nothing if project is unknown).
-    return listPersonas(projectId)
+    return listPersonas(projectId, opts)
   }
   const accountId = String((projRow.rows[0] as any).account_id)
 
@@ -3665,7 +3954,19 @@ export async function listPersonasForProject(projectId: string): Promise<Persona
     seen.set(key, true)
     result.push(row)
   }
-  return result
+  // Filter AFTER the dedup (same reason as listPersonas). A global Sim's flag is its home row's, so deactivating it at home
+  // removes it from every sibling project's run lists too.
+  return opts.activeOnly ? result.filter(p => p.active !== false) : result
+}
+
+// WP-S2: activate/deactivate a Sim. Scoped to its home project (a sibling project cannot toggle someone else's global Sim).
+// Returns whether a row matched. Deliberately does not touch updated_at: it is not a content edit, so no OG card should bust.
+export async function setPersonaActive(id: string, projectId: string, active: boolean): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "UPDATE personas SET active=? WHERE id=? AND project_id=?",
+    args: [active ? 1 : 0, id, projectId],
+  })
+  return Number(r.rowsAffected || 0) > 0
 }
 
 // Set or clear the is_global flag on a persona. Caller must verify ownership before calling.
@@ -3678,15 +3979,24 @@ export async function setPersonaGlobal(id: string, projectId: string, isGlobal: 
 export async function upsertPersona(id: string, projectId: string, data: Omit<PersonaRow, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>) {
   const now = Date.now()
   const core = data.core ?? null
+  // Central enrichment: every write path (Describe / From site / From call / presets / custom / edit) lands here, so QA Sims always
+  // persist the mandatory rules. `data.personaKind` is the caller's classification; the ON CONFLICT below never demotes a stored QA Sim.
+  const kind: PersonaKind = data.simSource === BASELINE_QA_SOURCE ? "qa" : normalizePersonaKind(data.personaKind)
+  const validationsJson = kind === "qa" ? JSON.stringify(canonicalValidations()) : null
+  // A NEW Sim starts Deactivated (active=0): the user turns on only the Sims they want on the Sims tab. The ON CONFLICT update below
+  // never touches `active`, so editing an existing Sim keeps its current Activated/Deactivated state.
   await db!.execute({
-    sql: `INSERT INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,sim_source,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    sql: `INSERT INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,sim_source,persona_kind,validations_json,created_at,updated_at,active)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)
           ON CONFLICT(id) DO UPDATE SET name=excluded.name,role=excluded.role,type=excluded.type,
           initials=excluded.initials,accent=excluded.accent,summary=excluded.summary,
           insights_json=excluded.insights_json,avatar=excluded.avatar,
           sim_class=excluded.sim_class,side=excluded.side,goals_json=excluded.goals_json,
           expertise=excluded.expertise,temperament=excluded.temperament,voice=excluded.voice,
-          watchfor_json=excluded.watchfor_json,updated_at=excluded.updated_at`,
+          watchfor_json=excluded.watchfor_json,
+          persona_kind=CASE WHEN personas.persona_kind='qa' OR excluded.persona_kind='qa' THEN 'qa' ELSE excluded.persona_kind END,
+          validations_json=CASE WHEN excluded.persona_kind='qa' THEN excluded.validations_json WHEN personas.persona_kind='qa' THEN personas.validations_json ELSE NULL END,
+          updated_at=excluded.updated_at`,
     args: [id, projectId, data.name, data.role, data.type, data.initials, data.accent, data.summary,
            JSON.stringify(data.insights), data.avatar ?? null,
            data.simClass ?? null, data.side ?? null,
@@ -3694,6 +4004,7 @@ export async function upsertPersona(id: string, projectId: string, data: Omit<Pe
            core?.expertise ?? null, core?.temperament ?? null, core?.voice ?? null,
            core ? JSON.stringify(core.watchFor ?? []) : null,
            data.simSource ?? null,
+           kind, validationsJson,
            now, now],
   })
   // KLA-739 (C2-5 residual a): a persona edit (name/role/initials/accent) changes the Sim OG card, but the
@@ -3842,18 +4153,21 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
   const now = Date.now()
   // #544 follow-up: untrusted/quarantined intake is pinned to 'new' regardless of the claimed priority
   // (priority-self-elevation guard). The priority column below still stores f.priority verbatim.
-  const status = f.forceNewStatus ? "new" : initialFeedbackStatus(f.priority)
+  const status = f.forceNewStatus || f.simId ? "new" : initialFeedbackStatus(f.priority)
   const args = feedbackInsertArgs(f, id, now, status)
+  // KD-3082: a Sim Report numbers from its own Sim Reports count (sim_ticket_seq → sim_seq_num); every other report from the
+  // Tickets sequence (ticket_seq → seq_num). A Sim Report gets its Tickets number later, when it is accepted.
+  const sq = seqColsFor(f.simId)
   try {
     const rs = await db!.batch([
-      { sql: "UPDATE projects SET ticket_seq = ticket_seq + 1 WHERE id=?", args: [f.projectId] },
-      { sql: `INSERT INTO feedback (${FEEDBACK_INSERT_COLS},seq_num) VALUES (${qmarks(args.length)},(SELECT ticket_seq FROM projects WHERE id=?))`, args: [...args, f.projectId] },
+      { sql: `UPDATE projects SET ${sq.counter} = ${sq.counter} + 1 WHERE id=?`, args: [f.projectId] },
+      { sql: `INSERT INTO feedback (${FEEDBACK_INSERT_COLS},${sq.col}) VALUES (${qmarks(args.length)},(SELECT ${sq.counter} FROM projects WHERE id=?))`, args: [...args, f.projectId] },
     ], "write")
-    if (Number(rs[0]?.rowsAffected || 0) === 0) await allocTicketSeq(f.projectId, id, now)
+    if (Number(rs[0]?.rowsAffected || 0) === 0) await allocFeedbackSeq(f.projectId, id, now, !!f.simId)
   } catch (e: any) {
     try {
       await db!.execute({ sql: `INSERT INTO feedback (${FEEDBACK_INSERT_COLS}) VALUES (${qmarks(args.length)})`, args })
-      await allocTicketSeq(f.projectId, id, now)
+      await allocFeedbackSeq(f.projectId, id, now, !!f.simId)
     } catch (e2: any) {
       if (!/UNIQUE constraint failed: feedback\.id|PRIMARY KEY/i.test(String(e2?.message || e2))) throw e2
       // the batch above had in fact committed (ambiguous failure) — the row exists with its number
@@ -3877,18 +4191,19 @@ export async function insertFeedbackForSubmission(
   const now = Date.now()
   // #544 follow-up: untrusted/quarantined intake is pinned to 'new' regardless of the claimed priority
   // (priority-self-elevation guard). The priority column below still stores f.priority verbatim.
-  const status = f.forceNewStatus ? "new" : initialFeedbackStatus(f.priority)
+  const status = f.forceNewStatus || f.simId ? "new" : initialFeedbackStatus(f.priority)
   const args = feedbackInsertArgs(f, id, now, status)
   const guard = "EXISTS (SELECT 1 FROM submission_keys WHERE project_id=? AND submission_key=? AND feedback_id=? AND state='done')"
+  const sq = seqColsFor(f.simId)   // KD-3082: Sim Reports use their own count until accepted
   const rs = await db!.batch([
     { sql: "UPDATE submission_keys SET state='done', feedback_id=?, deduped=0, evidence_json=?, updated_at=? WHERE project_id=? AND submission_key=? AND owner=? AND state='pending'",
       args: [id, sub.evidenceJson, now, sub.projectId, sub.key, sub.owner] },
-    { sql: `UPDATE projects SET ticket_seq = ticket_seq + 1 WHERE id=? AND ${guard}`, args: [f.projectId, sub.projectId, sub.key, id] },
-    { sql: `INSERT INTO feedback (${FEEDBACK_INSERT_COLS},seq_num) SELECT ${qmarks(args.length)},(SELECT ticket_seq FROM projects WHERE id=?) WHERE ${guard}`,
+    { sql: `UPDATE projects SET ${sq.counter} = ${sq.counter} + 1 WHERE id=? AND ${guard}`, args: [f.projectId, sub.projectId, sub.key, id] },
+    { sql: `INSERT INTO feedback (${FEEDBACK_INSERT_COLS},${sq.col}) SELECT ${qmarks(args.length)},(SELECT ${sq.counter} FROM projects WHERE id=?) WHERE ${guard}`,
       args: [...args, f.projectId, sub.projectId, sub.key, id] },
   ], "write")
   if (Number(rs[0]?.rowsAffected || 0) !== 1 || Number(rs[2]?.rowsAffected || 0) !== 1) return { lost: true }
-  if (Number(rs[1]?.rowsAffected || 0) === 0) await allocTicketSeq(f.projectId, id, now)   // no projects row → MAX+1 fallback
+  if (Number(rs[1]?.rowsAffected || 0) === 0) await allocFeedbackSeq(f.projectId, id, now, !!f.simId)   // no projects row → MAX+1 fallback
   invalidateDashboardCache(f.projectId)
   return { id }
 }
@@ -3941,7 +4256,11 @@ export async function advanceFeedbackToOpenIfNew(feedbackId: string, projectId: 
     sql: "UPDATE feedback SET status='open' WHERE id=? AND project_id=? AND status='new'",
     args: [feedbackId, projectId],
   })
-  if ((r.rowsAffected ?? 0) > 0) invalidateDashboardCache(projectId) // #722 (P2.2): status new→open
+  if ((r.rowsAffected ?? 0) > 0) {
+    // KD-3082: a Sim Report reaching the Tickets board takes the next Tickets number (no-op for everything else).
+    await assignTicketSeqOnAccept(projectId, feedbackId).catch((e: any) => console.warn("accept ticket number skipped:", e?.message || e))
+    invalidateDashboardCache(projectId) // #722 (P2.2): status new→open
+  }
   return (r.rowsAffected ?? 0) > 0
 }
 
@@ -3973,7 +4292,13 @@ export const NOTIFY_ASSIGNEE_TYPES = new Set([
   "ticket_status_changed", "ticket_priority_changed", "ticket_assignee_changed", "ticket_title_changed",
   "ticket_attachment_added", "ticket_attachment_removed", "ticket_screenshot_annotated", "ticket_qa_closed",
   "ticket_commented", "ticket_label_added", "ticket_label_removed", "ticket_description_changed",
+  "ticket_comment_edited",  // someone edited a comment on a ticket assigned to you
+  "ticket_comment_deleted", // someone deleted a comment on a ticket assigned to you
+  "ticket_restored",        // a deleted ticket was put back (pairs with ticket_deleted, which already notifies)
 ])
+
+// KD-3134: updates the ticket's reporter hears about too (besides the assignee).
+export const REPORTER_NOTIFY_TYPES = new Set(["ticket_status_changed", "ticket_priority_changed", "ticket_restored"])
 
 const _notifEmail = (v: unknown): string | null => {
   const e = v == null ? "" : String(v).trim().toLowerCase()
@@ -4002,15 +4327,40 @@ export async function notifyAssigneeOfTicketUpdate(a: ActivityInsert): Promise<n
   if (a.type === "ticket_assignee_changed") {
     for (const e of [a.meta?.to, a.meta?.from]) { const r = _notifEmail(e); if (r) recipients.push(r) }
   } else {
-    const r = await db.execute({ sql: "SELECT assignee FROM feedback WHERE id=? AND project_id=?", args: [a.feedbackId, a.projectId] })
-    const assignee = _notifEmail(r.rows[0]?.assignee)
+    const r = await db.execute({ sql: "SELECT assignee, contact_email, actor_email FROM feedback WHERE id=? AND project_id=?", args: [a.feedbackId, a.projectId] })
+    const row: any = r.rows[0] || {}
+    const assignee = _notifEmail(row.assignee)
     if (assignee) recipients.push(assignee)
+    // KD-3134: a status or priority change also notifies the ticket's REPORTER (the "Reporter" shown on the ticket:
+    // the composer's contact email, else whoever filed it), matching who the status-change email goes to. Before,
+    // only the assignee heard, so a change to an unassigned ticket, or by its assignee, put nothing in anyone's bell.
+    if (REPORTER_NOTIFY_TYPES.has(a.type)) {
+      const reporter = _notifEmail(row.contact_email) || _notifEmail(row.actor_email)
+      if (reporter) recipients.push(reporter)
+    }
   }
   const uniq = [...new Set(recipients)].filter(e => e !== actor)
   for (const to of uniq) {
     await createNotification({ recipientEmail: to, projectId: a.projectId, feedbackId: a.feedbackId, type: a.type, actorEmail: actor, meta: a.meta ?? null })
   }
   return uniq.length
+}
+
+// KD-3134: deleting a ticket (single or bulk — both go through deleteTicketsBulk) notifies its assignee and
+// reporter, never the person who deleted it. The ticket row is already gone, so its title/number ride in meta.
+export async function notifyTicketsDeleted(projectId: string, tickets: DeletedTicketInfo[], actorEmail: string | null): Promise<number> {
+  if (!db) return 0
+  const actor = _notifEmail(actorEmail)
+  let sent = 0
+  for (const t of tickets) {
+    const uniq = [...new Set([t.assignee, t.reporter].filter((e): e is string => !!e))].filter(e => e !== actor)
+    for (const to of uniq) {
+      await createNotification({ recipientEmail: to, projectId, feedbackId: t.id, type: "ticket_deleted", actorEmail: actor,
+        meta: { title: t.title, seqNum: t.seqNum } })
+      sent++
+    }
+  }
+  return sent
 }
 
 export type NotificationRow = {
@@ -4038,8 +4388,10 @@ export async function listNotifications(recipientEmail: string, limit = 30): Pro
       feedbackId: x.feedback_id != null ? String(x.feedback_id) : null, type: String(x.type),
       actorEmail: x.actor_email != null ? String(x.actor_email) : null, meta,
       createdAt: Number(x.created_at), readAt: x.read_at != null ? Number(x.read_at) : null,
-      ticketTitle: Number(x.f_exists) ? effectiveTicketTitle({ title: x.f_title, suggested_bug_json: x.f_sb, observation: x.f_obs }) : null,
-      ticketSeq: x.f_seq != null ? Number(x.f_seq) : null,
+      // A deleted ticket's row is gone — fall back to the title/number captured in meta at delete time (KD-3134).
+      ticketTitle: Number(x.f_exists) ? effectiveTicketTitle({ title: x.f_title, suggested_bug_json: x.f_sb, observation: x.f_obs })
+        : (meta?.title != null ? String(meta.title) : null),
+      ticketSeq: x.f_seq != null ? Number(x.f_seq) : (meta?.seqNum != null ? Number(meta.seqNum) : null),
     }
   })
 }
@@ -4253,7 +4605,7 @@ export type FeedbackRow = {
   planeIssueKey: string | null; planeIssueUrl: string | null; annotations: any | null
   reportIp: string | null; reportUrl: string | null; reportGeo: any | null
   reportEnv: string | null; reportOrg: string | null; reportServer: string | null
-  seqNum: number | null; createdAt: number
+  seqNum: number | null; simSeqNum: number | null; createdAt: number
   // KLA-780: set to the surviving ticket id when this row was folded into another by a merge; null otherwise.
   mergedInto: string | null
 }
@@ -4291,6 +4643,7 @@ function rowToFeedback(x: any): FeedbackRow {
     reportServer: x.report_server != null ? String(x.report_server) : null,
     // #745: per-project human sequence (KLA-200). Powers the pretty <KEY>-<n> permalink on the board.
     seqNum: x.seq_num != null ? Number(x.seq_num) : null,
+    simSeqNum: x.sim_seq_num != null ? Number(x.sim_seq_num) : null, // KD-1074: Sim Report number (<KEY>-SIM-<n>)
     createdAt: Number(x.created_at),
     // KLA-780: null on normal rows; a survivor id when this ticket was merged away.
     mergedInto: x.merged_into != null ? String(x.merged_into) : null,
@@ -4322,11 +4675,41 @@ export type FeedbackMeta = {
 }
 // Opt-in variant of listFeedback (identical SQL/rows/order): additionally returns, per row id, the meta
 // columns already present on the SELECT * result. FeedbackRow itself is deliberately unchanged.
-export async function listFeedbackWithMeta(projectId: string, opts: { limit?: number; simOnly?: boolean } = {}): Promise<{ rows: FeedbackRow[]; meta: Record<string, FeedbackMeta> }> {
+// `boardOnly` drops Sim reports still awaiting triage (status 'new', sim_id set) — the same rule as listTicketsPaginated. Those live in
+// Sim Reports only and reach the Tickets board after a person accepts them; without it they leaked onto the board via /api/dashboard's
+// `tickets` (the kanban's cold-cache fallback and the overview "Recent tickets").
+// KD-2875: the Sims page shows each Sim's latest observation + a count. Those used to be derived from the project's newest 36
+// Sim observations in total, so a Sim whose reports were older than that (or crowded out by one busy Sim) read "No feedback yet".
+// This returns, PER SIM, its newest `perSim` observations plus its true total — same filters as listFeedback({simOnly}) (not merged,
+// non-empty) — in one query, so the payload stays small (≤ perSim rows per Sim) while no Sim is starved.
+export type SimObservationRow = { id: string; simId: string; observation: string; sentiment: string | null; urlPath: string | null; createdAt: number }
+export async function listSimObservationsPerSim(projectId: string, perSim = 3): Promise<{ rows: SimObservationRow[]; counts: Record<string, number> }> {
+  const r = await db!.execute({
+    sql: `SELECT id, sim_id, observation, sentiment, url_path, created_at, total FROM (
+            SELECT id, sim_id, observation, sentiment, url_path, created_at,
+                   ROW_NUMBER() OVER (PARTITION BY sim_id ORDER BY created_at DESC) AS rn,
+                   COUNT(*) OVER (PARTITION BY sim_id) AS total
+            FROM feedback
+            WHERE project_id=? AND sim_id IS NOT NULL AND merged_into IS NULL AND observation IS NOT NULL AND observation <> ''
+          ) WHERE rn <= ? ORDER BY created_at DESC`,
+    args: [projectId, Math.max(1, Math.floor(perSim))],
+  })
+  const rows: SimObservationRow[] = []
+  const counts: Record<string, number> = {}
+  for (const x of r.rows as any[]) {
+    const simId = String(x.sim_id)
+    counts[simId] = Number(x.total) || 0
+    rows.push({ id: String(x.id), simId, observation: String(x.observation), sentiment: x.sentiment != null ? String(x.sentiment) : null, urlPath: x.url_path != null ? String(x.url_path) : null, createdAt: Number(x.created_at) })
+  }
+  return { rows, counts }
+}
+
+export async function listFeedbackWithMeta(projectId: string, opts: { limit?: number; simOnly?: boolean; boardOnly?: boolean } = {}): Promise<{ rows: FeedbackRow[]; meta: Record<string, FeedbackMeta> }> {
   const limit = opts.limit ?? 20
+  const boardFilter = opts.boardOnly ? " AND NOT (status = 'new' AND sim_id IS NOT NULL)" : ""
   const sql = opts.simOnly
-    ? "SELECT * FROM feedback WHERE project_id=? AND sim_id IS NOT NULL AND merged_into IS NULL ORDER BY created_at DESC LIMIT ?"
-    : "SELECT * FROM feedback WHERE project_id=? AND merged_into IS NULL ORDER BY created_at DESC LIMIT ?"
+    ? "SELECT * FROM feedback WHERE project_id=? AND sim_id IS NOT NULL AND merged_into IS NULL" + boardFilter + " ORDER BY created_at DESC LIMIT ?"
+    : "SELECT * FROM feedback WHERE project_id=? AND merged_into IS NULL" + boardFilter + " ORDER BY created_at DESC LIMIT ?"
   const r = await db!.execute({ sql, args: [projectId, limit] })
   const meta: Record<string, FeedbackMeta> = {}
   for (const x of r.rows as any[]) {
@@ -4485,6 +4868,30 @@ export async function listRecentFeedbackForDedup(projectId: string, limit = 50):
     const title = effectiveTicketTitle({ title: x.title, suggested_bug_json: x.suggested_bug_json, observation })
     return { id: String(x.id), title, observation }
   })
+}
+
+/**
+ * Phase-1 QA dedup: the live Sim findings already filed against one page, with the UI component each one was about (read from the
+ * `simReview` block stored in client_context_json). Lets the Sim pipeline recognise "same defect on the same component, worded
+ * differently" which a whole-text similarity alone can miss. Empty on error.
+ */
+export async function listSimFindingsOnPage(projectId: string, urlPath: string | null, limit = 60): Promise<Array<{ id: string; title: string; observation: string; clientContext: any | null }>> {
+  try {
+    const r = await db!.execute({
+      sql: `SELECT id, title, observation, suggested_bug_json, client_context_json FROM feedback
+            WHERE project_id=? AND merged_into IS NULL AND sim_id IS NOT NULL AND COALESCE(url_path,'/')=?
+            ORDER BY created_at DESC LIMIT ?`,
+      args: [projectId, urlPath ?? "/", limit],
+    })
+    return r.rows.map((x: any) => {
+      const observation = x.observation != null ? String(x.observation) : ""
+      return {
+        id: String(x.id), observation,
+        title: effectiveTicketTitle({ title: x.title, suggested_bug_json: x.suggested_bug_json, observation }),
+        clientContext: x.client_context_json != null ? safeJsonParse(x.client_context_json) : null,
+      }
+    })
+  } catch { return [] }
 }
 
 // BugHerd sub-project A: look up an existing feedback row by its client-error signature, scoped
@@ -4648,16 +5055,18 @@ export type FeedbackOccurrenceInsert = {
   feedbackId: string; projectId: string; seenAt: number
   observation?: string | null; screenshotId?: string | null
   sourceQuote?: string | null; reporterEmail?: string | null
+  /** Phase-1 QA evidence integrity: JSON describing how this sighting's evidence was collected (captured / failed + reason). */
+  evidence?: any
 }
 export async function insertFeedbackOccurrence(o: FeedbackOccurrenceInsert): Promise<string> {
   const id = "occ_" + crypto.randomUUID()
   await db!.execute({
-    sql: `INSERT INTO feedback_occurrences (id, feedback_id, project_id, seen_at, observation, screenshot_id, source_quote, reporter_email, created_at)
-          VALUES (?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO feedback_occurrences (id, feedback_id, project_id, seen_at, observation, screenshot_id, source_quote, reporter_email, created_at, evidence_json)
+          VALUES (?,?,?,?,?,?,?,?,?,?)`,
     args: [
       id, o.feedbackId, o.projectId, o.seenAt,
       o.observation ?? null, o.screenshotId ?? null, o.sourceQuote ?? null, o.reporterEmail ?? null,
-      Date.now(),
+      Date.now(), o.evidence != null ? JSON.stringify(o.evidence) : null,
     ],
   })
   return id
@@ -4667,6 +5076,7 @@ export type FeedbackOccurrenceRow = {
   id: string; feedbackId: string; projectId: string; seenAt: number
   observation: string | null; screenshotId: string | null
   sourceQuote: string | null; reporterEmail: string | null; createdAt: number
+  evidence: any | null
 }
 // All stored occurrences for a cluster head, chronological. Empty array when none / on error.
 export async function listFeedbackOccurrences(feedbackId: string): Promise<FeedbackOccurrenceRow[]> {
@@ -4683,6 +5093,7 @@ export async function listFeedbackOccurrences(feedbackId: string): Promise<Feedb
       sourceQuote: x.source_quote != null ? String(x.source_quote) : null,
       reporterEmail: x.reporter_email != null ? String(x.reporter_email) : null,
       createdAt: Number(x.created_at),
+      evidence: x.evidence_json != null ? safeJsonParse(x.evidence_json) : null,
     }))
   } catch { return [] }
 }
@@ -5246,11 +5657,14 @@ export async function dashboardCounts(projectId: string): Promise<{ feedback: nu
     // KLA-780: exclude merged-away rows so a fold doesn't inflate the feedback/tickets counts (its
     // recurrence was already summed onto the survivor).
     q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL"),
-    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND plane_issue_key IS NOT NULL AND merged_into IS NULL"),
+    // "Tickets filed" (overview card) = every ticket on the Tickets board — the same rule as listTicketsPaginated: not merged away,
+    // and not a Sim report still awaiting triage. It used to count only rows with a legacy Plane issue key, which is 0 for every
+    // project since Klavity became the tracker (Plane retired), so the card always read 0.
+    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL AND NOT (status = 'new' AND sim_id IS NOT NULL)"),
     q("SELECT COUNT(*) AS n FROM activity_events WHERE project_id=?"),
     // KD-265: the sidebar "Tickets" badge = the tickets waiting on someone: To Do ('new'), Open and In Progress. Anything further
     // along (blocked, ready for deployment, deployed, QA review, done) or dismissed is not counted; merged-away rows never are.
-    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status IN ('new','open','in_progress')"),
+    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status IN ('new','open','in_progress') AND NOT (status = 'new' AND sim_id IS NOT NULL)"),
   ])
   const num = (s: PromiseSettledResult<any>): number | null =>
     s.status === "fulfilled" ? Number((s.value.rows[0] as any).n) : null
@@ -7273,7 +7687,14 @@ export async function updateFeedbackMeta(
     sql: `UPDATE feedback SET ${sets.join(",")} WHERE project_id=? AND id=?`,
     args,
   })
-  if (Number(r.rowsAffected) > 0) invalidateDashboardCache(projectId) // #722 (P2.2): status/priority triage edit
+  if (Number(r.rowsAffected) > 0) {
+    // KD-3082: a Sim Report that is ACCEPTED (moved out of new/dismissed onto the Tickets board) takes the next Tickets number
+    // here — the single choke point every accept path (ticket page, bulk, triage, MCP) goes through.
+    if (meta.status !== undefined && !SIM_PRE_ACCEPT_STATUSES.has(meta.status)) {
+      await assignTicketSeqOnAccept(projectId, feedbackId).catch((e: any) => console.warn("accept ticket number skipped:", e?.message || e))
+    }
+    invalidateDashboardCache(projectId) // #722 (P2.2): status/priority triage edit
+  }
   return Number(r.rowsAffected) > 0
 }
 
@@ -7326,6 +7747,7 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     clientContext: x.client_context_json != null ? safeJsonParse(x.client_context_json) : null,
     contactEmail: x.contact_email != null ? String(x.contact_email) : null,
     seqNum: x.seq_num != null ? Number(x.seq_num) : null,
+    simSeqNum: x.sim_seq_num != null ? Number(x.sim_seq_num) : null, // KD-1074: Sim Report number (<KEY>-SIM-<n>)
     // Connector field mapping task 1: report kind chosen at submit ("bug" | "feature" | null on
     // older/manual rows). Exposed both camelCase (this API's convention) and snake_case
     // (feedbackToTicketPayload / raw-row callers reference fb.report_type directly).
@@ -7341,6 +7763,8 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     suggestedBug: safeJsonParse(x.suggested_bug_json),
     // PX4 #425: non-image file attachments — parsed JSON array of { key, filename, contentType, size }.
     attachments: safeJsonParse(x.attachments_json),
+    // 2nd+ report screenshots (ids into the screenshots ledger); [] on single-shot / older rows.
+    extraScreenshotIds: (() => { const v = safeJsonParse(x.extra_screenshots_json); return Array.isArray(v) ? v.map(String) : [] })(),
     // KLAVITYKLA-438 "Record me": video recordings — parsed JSON array of
     // { id, key, contentType, bytes, durationMs, w, h, screenOnly }. `id` is the Phase 2 transcript ref.
     recordings: safeJsonParse(x.recordings_json),
@@ -7487,6 +7911,15 @@ export async function detachFeedbackScreenshot(feedbackId: string, projectId: st
   })
   return Number(u.rowsAffected || 0) > 0
 }
+// Link the 2nd+ report screenshots to their ticket (see extra_screenshots_json). Ids are already ledgered.
+export async function setFeedbackExtraScreenshots(feedbackId: string, projectId: string, screenshotIds: string[]): Promise<void> {
+  const ids = [...new Set(screenshotIds.map(String).filter(Boolean))]
+  if (!ids.length) return
+  await db!.execute({
+    sql: "UPDATE feedback SET extra_screenshots_json=? WHERE id=? AND project_id=?",
+    args: [JSON.stringify(ids), feedbackId, projectId],
+  })
+}
 // KD-214: does anything OTHER than this ticket still use the screenshot? Merging copies the screenshot id onto the surviving
 // ticket / occurrence rows and attachment entries, so two tickets can point at one stored image. Any hit means "keep the file".
 export async function screenshotReferencedElsewhere(screenshotId: string, exceptFeedbackId: string): Promise<boolean> {
@@ -7512,7 +7945,7 @@ export async function screenshotReferencedElsewhere(screenshotId: string, except
 // anyway). Returns the raw-ish columns the QA route needs; the route maps them to the client shape,
 // signs the screenshot link, and computes the counts summary. Newest report first.
 export type PageBugRow = {
-  id: string; seqNum: number | null; title: string | null; observation: string | null
+  id: string; seqNum: number | null; simSeqNum: number | null; title: string | null; observation: string | null
   status: string; priority: string | null; severity: string | null
   actorEmail: string | null; contactEmail: string | null
   screenshotId: string | null; urlHost: string | null; urlPath: string | null
@@ -7531,7 +7964,7 @@ export async function feedbackByPageUrl(
   if (!cands.length) return []
   const placeholders = cands.map(() => "?").join(",")
   const r = await db!.execute({
-    sql: `SELECT id, seq_num, title, observation, status, priority, severity, actor_email,
+    sql: `SELECT id, seq_num, sim_seq_num, title, observation, status, priority, severity, actor_email,
                  contact_email, screenshot_id, url_host, url_path, report_url, annotations_json, created_at
           FROM feedback
           WHERE project_id=? AND lower(url_host)=lower(?) AND lower(url_path) IN (${placeholders})
@@ -7542,6 +7975,7 @@ export async function feedbackByPageUrl(
   return r.rows.map((x: any) => ({
     id: String(x.id),
     seqNum: x.seq_num != null ? Number(x.seq_num) : null,
+    simSeqNum: x.sim_seq_num != null ? Number(x.sim_seq_num) : null, // KD-1074: Sim Report number (<KEY>-SIM-<n>)
     title: x.title != null ? String(x.title) : null,
     observation: x.observation != null ? String(x.observation) : null,
     status: x.status != null ? String(x.status) : "open",
@@ -7862,10 +8296,10 @@ export async function dedupeAndIndexFeedbackSeq(c: Client): Promise<void> {
     await c.execute({
       sql: `UPDATE feedback SET seq_num = (
               SELECT COUNT(*) FROM feedback f2
-              WHERE f2.project_id = feedback.project_id
+              WHERE f2.project_id = feedback.project_id AND f2.seq_num IS NOT NULL
                 AND (f2.created_at < feedback.created_at
                   OR (f2.created_at = feedback.created_at AND f2.id <= feedback.id))
-            ) WHERE project_id = ?`,
+            ) WHERE project_id = ? AND seq_num IS NOT NULL`,   // KD-3082: un-accepted Sim Reports stay un-numbered
       args: [pid],
     }).catch((e: any) => console.warn(`dedupe renumber skipped for ${pid}:`, e?.message || e))
     // Keep the atomic counter consistent with the renumbered max.
@@ -7880,6 +8314,90 @@ export async function dedupeAndIndexFeedbackSeq(c: Client): Promise<void> {
     // Truly unrepairable — make it LOUD so it surfaces in logs/monitoring, not a silent accept.
     console.error("[CRITICAL] #728 feedback_proj_seqnum_uidx could NOT be created — duplicate pretty ticket numbers may be silently accepted. Investigate feedback (project_id, seq_num) duplicates.")
   }
+}
+
+// KD-3082: which counter/column numbers a NEW report. A Sim Report → its own Sim Reports count (projects.sim_ticket_seq →
+// feedback.sim_seq_num, shown <KEY>-SIM-<n> in Sim Reports); every other report → the Tickets sequence (projects.ticket_seq →
+// feedback.seq_num, shown <KEY>-<n>). An accepted Sim Report additionally gets a Tickets number (see assignTicketSeqOnAccept).
+function seqColsFor(simId: string | null | undefined): { counter: "sim_ticket_seq" | "ticket_seq"; col: "sim_seq_num" | "seq_num" } {
+  return simId ? { counter: "sim_ticket_seq", col: "sim_seq_num" } : { counter: "ticket_seq", col: "seq_num" }
+}
+
+/** Number a just-inserted report from the right per-project sequence (fallback paths). */
+export async function allocFeedbackSeq(projectId: string, feedbackId: string, now: number, isSim: boolean): Promise<void> {
+  if (isSim) return allocSimTicketSeq(projectId, feedbackId)
+  return allocTicketSeq(projectId, feedbackId, now)
+}
+
+// KD-3082: atomic per-project allocation for feedback.sim_seq_num — mirrors allocTicketSeq (counter bump, MAX+1 fallback).
+export async function allocSimTicketSeq(projectId: string, feedbackId: string): Promise<void> {
+  const bump = await db!.execute({
+    sql: "UPDATE projects SET sim_ticket_seq = sim_ticket_seq + 1 WHERE id=? RETURNING sim_ticket_seq",
+    args: [projectId],
+  }).catch(() => ({ rows: [] as any[] }))
+  if (bump.rows && bump.rows.length) {
+    await db!.execute({
+      sql: "UPDATE feedback SET sim_seq_num=? WHERE id=? AND sim_seq_num IS NULL",
+      args: [Number((bump.rows[0] as any).sim_ticket_seq), feedbackId],
+    }).catch((e: any) => console.warn("sim_seq_num assign skipped:", e?.message || e))
+    return
+  }
+  await db!.execute({
+    sql: `UPDATE feedback SET sim_seq_num =
+            1 + COALESCE((SELECT MAX(sim_seq_num) FROM feedback f2 WHERE f2.project_id = ? AND f2.id <> ?), 0)
+          WHERE id = ? AND sim_seq_num IS NULL`,
+    args: [projectId, feedbackId, feedbackId],
+  }).catch((e: any) => console.warn("sim_seq_num assign (fallback) skipped:", e?.message || e))
+}
+
+// KD-3082: statuses in which a Sim Report is still waiting in Sim Reports. Any other status = a person accepted it.
+export const SIM_PRE_ACCEPT_STATUSES = new Set(["new", "dismissed"])
+
+/**
+ * KD-3082: when a Sim Report is ACCEPTED it takes the next number of the Tickets sequence (seq_num ← projects.ticket_seq), so
+ * on the Tickets board it shows <KEY>-SIM-<ticket number> and sorts in one sequence with manual / widget tickets. Its Sim
+ * Reports count (sim_seq_num) is kept. Idempotent: no-op for non-Sim rows, rows that already have a Tickets number (incl.
+ * legacy Sim Reports) and rows still waiting. Returns the row's seq_num (or null).
+ */
+export async function assignTicketSeqOnAccept(projectId: string, feedbackId: string): Promise<number | null> {
+  const read = async () => {
+    const r = await db!.execute({ sql: "SELECT sim_id, seq_num, status FROM feedback WHERE project_id=? AND id=?", args: [projectId, feedbackId] })
+    return r.rows.length ? (r.rows[0] as any) : null
+  }
+  const row = await read()
+  if (!row) return null
+  if (row.seq_num != null) return Number(row.seq_num)
+  if (row.sim_id == null || SIM_PRE_ACCEPT_STATUSES.has(String(row.status))) return null
+  await allocTicketSeq(projectId, feedbackId, Date.now())
+  const after = await read()
+  return after && after.seq_num != null ? Number(after.seq_num) : null
+}
+
+// KD-3082: one-time — number every existing Sim Report 1..N per project (by created_at, id) in sim_seq_num (its Sim Reports
+// count). Existing Sim Reports KEEP their seq_num, so already-shared links still resolve. Then (every boot, idempotent) keep
+// projects.sim_ticket_seq >= MAX(sim_seq_num) and install the uniqueness backstop.
+export async function backfillSimSeq(c: Client): Promise<void> {
+  const migKey = "sim_seq_backfill_2026_11_16"
+  const already = await c.execute({ sql: "SELECT key FROM schema_migrations WHERE key=?", args: [migKey] }).catch(() => ({ rows: [] as any[] }))
+  if (!(already.rows && already.rows.length)) {
+    // Dev DBs that ran an earlier build of this change may hold other sim_seq_num values / indexes: renumber ALL Sim Reports.
+    await c.execute("DROP INDEX IF EXISTS feedback_proj_simseq_uidx").catch(() => {})
+    await c.execute("DROP INDEX IF EXISTS feedback_proj_simseq_idx").catch(() => {})
+    const ok = await c.execute(`
+      UPDATE feedback SET sim_seq_num = (
+        SELECT COUNT(*) FROM feedback f2
+        WHERE f2.project_id = feedback.project_id AND f2.sim_id IS NOT NULL
+          AND (f2.created_at < feedback.created_at
+            OR (f2.created_at = feedback.created_at AND f2.id <= feedback.id))
+      ) WHERE sim_id IS NOT NULL
+    `).then(() => true).catch((e: any) => { console.warn("feedback.sim_seq_num backfill skipped:", e?.message || e); return false })
+    if (ok) await c.execute({ sql: "INSERT OR IGNORE INTO schema_migrations (key, applied_at) VALUES (?,?)", args: [migKey, Date.now()] }).catch(() => {})
+  }
+  await c.execute(`UPDATE projects SET sim_ticket_seq = (SELECT MAX(sim_seq_num) FROM feedback WHERE feedback.project_id = projects.id)
+     WHERE sim_ticket_seq < COALESCE((SELECT MAX(sim_seq_num) FROM feedback WHERE feedback.project_id = projects.id), 0)`)
+    .catch((e: any) => console.warn("projects.sim_ticket_seq seed skipped:", e?.message || e))
+  await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS feedback_proj_simseq_uidx ON feedback (project_id, sim_seq_num)")
+    .catch((e: any) => console.warn("feedback_proj_simseq_uidx skipped:", e?.message || e))
 }
 
 // Atomic per-project sequence allocation for feedback.seq_num. UPDATE…RETURNING on the single
@@ -7986,10 +8504,13 @@ export async function resolveWorkspaceTicket(slug: string, ref: string): Promise
     return { kind: "opaque", id: resolved.id, projectId: resolved.projectId }
   }
 
-  const m = rawRef.match(/^([A-Za-z][A-Za-z0-9]{1,9})-(\d+)$/)
+  // KD-1074: <KEY>-<n> is a ticket number (seq_num); <KEY>-SIM-<n> is a Sim Report number (sim_seq_num).
+  const m = rawRef.match(/^([A-Za-z][A-Za-z0-9]{1,9})-(?:(SIM)-)?(\d+)$/i)
   if (!m) return null
   const key = m[1].toUpperCase()
-  const seq = Number(m[2])
+  const isSimRef = !!m[2]
+  const seqCol = isSimRef ? "sim_seq_num" : "seq_num"
+  const seq = Number(m[3])
   if (!Number.isSafeInteger(seq) || seq < 1) return null
 
   // 1) Account: current slug, else a historical slug alias → the ORIGINAL owner (never another tenant).
@@ -8029,10 +8550,16 @@ export async function resolveWorkspaceTicket(slug: string, ref: string): Promise
 
   // 3) Existence: the ticket MUST exist. NEVER return a redirect for a nonexistent (project_id, seq)
   //    — that is the anti-enumeration guarantee (finding 2).
-  const fb = await db!.execute({
-    sql: "SELECT id FROM feedback WHERE project_id=? AND seq_num=? LIMIT 1",
-    args: [projectId, seq],
-  })
+  // KD-3082: <KEY>-SIM-<n> is an ACCEPTED Sim Report's Tickets number (seq_num) or a waiting Sim Report's own count
+  // (sim_seq_num). If both exist for the same n, the accepted one (on the Tickets board) wins.
+  const accepted = "(sim_id IS NOT NULL AND seq_num=? AND status NOT IN ('new','dismissed'))"
+  const fb = await db!.execute(isSimRef
+    ? {
+        sql: `SELECT id FROM feedback WHERE project_id=? AND (${accepted} OR sim_seq_num=?)
+              ORDER BY CASE WHEN ${accepted} THEN 0 ELSE 1 END LIMIT 1`,
+        args: [projectId, seq, seq, seq],
+      }
+    : { sql: `SELECT id FROM feedback WHERE project_id=? AND ${seqCol}=? LIMIT 1`, args: [projectId, seq] })
   if (!fb.rows.length) return null
   // KLA-780 round-2 (finding C2-resolvers): a pretty KEY-n permalink whose row was later folded resolves
   // to the canonical survivor (live root), not the hidden merged row.
@@ -8046,7 +8573,7 @@ export async function resolveWorkspaceTicket(slug: string, ref: string): Promise
     const curSlug = await currentSlugForAccount(accountId)
     const kr = await db!.execute({ sql: "SELECT ticket_key FROM projects WHERE id=? AND ticket_key IS NOT NULL LIMIT 1", args: [projectId] })
     const curKey = kr.rows.length ? String((kr.rows[0] as any).ticket_key) : null
-    if (curSlug && curKey) redirectTo = `/${curSlug}/${curKey}-${seq}`
+    if (curSlug && curKey) redirectTo = `/${curSlug}/${curKey}-${isSimRef ? "SIM-" : ""}${seq}`
   }
   return { kind: "pretty", id, projectId, redirectTo }
 }
@@ -8085,19 +8612,24 @@ export async function projectAliasInfo(projectId: string): Promise<{ slug: strin
 // backfill. Path only (no origin); callers prefix BASE. Used server-side to UPGRADE the widget-submit
 // issue_url, reporter-fix + assignment email links, and lead alerts (#727) to the pretty form.
 export async function prettyTicketPath(
-  input: { id: string; projectId: string; seqNum?: number | null },
+  input: { id: string; projectId: string; seqNum?: number | null; simSeqNum?: number | null },
 ): Promise<string> {
   const opaque = `/t/${input.id}`
   try {
     if (!input.id || !input.projectId) return opaque
-    let seq = input.seqNum
-    if (seq == null) {
-      const fr = await db!.execute({ sql: "SELECT seq_num FROM feedback WHERE id=? LIMIT 1", args: [input.id] })
-      seq = fr.rows.length && (fr.rows[0] as any).seq_num != null ? Number((fr.rows[0] as any).seq_num) : null
-    }
+    // KD-3082: a Sim Report links as <KEY>-SIM-<n> — n is its Tickets number once accepted, else its own Sim Reports count.
+    // A manual / widget ticket links as <KEY>-<n>.
+    const fr = await db!.execute({ sql: "SELECT sim_id, seq_num, sim_seq_num, status FROM feedback WHERE id=? LIMIT 1", args: [input.id] })
+    const row = fr.rows.length ? (fr.rows[0] as any) : null
+    const rowSeq = row ? (row.seq_num != null ? Number(row.seq_num) : null) : (input.seqNum ?? null)
+    const rowSim = row ? (row.sim_seq_num != null ? Number(row.sim_seq_num) : null) : (input.simSeqNum ?? null)
+    const isSim = row ? (row.sim_id != null || rowSim != null) : rowSim != null
+    const acceptedSim = isSim && rowSeq != null && !(row && SIM_PRE_ACCEPT_STATUSES.has(String(row.status)))
+    const simRef = isSim && (acceptedSim || rowSim != null)
+    const seq = !isSim ? rowSeq : (acceptedSim ? rowSeq : (rowSim ?? rowSeq))
     if (seq == null || !Number.isSafeInteger(seq) || seq < 1) return opaque
     const info = await projectAliasInfo(input.projectId)
-    if (info.slug && info.ticketKey) return `/${info.slug}/${info.ticketKey}-${seq}`
+    if (info.slug && info.ticketKey) return `/${info.slug}/${info.ticketKey}-${simRef ? "SIM-" : ""}${seq}`
   } catch { /* fall through to opaque */ }
   return opaque
 }
@@ -8525,9 +9057,11 @@ export async function listTriageFeedback(projectId: string): Promise<any[]> {
       planeIssueUrl: x.plane_issue_url != null ? String(x.plane_issue_url) : null,
       // KLA-200: human-readable sequential number
       seqNum: x.seq_num != null ? Number(x.seq_num) : null,
+      simSeqNum: x.sim_seq_num != null ? Number(x.sim_seq_num) : null, // KD-1074: Sim Report number (<KEY>-SIM-<n>)
       // JTBD 2.8: inline-evidence fields for the expandable triage row.
       hasReplay: replaySet.has(String(x.id)),
       clientContext: x.client_context_json != null ? safeJsonParse(x.client_context_json) : null,
+      source: x.source != null ? String(x.source) : (x.sim_id != null ? "sim" : null),
     }
   })
 }
@@ -8545,7 +9079,7 @@ export async function listInboxForProjects(
   projectId: string
   newReportCount: number
   regressionCount: number
-  topReports: Array<{ id: string; title: string; priority: string | null; createdAt: number; seqNum: number | null }>
+  topReports: Array<{ id: string; title: string; priority: string | null; createdAt: number; seqNum: number | null; simSeqNum?: number | null }>
 }[]> {
   if (!projectIds.length) return []
   const windowMs = opts?.windowMs ?? 48 * 3600 * 1000   // 48-hour default window
@@ -8584,7 +9118,7 @@ export async function listInboxForProjects(
   // We use a window-function approach: rank per project, take top N.
   // libSQL/SQLite supports ROW_NUMBER() so we use it.
   const topR = await db!.execute({
-    sql: `SELECT id, project_id, suggested_bug_json, observation, priority, severity, created_at, seq_num
+    sql: `SELECT id, project_id, suggested_bug_json, observation, priority, severity, created_at, seq_num, sim_seq_num
           FROM (
             SELECT *, ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY created_at DESC) AS rn
             FROM feedback
@@ -8594,7 +9128,7 @@ export async function listInboxForProjects(
           ) WHERE rn <= ?`,
     args: [...projectIds, since, topN],
   })
-  const topMap: Record<string, Array<{ id: string; title: string; priority: string | null; createdAt: number; seqNum: number | null }>> = {}
+  const topMap: Record<string, Array<{ id: string; title: string; priority: string | null; createdAt: number; seqNum: number | null; simSeqNum?: number | null }>> = {}
   for (const x of topR.rows) {
     const pid = String((x as any).project_id)
     let bug: any = null
@@ -8607,6 +9141,7 @@ export async function listInboxForProjects(
       priority: (x as any).priority ?? (x as any).severity != null ? String((x as any).priority ?? (x as any).severity) : null,
       createdAt: Number((x as any).created_at),
       seqNum: (x as any).seq_num != null ? Number((x as any).seq_num) : null,
+      simSeqNum: (x as any).sim_seq_num != null ? Number((x as any).sim_seq_num) : null, // KD-1074
     })
   }
 
@@ -8730,6 +9265,9 @@ export async function listTicketsPaginated(
   // (both share `where`).
   conditions.push("f.merged_into IS NULL")
 
+  // A Sim report still awaiting triage (status 'new', sim_id set) lives in Sim Reports only — it reaches the board only after a person
+  // accepts it (status → open). The board asks for 'new' (TO DO) explicitly, so this must hold even when statuses includes 'new'.
+  conditions.push("NOT (f.status = 'new' AND f.sim_id IS NOT NULL)")
   // Exclude 'new' (un-triaged) by default
   const statuses = (opts.statuses ?? []).filter(Boolean)
   if (statuses.length) {
@@ -8783,17 +9321,26 @@ export async function listTicketsPaginated(
 
   const search = opts.search?.trim()
   if (search) {
-    // Treat %, _, and backslash as literal user input rather than LIKE wildcards.
-    const escaped = search.replace(/[\\%_]/g, "\\\\$&")
+    // Treat %, _, and backslash as literal user input rather than LIKE wildcards. ONE backslash per char (ESCAPE '\'):
+    // KD-3139 — this used to insert TWO ("\\\\$&"), so the pattern demanded a literal backslash and any search
+    // containing "_" or "%" (e.g. "user_id", "50%") found nothing in the List while the Board still matched it.
+    const escaped = search.replace(/[\\%_]/g, "\\$&")
     const pattern = `%${escaped}%`
     // Titles and descriptions generated by Sims live in suggested_bug_json; manual-ticket
     // descriptions live in observation, while notes are the editable ticket description. #543: a
     // manual ticket's explicit Title now lives in the dedicated `title` column (no longer crammed
     // into observation), so search must cover it too or a title-only match is missed.
-    conditions.push(`(LOWER(COALESCE(f.title, '')) LIKE LOWER(?) ESCAPE '\\'
+    // KD-3095: a ticket ID typed into search ("109", "#109", "KD-109") must find that ticket by its
+    // number (feedback.seq_num) -- the ID is not part of any text column, so the LIKE match alone
+    // returned nothing. The key prefix is not checked: results are already project-scoped.
+    const idMatch = search.match(/^(?:#|[A-Za-z][A-Za-z0-9]{1,9}-)?(\d{1,15})$/)
+    const seq = idMatch ? Number(idMatch[1]) : NaN
+    const seqClause = Number.isSafeInteger(seq) && seq > 0 ? "f.seq_num = ? OR " : ""
+    conditions.push(`(${seqClause}LOWER(COALESCE(f.title, '')) LIKE LOWER(?) ESCAPE '\\'
                       OR LOWER(COALESCE(f.observation, '')) LIKE LOWER(?) ESCAPE '\\'
                       OR LOWER(COALESCE(f.notes, '')) LIKE LOWER(?) ESCAPE '\\'
                       OR LOWER(COALESCE(f.suggested_bug_json, '')) LIKE LOWER(?) ESCAPE '\\')`)
+    if (seqClause) args.push(seq)
     args.push(pattern, pattern, pattern, pattern)
   }
 
@@ -8855,35 +9402,54 @@ export async function listTicketsPaginated(
       createdAt: Number(x.created_at),
       updatedAt: x.updated_at != null ? Number(x.updated_at) : null,
     lastSeenAt: x.last_seen_at != null ? Number(x.last_seen_at) : null,
-      source: x.sim_id != null ? "sim" : (x.source === "manual" ? "manual" : "human"),
+      source: x.source === "autosim" ? "autosim" : (x.sim_id != null ? "sim" : (x.source === "manual" ? "manual" : "human")),
       // KLA-200: human-readable sequential number
       seqNum: x.seq_num != null ? Number(x.seq_num) : null,
+      simSeqNum: x.sim_seq_num != null ? Number(x.sim_seq_num) : null, // KD-1074: Sim Report number (<KEY>-SIM-<n>)
     }
   })
 
   return { tickets, total, page, totalPages }
 }
 
+export type DeletedTicketInfo = {
+  id: string; assignee: string | null; reporter: string | null; title: string; seqNum: number | null
+}
+
 export async function deleteTicketsBulk(
   projectId: string,
-  ticketIds: string[]
-): Promise<{ deleted: number; ticketIds: string[] }> {
+  ticketIds: string[],
+  actor: string | null = null,
+): Promise<{ deleted: number; ticketIds: string[]; tickets: DeletedTicketInfo[] }> {
   const cleanIds = Array.isArray(ticketIds)
     ? ticketIds.map(String).map(s => s.trim()).filter(Boolean).slice(0, 200)
     : []
-  if (!cleanIds.length) return { deleted: 0, ticketIds: [] }
+  if (!cleanIds.length) return { deleted: 0, ticketIds: [], tickets: [] }
 
   const placeholders = cleanIds.map(() => "?").join(",")
+  // KD-3134: also read who to notify (assignee + reporter) and the title, since the row is gone afterwards.
   const existingRows = await db!.execute({
-    sql: `SELECT id FROM feedback WHERE project_id = ? AND id IN (${placeholders})`,
+    sql: `SELECT id, assignee, contact_email, actor_email, title, suggested_bug_json, observation, seq_num
+          FROM feedback WHERE project_id = ? AND id IN (${placeholders})`,
     args: [projectId, ...cleanIds],
   })
-  const validIds = existingRows.rows.map((r: any) => String(r.id)).filter(Boolean)
-  if (!validIds.length) return { deleted: 0, ticketIds: [] }
+  const tickets: DeletedTicketInfo[] = existingRows.rows.filter((r: any) => r.id).map((r: any) => ({
+    id: String(r.id),
+    assignee: _notifEmail(r.assignee),
+    reporter: _notifEmail(r.contact_email) || _notifEmail(r.actor_email),
+    title: effectiveTicketTitle(r),
+    seqNum: r.seq_num != null ? Number(r.seq_num) : null,
+  }))
+  const validIds = tickets.map(t => t.id)
+  if (!validIds.length) return { deleted: 0, ticketIds: [], tickets: [] }
 
   const validPlaceholders = validIds.map(() => "?").join(",")
 
+  // "Deleted tickets" bin: a restorable copy is written in the SAME batch as the delete below.
+  const binStmts = await snapshotStatements(db!, projectId, validIds, actor) as Array<{ sql: string; args: any[] }>
+
   const stmts: Array<{ sql: string; args: any[] }> = [
+    ...binStmts,
     { sql: `DELETE FROM ticket_comments WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
     { sql: `DELETE FROM ticket_labels WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
     { sql: `DELETE FROM ticket_exports WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
@@ -8901,7 +9467,7 @@ export async function deleteTicketsBulk(
   await db!.batch(stmts, "write")
   invalidateDashboardCache(projectId)
 
-  return { deleted: validIds.length, ticketIds: validIds }
+  return { deleted: validIds.length, ticketIds: validIds, tickets }
 }
 
 // ── sim_runs — on-demand Sim run records ─────────────────────────────────────
@@ -9084,18 +9650,22 @@ export async function deleteLabel(projectId: string, labelId: string): Promise<b
   return Number(r.rowsAffected) > 0
 }
 
-export async function attachLabel(labelId: string, feedbackId: string): Promise<void> {
-  await db!.execute({
+// Both return whether the ticket's label set actually changed (false = already attached / not attached), so
+// bulk callers only notify for tickets that really changed.
+export async function attachLabel(labelId: string, feedbackId: string): Promise<boolean> {
+  const r = await db!.execute({
     sql: "INSERT OR IGNORE INTO ticket_labels (label_id, feedback_id, created_at) VALUES (?,?,?)",
     args: [labelId, feedbackId, Date.now()],
   })
+  return (r.rowsAffected ?? 0) > 0
 }
 
-export async function detachLabel(labelId: string, feedbackId: string): Promise<void> {
-  await db!.execute({
+export async function detachLabel(labelId: string, feedbackId: string): Promise<boolean> {
+  const r = await db!.execute({
     sql: "DELETE FROM ticket_labels WHERE label_id=? AND feedback_id=?",
     args: [labelId, feedbackId],
   })
+  return (r.rowsAffected ?? 0) > 0
 }
 
 export async function labelsForFeedback(feedbackId: string): Promise<LabelRow[]> {

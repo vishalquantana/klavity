@@ -4,7 +4,7 @@
 // exercised by the live spike (needs network + key), not unit-tested here.
 // acquirePlaywrightBrowser (used by the walker) is also tested here for its local/fallback path.
 import { describe, test, expect, afterAll } from "bun:test"
-import { acquireBrowser, acquirePlaywrightBrowser, createSteelSession, launchLocalChromium, BrowserLaunchError, playwrightContextOptionsForTrailViewport, startCdpScreencast, safeClose, type BrowserHandle, type PlaywrightBrowserHandle } from "./trails-browser-page"
+import { PuppeteerPage, selectAllBody, acquireBrowser, acquirePlaywrightBrowser, retryNavRace, createSteelSession, launchLocalChromium, BrowserLaunchError, playwrightContextOptionsForTrailViewport, startCdpScreencast, safeClose, type BrowserHandle, type PlaywrightBrowserHandle } from "./trails-browser-page"
 
 // Real-browser tests only run when KLAV_E2E=1 (browsers installed). CI default suite is hermetic.
 const RUN_BROWSER = !!process.env.KLAV_E2E
@@ -483,3 +483,52 @@ test("acquireBrowser Steel path: releases session when connectOverCDP fails", as
   }
   expect(released).toBe(true)
 }, 10_000)
+
+describe("retryNavRace", () => {
+  test("retries an evaluate that hangs mid-navigation, then returns the next attempt's result", async () => {
+    let calls = 0
+    const r = await retryNavRace(() => (++calls === 1 ? new Promise<string>(() => {}) : Promise.resolve("snap")), 4, 50)
+    expect(r).toBe("snap")
+    expect(calls).toBe(2)
+  })
+  test("does not retry unrelated errors", async () => {
+    let calls = 0
+    await expect(retryNavRace(async () => { calls++; throw new Error("boom") }, 4, 50)).rejects.toThrow("boom")
+    expect(calls).toBe(1)
+  })
+})
+
+// Autosim "PX4 Valid Login": Puppeteer fill() used a triple-click to select the old text, which selects nothing
+// on some React inputs, so re-typing the email APPENDED it (17 -> 34 -> 68 chars) and Login failed. fill() and
+// clearField() must select-all in the page (selectAllBody) and never rely on a triple-click.
+describe("PuppeteerPage.fill replaces existing text (hermetic)", () => {
+  function fakePage() {
+    const calls: string[] = []
+    const el = {
+      click: async (o?: any) => { calls.push(o?.clickCount === 3 ? "tripleClick" : "click") },
+      evaluate: async (fn: any) => { calls.push(fn === selectAllBody ? "selectAll" : "evaluate") },
+      type: async (v: string) => { calls.push("type:" + v) },
+    }
+    const page = {
+      on: () => {},
+      waitForSelector: async () => el,
+      keyboard: { press: async (k: string) => { calls.push("press:" + k) } },
+    }
+    return { calls, adapter: new PuppeteerPage(page) }
+  }
+  test("fill selects all in-page before typing, no triple-click", async () => {
+    const { calls, adapter } = fakePage()
+    await adapter.fill("#identity", "a@b.co", 1000)
+    expect(calls).toEqual(["selectAll", "type:a@b.co"])
+  })
+  test("clearField selects all in-page then Backspace, no triple-click", async () => {
+    const { calls, adapter } = fakePage()
+    await adapter.clearField("#identity", 1000)
+    expect(calls).toEqual(["selectAll", "press:Backspace"])
+  })
+  test("selectAllBody uses the input's own select()", () => {
+    let selected = false, focused = false
+    selectAllBody({ focus: () => { focused = true }, select: () => { selected = true } })
+    expect(focused && selected).toBe(true)
+  })
+})

@@ -13,6 +13,7 @@ import {
   updateFields,
   removeShot,
   updateShotAnnotations,
+  setRecordings,
   clear,
   makeShotId,
   pageCount,
@@ -239,5 +240,28 @@ describe('clear', () => {
     await addShot(s.id, shot(10, '/a'))
     await clear(s.id)
     expect(await getActiveSession(PROJECT, ORIGIN)).toBeNull()
+  })
+})
+
+// KD-1074: the recorded video must survive minimize → resume, so it is stored on the session.
+describe('setRecordings (KD-1074)', () => {
+  const rec = { id: 'rec_1', dataUrl: 'data:video/webm;base64,QQ==', mime: 'video/webm', durationMs: 4000, bytes: 3, width: 1280, height: 720, screenOnly: true }
+
+  it('stores recordings (metadata + dataUrl, no live blob) and reads them back', async () => {
+    const s = await startOrContinue(PROJECT, ORIGIN)
+    await setRecordings(s.id, [{ ...rec, blob: new Blob(['x']) } as any])
+    const back = await getActiveSession(PROJECT, ORIGIN)
+    expect(back!.recordings).toEqual([rec])
+  })
+
+  it('an empty list clears them', async () => {
+    const s = await startOrContinue(PROJECT, ORIGIN)
+    await setRecordings(s.id, [rec])
+    await setRecordings(s.id, [])
+    expect((await getActiveSession(PROJECT, ORIGIN))!.recordings).toEqual([])
+  })
+
+  it('returns null for a missing session', async () => {
+    expect(await setRecordings('nope|x', [rec])).toBeNull()
   })
 })

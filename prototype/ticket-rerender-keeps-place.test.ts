@@ -14,33 +14,32 @@ const slice = (from: string, len: number) => {
 }
 
 test("the cache→fresh re-render keeps the user's place instead of rebuilding from the top", () => {
-  const open = slice("    async function openSingleTicket(id, mode) {", 4000)
+  const open = slice("async function openSingleTicket(id, mode, context) {", 6000)
   const rerender = open.slice(open.indexOf("const single = $(\"ticketSingle\")"))
   expect(rerender).toContain("const keep = captureTktDetailState(single)")
-  expect(rerender).toContain("if (keep.busy) return")
-  expect(rerender).toContain("_renderSingleTicket(id, { keepScroll: true })")
+  expect(rerender).toContain("if (!keep.busy) {")   // mid-edit in another field / queued attachments → skip the rebuild
   expect(rerender).toContain("restoreTktDetailState(single, keep)")
   // capture happens before the rebuild, restore after it
-  expect(rerender.indexOf("captureTktDetailState")).toBeLessThan(rerender.indexOf("_renderSingleTicket(id, { keepScroll: true })"))
-  expect(rerender.indexOf("_renderSingleTicket(id, { keepScroll: true })")).toBeLessThan(rerender.indexOf("restoreTktDetailState(single, keep)"))
+  expect(rerender.indexOf("captureTktDetailState")).toBeLessThan(rerender.indexOf("_renderSingleTicket(id)"))
+  expect(rerender.indexOf("_renderSingleTicket(id)")).toBeLessThan(rerender.indexOf("restoreTktDetailState(single, keep)"))
 })
 
-test("a first open still scrolls to the top; only a keepScroll re-render skips it", () => {
-  const render = slice("    function _renderSingleTicket(id, opts) {", 30000)
-  const tail = render.slice(render.indexOf("// Panel scrolls itself to top"))
-  expect(tail).toContain("if (!(opts && opts.keepScroll)) {")
-  expect(tail.indexOf("if (!(opts && opts.keepScroll)) {")).toBeLessThan(tail.indexOf("window.scrollTo(0, 0)"))
+test("a first open still scrolls to the top; a same-ticket re-render keeps the scroll offset", () => {
+  const render = slice("function _renderSingleTicket(id) {", 40000)
+  const tail = render.slice(render.indexOf("// A NEW ticket (or panel → full page) starts at the top"))
+  expect(tail).toContain("if (_keepY > 0) restoreTktScroll(single, panel, _keepY)")
+  expect(tail.indexOf("_keepY > 0")).toBeLessThan(tail.indexOf("window.scrollTo(0, 0)"))
 })
 
 test("capture records scroll, tab, comment text/caret and flags edits a rebuild can't restore", () => {
-  const cap = slice("    function captureTktDetailState(single) {", 1600)
+  const cap = slice("function captureTktDetailState(single) {", 1600)
   for (const k of ["winY:", "panelY:", "tab:", "text:", "focused:", "selStart:", "selEnd:", "busy:"]) expect(cap).toContain(k)
   expect(cap).toContain("(isField && ae !== ta)")   // editing another field → skip the re-render
   expect(cap).toContain(".tkt-cmt-chips")           // queued comment attachments → skip the re-render
 })
 
 test("restore puts the comment back, refocuses without scrolling, and re-applies scroll as content loads", () => {
-  const res = slice("    function restoreTktDetailState(single, keep) {", 2200)
+  const res = slice("function restoreTktDetailState(single, keep) {", 2200)
   expect(res).toContain("ta.value = keep.text")
   expect(res).toContain("ta.focus({ preventScroll: true })")
   expect(res).toContain("ta.setSelectionRange(keep.selStart, keep.selEnd)")

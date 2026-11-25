@@ -27,6 +27,25 @@ export interface EvidenceShot {
   // no DOM nodes or functions) → structured-clone / JSON safe for IndexedDB. Absent = nothing drawn.
   annotations?: unknown
   dataUrl?: string
+  // KD-3088: where the page's numbers were when this shot was taken ({ geo, capture } from the composer), so
+  // "Mask numbers" can still mask it after Minimize → Resume. JSON-safe. Absent = page had no numbers / unknown.
+  numberMask?: unknown
+}
+
+/**
+ * KD-1074: a "Record me" clip attached in the composer, kept so it survives minimize → resume (and
+ * navigation). Mirrors the composer's ReportRecording minus the live Blob / object URL — the dataUrl is
+ * the upload payload and also plays in the strip on restore.
+ */
+export interface EvidenceRecording {
+  id: string
+  dataUrl: string
+  mime: string
+  durationMs: number
+  bytes: number
+  width: number
+  height: number
+  screenOnly: boolean
 }
 
 /** A bug report in progress. `id` is deterministic = `${projectId}|${origin}` (one per project+origin). */
@@ -41,7 +60,26 @@ export interface EvidenceSession {
   reportType: string
   env?: string
   shots: EvidenceShot[]
+  recordings?: EvidenceRecording[]
+  /** Files attached via Attach. Small ones keep their bytes (dataUrl); big ones only metadata (dataUrl ''), their bytes stay in page memory. */
+  files?: EvidenceFile[]
+  /** "Report Multiple Issues" results (the AI's ticket list + the reporter's edits/selections) for the
+   *  walkthrough recording `recordingId`, so Minimize → Resume keeps "N issues identified" instead of losing it. */
+  multi?: { recordingId: string; items: unknown[]; original: unknown[] | null } | null
   isOpen?: boolean
+  /** KD-3088: the reporter's "Mask numbers" choice, so Resume re-opens the composer with the same state. */
+  maskNumbers?: boolean
+}
+
+export interface EvidenceFile {
+  id: string
+  name: string
+  type: string
+  size: number
+  dataUrl: string
+  /** The raw bytes of a file the composer keeps as a Blob (attached VIDEOS — never base64'd). IndexedDB stores
+   *  Blobs natively, so the video survives minimize → navigation/reload → resume like screenshots do. */
+  blob?: Blob
 }
 
 /** addShot outcome — carries a reason when the size/count cap rejected the shot so the UI can nudge. */
@@ -220,10 +258,11 @@ export async function addShot(sessionId: string, shot: EvidenceShot): Promise<Ad
 /** Patch the report's text fields (title/desc/type/env/isOpen). Returns the updated session, or null if gone. */
 export async function updateFields(
   sessionId: string,
-  fields: { title?: string; desc?: string; reportType?: string; env?: string; isOpen?: boolean },
+  fields: { title?: string; desc?: string; reportType?: string; env?: string; isOpen?: boolean; maskNumbers?: boolean },
 ): Promise<EvidenceSession | null> {
   const cur = await getById(sessionId)
   if (!cur) return null
+  if (fields.maskNumbers !== undefined) cur.maskNumbers = fields.maskNumbers
   if (fields.title !== undefined) cur.title = fields.title
   if (fields.desc !== undefined) cur.desc = fields.desc
   if (fields.reportType !== undefined) cur.reportType = fields.reportType
@@ -252,6 +291,50 @@ export async function updateShotAnnotations(
   else shot.annotations = annotations
   cur.updatedAt = Date.now()
   await putSession(cur)
+  return cur
+}
+
+/** KD-1074: replace the session's recordings with the composer's current list (empty array clears). */
+export async function setRecordings(sessionId: string, recordings: EvidenceRecording[]): Promise<EvidenceSession | null> {
+  const cur = await getById(sessionId)
+  if (!cur) return null
+  cur.recordings = recordings.map((r) => ({
+    id: r.id, dataUrl: r.dataUrl, mime: r.mime, durationMs: r.durationMs, bytes: r.bytes,
+    width: r.width, height: r.height, screenOnly: r.screenOnly,
+  }))
+  cur.updatedAt = Date.now()
+  await putSession(cur)
+  return cur
+}
+
+/** Store (or clear with null) the "Report Multiple Issues" analysis so it survives minimize / navigation. */
+export async function setMulti(sessionId: string, multi: EvidenceSession['multi']): Promise<EvidenceSession | null> {
+  const cur = await getById(sessionId)
+  if (!cur) return null
+  cur.multi = multi ? JSON.parse(JSON.stringify(multi)) : null
+  cur.updatedAt = Date.now()
+  await putSession(cur)
+  return cur
+}
+
+/** Replace the session's attached files with the composer's current list (empty array clears). */
+export async function setFiles(sessionId: string, files: EvidenceFile[]): Promise<EvidenceSession | null> {
+  const cur = await getById(sessionId)
+  if (!cur) return null
+  cur.files = files.map((f) => ({
+    id: f.id, name: f.name, type: f.type, size: f.size, dataUrl: f.dataUrl || '',
+    ...(f.blob && typeof f.blob.size === 'number' ? { blob: f.blob } : {}),
+  }))
+  cur.updatedAt = Date.now()
+  try {
+    await putSession(cur)
+  } catch (e) {
+    // Storage quota hit by a big video: keep the metadata (the bytes stay in page memory for this page) rather
+    // than failing the whole session write.
+    if (!cur.files.some((f) => f.blob)) throw e
+    cur.files = cur.files.map(({ blob: _b, ...rest }) => rest)
+    await putSession(cur)
+  }
   return cur
 }
 

@@ -34,7 +34,7 @@ let _seq = 0
  * on Allow) and a one-line steer. The caller owns positioning + show/hide (toggle the `kl-show` class) and
  * appends it wherever it wants. `align` only tweaks which corner the little pointer tail sits on.
  */
-export function createSharePickerHint(opts: { title: string; steer: string; host?: string; align?: 'left' | 'right' }): HTMLElement {
+export function createSharePickerHint(opts: { title: string; steer: string; host?: string; align?: 'left' | 'right'; onCancel?: () => void }): HTMLElement {
   const host = opts.host || currentHostLabel()
   const id = 'kl-shp-' + (++_seq)
   const wrap = document.createElement('div')
@@ -98,6 +98,12 @@ export function createSharePickerHint(opts: { title: string; steer: string; host
   cap.append(fav, rt); prev.append(shot, cap)
   const foot = document.createElement('div'); foot.className = 'kl-shp-foot'
   const cancel = document.createElement('span'); cancel.className = 'kl-shp-cancel'; cancel.textContent = 'Cancel'
+  cancel.style.cursor = 'pointer'
+  cancel.addEventListener('click', (e) => {
+    e.stopPropagation()
+    wrap.classList.remove('kl-show')
+    try { opts.onCancel?.() } catch {}
+  })
   const allow = document.createElement('span'); allow.className = 'kl-shp-allow'; allow.textContent = 'Allow'
   foot.append(cancel, allow)
   dlg.append(dh, prev, foot)
