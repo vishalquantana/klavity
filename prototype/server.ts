@@ -146,6 +146,7 @@ import { buildOpenApiSpec } from "./lib/openapi"
 import { buildAuthoredRunStatus } from "./lib/v1-authored"
 import { listRecentWalks } from "./lib/trails"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
+import { unhandledErrorResponse } from "./lib/error-response"
 import { ticketKeyLabel } from "./lib/ticket-key-label"
 import { startCrashReaper } from "./lib/trails-reaper"
 import { ResumeConflictError, runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuthorSessions, listNeedsAuthSessionsForAutoResume, AUTOSIM_DEADLINE_MS_DEFAULT } from "./lib/trails-author"
@@ -17032,7 +17033,19 @@ Bun.serve({
     }
     // Establish per-request context (for F5 token-project binding) and apply security headers to every
     // response from a single chokepoint.
-    return reqCtx.run({}, async () => withWidgetCors(req, withSecurityHeaders(await handle(req, server))))
+    // KD-2878: an error no route caught (e.g. the DB socket dropped mid-request) must not fall through to Bun's raw
+    // error page — log it and answer with a proper 503 (a self-retrying page for browsers, JSON for API calls).
+    try {
+      return await reqCtx.run({}, async () => withWidgetCors(req, withSecurityHeaders(await handle(req, server))))
+    } catch (e) {
+      const { id } = oops(e, "unhandled")
+      return withWidgetCors(req, withSecurityHeaders(unhandledErrorResponse(req, id)))
+    }
+  },
+  // Last line of defence for anything thrown outside the try above (Bun calls this instead of its dev error page).
+  error(e) {
+    const { id } = oops(e, "unhandled")
+    return unhandledErrorResponse(null, id)
   },
 })
 

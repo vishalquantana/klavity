@@ -19,12 +19,39 @@ const authToken = process.env.TURSO_AUTH_TOKEN
 // SQL + duration (surfaces in prod journalctl). Wall-clock captures network RTT to remote Turso, which is
 // the cost that actually dominates hot paths. Args are deliberately NOT logged (avoid PII/emails/tokens).
 const SLOW_QUERY_MS = Number(process.env.KLAV_SLOW_QUERY_MS) || 200
-function instrumentClient(c: Client): Client {
+
+// KD-2878: a dropped connection to remote Turso ("The socket connection was closed unexpectedly", ECONNRESET,
+// "fetch failed"…) is almost always a one-off network blip. It used to fail the whole request — on a page load
+// that surfaced as Bun's raw error page. Retry ONCE, but only for READ statements: a write whose socket dropped
+// may already have been applied, so repeating it could duplicate it.
+const TRANSIENT_DB_ERROR = /socket connection was closed|ECONNRESET|ECONNREFUSED|EPIPE|ETIMEDOUT|fetch failed|network (?:error|connection was lost)|connection (?:reset|closed)|other side closed|UND_ERR_SOCKET/i
+export function isTransientDbError(e: unknown): boolean {
+  const err = e as any
+  const parts = [err?.message, err?.code, err?.cause?.message, err?.cause?.code].filter(Boolean).map(String)
+  return parts.some((p) => TRANSIENT_DB_ERROR.test(p))
+}
+export function isReadOnlySql(sql: unknown): boolean {
+  const s = String(sql || "").replace(/^\s*(?:--[^\n]*\n|\/\*[\s\S]*?\*\/|\s)*/, "").toUpperCase()
+  if (s.startsWith("SELECT") || s.startsWith("PRAGMA") || s.startsWith("EXPLAIN")) return true
+  // WITH … SELECT (a CTE that ends in a read); a CTE feeding INSERT/UPDATE/DELETE is a write.
+  return s.startsWith("WITH") && !/\b(INSERT|UPDATE|DELETE|REPLACE)\b/.test(s)
+}
+const DB_RETRY_DELAY_MS = 150
+
+export function instrumentClient(c: Client): Client {
   const orig = c.execute.bind(c)
   ;(c as any).execute = async (stmt: any, ...rest: any[]) => {
     const t0 = performance.now()
     try {
-      return await orig(stmt, ...rest)
+      try {
+        return await orig(stmt, ...rest)
+      } catch (e) {
+        const sql = typeof stmt === "string" ? stmt : stmt?.sql
+        if (!isTransientDbError(e) || !isReadOnlySql(sql)) throw e
+        console.warn(`[db-retry] ${String((e as any)?.message || e).slice(0, 120)} — retrying read once`)
+        await new Promise((r) => setTimeout(r, DB_RETRY_DELAY_MS))
+        return await orig(stmt, ...rest)
+      }
     } finally {
       const ms = performance.now() - t0
       if (ms >= SLOW_QUERY_MS) {
