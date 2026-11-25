@@ -23154,9 +23154,12 @@
           function openReportCockpit(id, t) {
             if (typeof openSingleTicket !== "function") return
             if (!Array.isArray(state.tickets)) state.tickets = []
+            // KD-3144 follow-up: Sim Reports rows come from /triage, which lists only status "new" reports but omits the
+            // field — fill it in so Accept / Dismiss render on the FIRST (cached) paint, not after the full fetch.
+            const seed = t && !t.status ? { ...t, status: "new" } : { ...t }
             const ix = state.tickets.findIndex(x => String(x.id) === String(id))
-            if (ix >= 0) state.tickets[ix] = { ...state.tickets[ix], ...t }
-            else state.tickets.push({ ...t })
+            if (ix >= 0) state.tickets[ix] = { ...state.tickets[ix], ...seed, status: state.tickets[ix].status || seed.status }
+            else state.tickets.push(seed)
             openSingleTicket(String(id), "panel", "triage")
           }
           // Shared priority dropdown generator for Sim Reports cards and rows
@@ -29865,7 +29868,11 @@
             const hit = (Array.isArray(_tktBoardTickets) ? _tktBoardTickets.find(x => String(x.id) === sid) : null)
               || ((typeof _triageItems !== "undefined" && Array.isArray(_triageItems)) ? _triageItems.find(x => String(x.id) === sid) : null)
             if (!hit) return false
-            state.tickets.push({ ...hit })
+            // KD-3144 follow-up: the Sim Reports list (/triage) only returns reports still waiting for review but leaves
+            // out `status`, so the first (cached) render had no status and Accept / Dismiss only appeared once the full
+            // /api/feedback/:id arrived. Every /triage row IS status "new", so fill it in and they show immediately.
+            const fromTriage = !(Array.isArray(_tktBoardTickets) && _tktBoardTickets.some(x => String(x.id) === sid))
+            state.tickets.push(fromTriage && !hit.status ? { ...hit, status: "new" } : { ...hit })
             return true
           }
           // Share-viewer onboarding: the shareable canonical URL is the ADAPTIVE ticket link /t/<id>. A member
@@ -29963,7 +29970,11 @@
           }
           // KD-3144: a report still waiting for review (status "new" — e.g. a Sim Report like QPQ-SIM-58) gets the same
           // Accept / Dismiss as the Sim Reports list, in BOTH the preview panel and the full ticket page.
-          function tktNeedsReview(t) { return !!t && String(t.status || "").toLowerCase() === "new" }
+          // KD-3144 follow-up: ONLY Sim Reports (filed by a Sim — simId / a SIM number) get these buttons; a normal
+          // ticket never shows them, even if it is still "new".
+          function tktNeedsReview(t) {
+            return !!t && String(t.status || "").toLowerCase() === "new" && (!!t.simId || t.simSeqNum != null)
+          }
           function tktReviewActionsHtml(t) {
             if (!tktNeedsReview(t)) return ""
             return `<button class="tkt-panel-btn tkt-review-accept" data-act="accept" type="button" title="Accept as a bug: moves it to Open in Tickets">${kicon('check', { size: 13 })} Accept</button>`

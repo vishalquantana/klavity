@@ -38,3 +38,22 @@ test("they reuse the Sim Reports list actions; Accept re-renders as Open, Dismis
   // nothing changes locally when the server call fails (tgAccept/tgDismiss show the retry message)
   expect(wire).toContain("if (!res || !res.ok) return")
 })
+
+// KD-3144 follow-up: the buttons are ONLY for Sim Reports, and they show on the first (cached) paint.
+test("normal tickets never get Accept / Dismiss, even while still new", () => {
+  expect(actionsHtml({ status: "new" })).toBe("")                       // human Snap / normal ticket
+  expect(actionsHtml({ status: "new", simId: null, simSeqNum: null })).toBe("")
+  expect(actionsHtml({ status: "new", simId: "sim_1" })).toContain('data-act="accept"')
+  expect(actionsHtml({ status: "new", simSeqNum: 12 })).toContain('data-act="dismiss"')
+})
+
+test("Sim Reports rows (from /triage, no status field) are seeded as new so the buttons show at once", () => {
+  const cockpit = extract("openReportCockpit")
+  expect(cockpit).toContain('!t.status ? { ...t, status: "new" }')
+  const seed = extract("_tktSeedFromCaches")
+  expect(seed).toContain('status: "new"')
+  // seeding a triage row with no status makes it a reviewable Sim Report
+  const row = { id: "fb_1", simId: "sim_1", simSeqNum: 7 }
+  const seeded = !(row as any).status ? { ...row, status: "new" } : row
+  expect(actionsHtml(seeded)).toContain('data-act="accept"')
+})
