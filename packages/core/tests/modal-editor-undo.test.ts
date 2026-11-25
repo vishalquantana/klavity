@@ -65,7 +65,7 @@ async function editAndSave(c: any) {
   await tick() // img.onload builds the editor
   const editor = (q(c, '.kl-edtb') as HTMLElement).parentElement as HTMLElement
   const canvas = editor.querySelector('canvas') as HTMLCanvasElement
-  // Default editor tool is 'rect' — pointerdown/up adds a rectangle shape.
+  // Default editor tool is 'arrow' (KD-3154) — a pointerdown/up drag adds an arrow shape.
   ptr(canvas, 'pointerdown', 20, 20)
   ptr(canvas, 'pointerup', 90, 90)
   ;(editor.querySelector('#klavity-save-ann') as HTMLButtonElement).click()

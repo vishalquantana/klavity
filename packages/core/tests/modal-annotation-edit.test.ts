@@ -58,7 +58,7 @@ describe('annotation toolbar', () => {
     expect(q(c, '[data-tool="count"]').getAttribute('aria-label')).toBe('Counter')
     expect(q(c, '[data-tool="pen"]').getAttribute('aria-label')).toBe('Pencil')
     for (const t of ['rect', 'arrow', 'text', 'count', 'pen', 'line', 'circle']) expect(q(c, `[data-tool="${t}"] svg`).getAttribute('width')).toBe('20')
-    expect(q(c, '[data-tool="rect"]').classList.contains('kl-on')).toBe(true)  // Rectangle stays the default (Dev)
+    expect(q(c, '[data-tool="select"]').classList.contains('kl-on')).toBe(true)  // KD-3154: Select (V) is the default tool
     c.close()
   })
 
