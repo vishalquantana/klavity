@@ -20,6 +20,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dashboard · Klavity</title>
   <link rel="stylesheet" href="/fonts/fonts.css" />
+  <!-- Ticket titles use Fraunces; preload it so a ticket's title doesn't render in a fallback font and then
+       "turn bold" when the font arrives late (it was only requested once the first title was on screen). -->
+  <link rel="preload" href="/fonts/fraunces-300-900-normal-latin.woff2" as="font" type="font/woff2" crossorigin />
   <!-- Guided tour: vendored driver.js v1.6.0 (MIT) — local files, CSP-safe (no CDN) -->
   <link rel="stylesheet" href="/vendor/driver.css" />
   <script src="/vendor/driver.min.js" defer></script>
@@ -23154,9 +23157,12 @@
           function openReportCockpit(id, t) {
             if (typeof openSingleTicket !== "function") return
             if (!Array.isArray(state.tickets)) state.tickets = []
+            // KD-3144 follow-up: Sim Reports rows come from /triage, which lists only status "new" reports but omits the
+            // field — fill it in so Accept / Dismiss render on the FIRST (cached) paint, not after the full fetch.
+            const seed = t && !t.status ? { ...t, status: "new" } : { ...t }
             const ix = state.tickets.findIndex(x => String(x.id) === String(id))
-            if (ix >= 0) state.tickets[ix] = { ...state.tickets[ix], ...t }
-            else state.tickets.push({ ...t })
+            if (ix >= 0) state.tickets[ix] = { ...state.tickets[ix], ...seed, status: state.tickets[ix].status || seed.status }
+            else state.tickets.push(seed)
             openSingleTicket(String(id), "panel", "triage")
           }
           // Shared priority dropdown generator for Sim Reports cards and rows
@@ -26230,7 +26236,7 @@
               var isMp4 = (r.contentType && r.contentType.includes("mp4")) || (String(r.key || "").endsWith(".mp4")) || (String(r.filename || "").endsWith(".mp4"))
               var dlExt = isMp4 ? "mp4" : "webm"
               var vid = r.url || r.fallbackUrl
-                ? '<div class="tkt-rec-vwrap" data-rec="' + rid + '">'
+                ? '<div class="tkt-rec-vwrap" data-rec="' + rid + '" data-media-key="' + esc(String(r.key || r.url || r.fallbackUrl)) + '">'
                 + '<video class="tkt-rec-video" data-rec="' + rid + '"' + (r.fallbackUrl ? ' data-fallback-url="' + esc(r.fallbackUrl) + '"' : '') + ' src="' + esc(String(r.url || r.fallbackUrl)) + '" controls preload="metadata" playsinline>'
                 + '<source src="' + esc(String(r.url || r.fallbackUrl)) + '"' + (r.contentType ? ' type="' + esc(String(r.contentType)) + '"' : '') + '>'
                 + 'Your browser does not support video playback.</video>'
@@ -27019,7 +27025,7 @@
                 thumbs += '<div class="tkt-attach-tile"><button type="button" class="tkt-attach-thumb" data-idx="' + i + '" title="' + name + '">'
                   + (kind === "image"
                     ? '<img src="' + esc(String(attUrl)) + '" alt="' + name + '" loading="lazy">'
-                    : '<video src="' + esc(String(attUrl)) + '#t=0.1" preload="metadata" muted playsinline></video><span class="tkt-attach-play">' + kicon('play', { size: 16 }) + '</span>')
+                    : '<video data-media-key="' + esc(String(a.key || attUrl)) + '" src="' + esc(String(attUrl)) + '#t=0.1" preload="metadata" muted playsinline></video><span class="tkt-attach-play">' + kicon('play', { size: 16 }) + '</span>')
                   + '<span class="tkt-attach-cap">' + name + '</span></button>'
                   + '<button type="button" class="tkt-attach-dl-btn" data-tile-dl="' + i + '" aria-label="Download ' + name + '" title="Download ' + name + '">' + _dlSvg + '</button>'
                   + _attachRemoveUi(t, a) + '</div>'
@@ -29694,6 +29700,69 @@
           let _tktReuse = false
           function tktReadsReset() { _tktReads.clear(); _tktReuse = false }
           function tktRenderReusing(fn) { _tktReuse = true; try { return fn() } finally { _tktReuse = false } }
+          // ── Ticket preview speed: avoid reloading media on the cache → fresh second render ──
+          // Milliseconds left on an S3 presigned link (X-Amz-Date + X-Amz-Expires); 0 when it isn't one or can't be read.
+          function tktPresignLeftMs(u) {
+            try {
+              const x = new URL(String(u), location.origin)
+              const d = x.searchParams.get("X-Amz-Date") || "", exp = Number(x.searchParams.get("X-Amz-Expires"))
+              const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(d)
+              if (!m || !(exp > 0)) return 0
+              return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) + exp * 1000 - Date.now()
+            } catch (e) { return 0 }
+          }
+          // The server signs a NEW link for every recording/attachment on every read, so the fresh copy's URLs never
+          // match the cached ones and the browser re-downloads the same file. Keep the cached link for the same file
+          // (same storage key) while it still has 10+ minutes left; otherwise take the fresh one.
+          function tktKeepMediaUrls(cached, fresh) {
+            if (!cached || !fresh) return
+            ;["recordings", "attachments"].forEach(f => {
+              const was = cached[f], now = fresh[f]
+              if (!Array.isArray(was) || !Array.isArray(now)) return
+              now.forEach(item => {
+                if (!item || !item.key || !item.url) return
+                const old = was.find(x => x && x.key === item.key && x.url)
+                if (old && old.url !== item.url && tktPresignLeftMs(old.url) > 10 * 60 * 1000) item.url = old.url
+              })
+            })
+          }
+          // True when the fresh server copy differs from what is already rendered (any field it carries).
+          function tktFreshChanges(cached, fresh) {
+            if (!cached || !fresh) return true
+            return Object.keys(fresh).some(k => {
+              try { return JSON.stringify(cached[k]) !== JSON.stringify(fresh[k]) } catch (e) { return true }
+            })
+          }
+          // A re-render of the SAME ticket used to destroy the <video> players and build new ones, so a clip that was
+          // loading (or playing) started again from zero. Take the live players out before the panel is cleared …
+          function tktTakeLiveMedia(single, id) {
+            const live = new Map()
+            try {
+              if (!single || single.getAttribute("data-tkt-id") !== String(id)) return live
+              single.querySelectorAll(".tkt-rec-vwrap[data-media-key]").forEach(w => {
+                if (!w.classList.contains("tkt-rec-failed")) live.set("rec|" + w.getAttribute("data-media-key"), w)
+              })
+              single.querySelectorAll("video[data-media-key]").forEach(v => {
+                if (!v.closest(".tkt-rec-vwrap")) live.set("vid|" + v.getAttribute("data-media-key"), v)
+              })
+            } catch (e) { }
+            return live
+          }
+          // … and put them back in place of the freshly built ones for the same file.
+          function tktRestoreLiveMedia(single, live) {
+            if (!single || !live || !live.size) return
+            try {
+              single.querySelectorAll(".tkt-rec-vwrap[data-media-key]").forEach(w => {
+                const old = live.get("rec|" + w.getAttribute("data-media-key"))
+                if (old && old !== w) { w.replaceWith(old); live.delete("rec|" + w.getAttribute("data-media-key")) }
+              })
+              single.querySelectorAll("video[data-media-key]").forEach(v => {
+                if (v.closest(".tkt-rec-vwrap")) return
+                const old = live.get("vid|" + v.getAttribute("data-media-key"))
+                if (old && old !== v) { v.replaceWith(old); live.delete("vid|" + v.getAttribute("data-media-key")) }
+              })
+            } catch (e) { }
+          }
           function tktRead(kind, ticketId, url, init, reuse = _tktReuse) {   // `reuse`: callers that continue after an await capture the flag up front
             const key = String(ticketId) + "|" + kind
             if (reuse && _tktReads.has(key)) return _tktReads.get(key)
@@ -29744,12 +29813,20 @@
               // survives while status/priority/assignee/notes/labels are refreshed.
               if (!Array.isArray(state.tickets)) state.tickets = []
               const ix = state.tickets.findIndex(x => String(x.id) === String(id))
-              if (ix >= 0) state.tickets[ix] = { ...state.tickets[ix], ...fresh }
+              // Ticket preview speed: keep the media links already on screen (the server signs a NEW S3 link on every
+              // read, which made the second render reload every video/image from zero), and skip the second render
+              // entirely when the fresh copy changes nothing.
+              let _changed = true
+              if (ix >= 0) {
+                tktKeepMediaUrls(state.tickets[ix], fresh)
+                _changed = tktFreshChanges(state.tickets[ix], fresh)
+                state.tickets[ix] = { ...state.tickets[ix], ...fresh }
+              }
               else state.tickets.push(fresh)
               // Only re-render if this ticket is STILL the one being viewed (no newer open since, panel still shown).
               if (mySeq !== _tktOpenSeq) return
               const single = $("ticketSingle")
-              if (single && !single.classList.contains("hide")) tktRenderReusing(() => _renderSingleTicket(id))   // reuse render 1's reads
+              if (_changed && single && !single.classList.contains("hide")) tktRenderReusing(() => _renderSingleTicket(id))   // reuse render 1's reads
               if (fresh.exportPending) pollTicketExports(id)
             } catch (e) { }
             finally { if (_tktOpenAbort === ctrl) _tktOpenAbort = null }
@@ -29865,7 +29942,11 @@
             const hit = (Array.isArray(_tktBoardTickets) ? _tktBoardTickets.find(x => String(x.id) === sid) : null)
               || ((typeof _triageItems !== "undefined" && Array.isArray(_triageItems)) ? _triageItems.find(x => String(x.id) === sid) : null)
             if (!hit) return false
-            state.tickets.push({ ...hit })
+            // KD-3144 follow-up: the Sim Reports list (/triage) only returns reports still waiting for review but leaves
+            // out `status`, so the first (cached) render had no status and Accept / Dismiss only appeared once the full
+            // /api/feedback/:id arrived. Every /triage row IS status "new", so fill it in and they show immediately.
+            const fromTriage = !(Array.isArray(_tktBoardTickets) && _tktBoardTickets.some(x => String(x.id) === sid))
+            state.tickets.push(fromTriage && !hit.status ? { ...hit, status: "new" } : { ...hit })
             return true
           }
           // Share-viewer onboarding: the shareable canonical URL is the ADAPTIVE ticket link /t/<id>. A member
@@ -29963,7 +30044,11 @@
           }
           // KD-3144: a report still waiting for review (status "new" — e.g. a Sim Report like QPQ-SIM-58) gets the same
           // Accept / Dismiss as the Sim Reports list, in BOTH the preview panel and the full ticket page.
-          function tktNeedsReview(t) { return !!t && String(t.status || "").toLowerCase() === "new" }
+          // KD-3144 follow-up: ONLY Sim Reports (filed by a Sim — simId / a SIM number) get these buttons; a normal
+          // ticket never shows them, even if it is still "new".
+          function tktNeedsReview(t) {
+            return !!t && String(t.status || "").toLowerCase() === "new" && (!!t.simId || t.simSeqNum != null)
+          }
           function tktReviewActionsHtml(t) {
             if (!tktNeedsReview(t)) return ""
             return `<button class="tkt-panel-btn tkt-review-accept" data-act="accept" type="button" title="Accept as a bug: moves it to Open in Tickets">${kicon('check', { size: 13 })} Accept</button>`
@@ -30026,6 +30111,7 @@
             // must keep the reader where they are. Before, every render ended with scroll-to-top, so a user who had
             // scrolled down (often to the bottom) while the fresh /api/feedback/:id was loading got thrown back up.
             const _keepY = tktScrollToKeep(single, id, panel)
+            const _liveMedia = tktTakeLiveMedia(single, id)   // keep loading/playing videos across a re-render
             single.innerHTML = ""
             if (panel) {
               // Panel mode: board/list/toolbar STAY visible behind a fixed right-side panel + scrim.
@@ -30349,6 +30435,7 @@
             } catch (e) { }
             // Move focus into the surface for keyboard users (a11y §10). Panel = Close; page = Back.
             try { if (single.__focusTarget) single.__focusTarget.focus({ preventScroll: true }) } catch (e) { }
+            tktRestoreLiveMedia(single, _liveMedia)
             single.setAttribute("data-tkt-id", String(id))
             single.setAttribute("data-tkt-mode", panel ? "panel" : "full")
             // A NEW ticket (or panel → full page) starts at the top; a re-render of the same one keeps the scroll.
