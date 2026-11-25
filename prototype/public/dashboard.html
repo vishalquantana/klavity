@@ -30907,6 +30907,9 @@
               case "ticket_screenshot_annotated": return `${who} annotated the screenshot`
               case "ticket_qa_closed": return `${who} closed the ticket after QA`
               case "ticket_deleted": return `${who} deleted this ticket`
+              case "ticket_restored": return `${who} restored this ticket`
+              case "ticket_comment_edited": return `${who} edited a comment${m.snippet ? `: “${esc(String(m.snippet).slice(0, 120))}”` : ""}`
+              case "ticket_comment_deleted": return `${who} deleted a comment${m.snippet ? `: “${esc(String(m.snippet).slice(0, 120))}”` : ""}`
               default: return `${who} updated the ticket`
             }
           }

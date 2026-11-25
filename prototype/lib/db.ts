@@ -4292,10 +4292,13 @@ export const NOTIFY_ASSIGNEE_TYPES = new Set([
   "ticket_status_changed", "ticket_priority_changed", "ticket_assignee_changed", "ticket_title_changed",
   "ticket_attachment_added", "ticket_attachment_removed", "ticket_screenshot_annotated", "ticket_qa_closed",
   "ticket_commented", "ticket_label_added", "ticket_label_removed", "ticket_description_changed",
+  "ticket_comment_edited",  // someone edited a comment on a ticket assigned to you
+  "ticket_comment_deleted", // someone deleted a comment on a ticket assigned to you
+  "ticket_restored",        // a deleted ticket was put back (pairs with ticket_deleted, which already notifies)
 ])
 
 // KD-3134: updates the ticket's reporter hears about too (besides the assignee).
-export const REPORTER_NOTIFY_TYPES = new Set(["ticket_status_changed", "ticket_priority_changed"])
+export const REPORTER_NOTIFY_TYPES = new Set(["ticket_status_changed", "ticket_priority_changed", "ticket_restored"])
 
 const _notifEmail = (v: unknown): string | null => {
   const e = v == null ? "" : String(v).trim().toLowerCase()
