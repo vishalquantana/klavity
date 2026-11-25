@@ -113,7 +113,9 @@
     .bar {
       position: sticky;
       top: 0;
-      z-index: 10;
+      /* KD-3145: above the "Unlock …" overlay (.upgrade-wall.show, z 25) so the header's Create New / project /
+         notifications / profile menus open ON TOP of it (they live in this stacking context). Sidebar stays above. */
+      z-index: 26;
       background: var(--ink-2);
       border-bottom: 1px solid var(--line)
     }
@@ -219,7 +221,9 @@
     .wrap {
       margin-left: 214px;
       padding: 36px 32px 72px;
-      max-width: 1380px;
+      /* KD-3149: no fixed cap — the page fills the screen next to the sidebar on large displays (it was capped at
+         1380px, leaving a wide blank strip on the right). Tickets/New reports already ran full width. */
+      max-width: none;
       transition: margin-left .2s ease
     }
 
@@ -230,7 +234,7 @@
       top: 0;
       height: 100vh;
       width: 214px;
-      z-index: 20;
+      z-index: 27;   /* KD-3145: kept above the top bar (26) */
       background: var(--ink-2);
       border-right: 1px solid var(--line);
       display: flex;
@@ -9872,6 +9876,11 @@
       cursor: pointer;
       transition: border-color .15s, color .15s, transform var(--mi-dur) var(--mi-ease), box-shadow var(--mi-dur) var(--mi-ease)
     }
+
+    /* KD-3144: review "Accept" on an untriaged report is the primary action of the header */
+    .tkt-panel-btn.tkt-review-accept { background: var(--indigo); border-color: var(--indigo); color: #fff }
+    .tkt-panel-btn.tkt-review-accept:hover { color: #fff; filter: brightness(1.06) }
+    .tkt-panel-btn:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none }
 
     .tkt-panel-btn:hover {
       border-color: var(--indigo);
@@ -25558,21 +25567,26 @@
             const pid = curProjId()
             const sim = (state.sims || []).find(function (x) { return x.id === simId })
             if (!pid || !sim) return
-            if (!makeActive) {
-              // KD-2880: name exactly what is affected — the Sim, in quotes (a bare "Deactivate Test 2?" reads like a
-              // project), and the project it belongs to.
-              const simName = String(sim.name || "").trim() || "this Sim"
-              const projName = String((state && state.active && state.active.name) || "").trim()
-              const ok = await klavConfirm({
-                title: "Deactivate Sim “" + simName + "”?",
-                message: "The Sim “" + simName + "” will stop running for everyone on " +
-                  (projName ? "the project “" + projName + "”" : "this project") +
-                  " and won't appear in the widget or extension. Its history stays, and you can activate it again any time.",
-                confirmText: "Deactivate",
-                danger: false,
-              })
-              if (!ok) return
-            }
+            // KD-2880: name exactly what is affected — the Sim, in quotes (a bare "Deactivate Test 2?" reads like a
+            // project), and the project it belongs to.
+            // KD-3143: Activate confirms too (it used to flip silently) — both directions change the Sim for the whole project.
+            const simName = String(sim.name || "").trim() || "this Sim"
+            const projName = String((state && state.active && state.active.name) || "").trim()
+            const projLabel = projName ? "the project “" + projName + "”" : "this project"
+            const ok = await klavConfirm(makeActive ? {
+              title: "Activate Sim “" + simName + "”?",
+              message: "The Sim “" + simName + "” will be available to everyone on " + projLabel +
+                " and will appear in the widget and extension. You can deactivate it again any time.",
+              confirmText: "Activate",
+              danger: false,
+            } : {
+              title: "Deactivate Sim “" + simName + "”?",
+              message: "The Sim “" + simName + "” will stop running for everyone on " + projLabel +
+                " and won't appear in the widget or extension. Its history stays, and you can activate it again any time.",
+              confirmText: "Deactivate",
+              danger: false,
+            })
+            if (!ok) return
             if (btn) btn.disabled = true
             const revertToggle = applySimActiveOptimistic(sim, makeActive)   // KD-2861: card flips now; a failure puts it back
             window.__klavMutating = (window.__klavMutating || 0) + 1   // keep the liveness poll out of the way while it's in flight
@@ -29947,6 +29961,36 @@
               if (single && !single.classList.contains("hide") && single.children.length) closeSingleTicket()
             })
           }
+          // KD-3144: a report still waiting for review (status "new" — e.g. a Sim Report like QPQ-SIM-58) gets the same
+          // Accept / Dismiss as the Sim Reports list, in BOTH the preview panel and the full ticket page.
+          function tktNeedsReview(t) { return !!t && String(t.status || "").toLowerCase() === "new" }
+          function tktReviewActionsHtml(t) {
+            if (!tktNeedsReview(t)) return ""
+            return `<button class="tkt-panel-btn tkt-review-accept" data-act="accept" type="button" title="Accept as a bug: moves it to Open in Tickets">${kicon('check', { size: 13 })} Accept</button>`
+              + `<button class="tkt-panel-btn" data-act="dismiss" type="button" title="Dismiss this report (you can undo)">${kicon('x', { size: 13 })} Dismiss</button>`
+          }
+          function wireTktReviewActions(ph, t, id) {
+            const acc = ph.querySelector('[data-act="accept"]'), dis = ph.querySelector('[data-act="dismiss"]')
+            const setStatus = st => { const x = (state.tickets || []).find(r => String(r.id) === String(id)); if (x) x.status = st }
+            if (acc) acc.addEventListener("click", async () => {
+              if (dis) dis.disabled = true
+              const res = await tgAccept([String(id)], null, acc)
+              if (dis) dis.disabled = false
+              if (!res || !res.ok) return   // tgAccept already flashed "Couldn't accept — retry."
+              setStatus("open")
+              // Still viewing it? Re-render so the status pill reads Open and the review buttons go away.
+              const single = $("ticketSingle")
+              if (single && !single.classList.contains("hide") && single.getAttribute("data-tkt-id") === String(id)) tktRenderReusing(() => _renderSingleTicket(id))
+            })
+            if (dis) dis.addEventListener("click", async () => {
+              if (acc) acc.disabled = true
+              const res = await tgDismiss([String(id)], dis)   // shows the Undo toast
+              if (acc) acc.disabled = false
+              if (!res || !res.ok) return
+              setStatus("dismissed")
+              closeSingleTicket()   // a dismissed report leaves the review queue → back to the list
+            })
+          }
           function _renderSingleTicket(id) {
             _tktSeedFromCaches(id)   // prev/next can step to a ticket that is only in the board / Sim Reports cache
             const t = (state.tickets || []).find(x => String(x.id) === String(id))
@@ -30000,12 +30044,14 @@
               ph.innerHTML = `<button class="tkt-panel-btn" data-act="close" type="button" aria-label="Close ticket detail" title="Close (Esc)">${kicon('x', { size: 13 })} Close</button>`
                 + `<span class="tph-sp"></span>`
                 + `<button class="tkt-panel-btn" data-act="expand" type="button" aria-label="Expand to full, shareable page" title="Open as a full, shareable page">${kicon('app-window', { size: 13 })} Full page</button>`
+                + tktReviewActionsHtml(t)
                 + `<button class="tkt-panel-btn" data-act="delete" type="button" aria-label="Delete ticket" title="Delete ticket (restorable for 30 days)" style="color:var(--red,#e05252)">${kicon('trash', { size: 13 })} Delete</button>`
               ph.querySelector('[data-act="close"]').addEventListener("click", closeSingleTicket)
               // ⤢ expand navigates to the dedicated /:project/tickets/:key (hash #tickets/<id>) route.
               ph.querySelector('[data-act="expand"]').addEventListener("click", () => openSingleTicket(id, "full", _tktOriginContext))
               const pDelBtn = ph.querySelector('[data-act="delete"]')
               if (pDelBtn) pDelBtn.addEventListener("click", () => doDeleteSingleTicket())
+              wireTktReviewActions(ph, t, id)
               single.appendChild(ph)
               single.__focusTarget = ph.querySelector('[data-act="close"]')
             } else {
@@ -30036,6 +30082,7 @@
                 + `<span class="tkt-page-key">${esc(key)}</span>`
                 + statusPillHtml(t.status)
                 + `<span class="tph-sp"></span>`
+                + tktReviewActionsHtml(t)
                 + `<button class="tkt-panel-btn" data-act="copy" type="button" aria-label="Copy link to this ticket">${kicon('link', { size: 13 })} Copy link</button>`
                 + `<button class="tkt-panel-btn" data-act="delete" type="button" aria-label="Delete ticket" title="Delete ticket (restorable for 30 days)" style="color:var(--red,#e05252)">${kicon('trash', { size: 13 })} Delete</button>`
                 + `<button class="tkt-icon-btn" data-act="prev" type="button" aria-label="Previous ticket"${hasPrev ? "" : " disabled"}>${kicon('chevron-left', { size: 15 })}</button>`
@@ -30058,6 +30105,7 @@
               })
               const pgDelBtn = ph.querySelector('[data-act="delete"]')
               if (pgDelBtn) pgDelBtn.addEventListener("click", () => doDeleteSingleTicket())
+              wireTktReviewActions(ph, t, id)
               // Keep the origin (Tickets / Sim Reports) while stepping, so the next ticket's prev/next use the same list.
               if (hasPrev) ph.querySelector('[data-act="prev"]').addEventListener("click", () => openSingleTicket(ids[cur - 1], "full", _tktOriginContext))
               if (hasNext) ph.querySelector('[data-act="next"]').addEventListener("click", () => openSingleTicket(ids[cur + 1], "full", _tktOriginContext))
@@ -30858,6 +30906,7 @@
               case "ticket_attachment_removed": return `${who} removed an attachment`
               case "ticket_screenshot_annotated": return `${who} annotated the screenshot`
               case "ticket_qa_closed": return `${who} closed the ticket after QA`
+              case "ticket_deleted": return `${who} deleted this ticket`
               default: return `${who} updated the ticket`
             }
           }
@@ -30919,7 +30968,8 @@
               const n = items.find(x => x.id === it.getAttribute("data-id")); if (!n) return
               if (!n.readAt) { n.readAt = Date.now(); unread = Math.max(0, unread - 1); paintBadge(); markRead({ ids: [n.id] }) }
               close(false)
-              if (!n.feedbackId) return
+              // KD-3134: a deleted ticket can't be opened (it would land on "Ticket unavailable") — just mark it read.
+              if (!n.feedbackId || n.type === "ticket_deleted") return
               if (state && state.active && state.active.id === n.projectId && typeof openSingleTicket === "function") openSingleTicket(n.feedbackId, "full")
               else location.href = "/t/" + encodeURIComponent(n.feedbackId)
             })
@@ -36571,7 +36621,8 @@
               row.innerHTML =
                 thumb +
                 '<div class="pb-main">' +
-                '<div class="pb-title">' + esc(b.title || "Untitled report") + ' <span class="tkt-seq">' + esc(b.ref || "") + "</span></div>" +
+                // KD-3148: show the ticket ID ("KD-232"), never the internal "fb_…" ref.
+                '<div class="pb-title">' + esc(b.title || "Untitled report") + (b.key ? ' <span class="tkt-seq">' + esc(b.key) + "</span>" : "") + "</div>" +
                 '<div class="tl-meta">' + statusPillHtml(b.status) + (sev ? '<span class="chip sev-' + esc(sev) + '">' + esc(sev) + "</span>" : "") + "<span>" + meta + "</span></div>" +
                 "</div>" +
                 '<div class="pb-actions">' +

@@ -790,6 +790,52 @@ export async function applySchema(c: Client) {
        created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
     `CREATE INDEX IF NOT EXISTS atc_group_ap_idx ON autosim_test_case_groups (project_id, autosim_project_id)`,
     `CREATE INDEX IF NOT EXISTS atc_case_ap_idx ON autosim_test_cases (project_id, autosim_project_id)`,
+    // ── F-01 Requirements-driven validation: an uploaded requirements document → its requirements
+    //    (REQ-001…) → generated test scenarios (TS-001…, each linked to requirement(s) and, once created,
+    //    to a test case) → requirement runs (a queue of test cases executed one after another) whose
+    //    items hold the validation result (actual vs expected) + evidence. Tenant-scoped by project_id. ──
+    `CREATE TABLE IF NOT EXISTS autosim_requirement_docs (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, autosim_project_id TEXT NOT NULL,
+       filename TEXT NOT NULL, content_type TEXT, size_bytes INTEGER NOT NULL DEFAULT 0,
+       source_key TEXT,                      -- stored original document (object storage), NULL if not kept
+       title TEXT NOT NULL DEFAULT '', start_url TEXT,
+       features_json TEXT, workflows_json TEXT, issues_json TEXT, clarifications_json TEXT,
+       created_by TEXT, created_at INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS areqdoc_ap_idx ON autosim_requirement_docs (project_id, autosim_project_id)`,
+    `CREATE TABLE IF NOT EXISTS autosim_requirements (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, doc_id TEXT NOT NULL, autosim_project_id TEXT NOT NULL,
+       ref TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0,
+       title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', type TEXT NOT NULL DEFAULT 'functional',
+       feature TEXT NOT NULL DEFAULT '', section TEXT NOT NULL DEFAULT '', quote TEXT NOT NULL DEFAULT '',
+       preconditions TEXT NOT NULL DEFAULT '', expected_result TEXT NOT NULL DEFAULT '',
+       ambiguous INTEGER NOT NULL DEFAULT 0, clarification TEXT NOT NULL DEFAULT '',
+       created_at INTEGER NOT NULL, UNIQUE(doc_id, ref))`,
+    `CREATE INDEX IF NOT EXISTS areq_doc_idx ON autosim_requirements (project_id, doc_id)`,
+    `CREATE TABLE IF NOT EXISTS autosim_req_scenarios (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, doc_id TEXT NOT NULL,
+       ref TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0, title TEXT NOT NULL,
+       requirement_ids_json TEXT NOT NULL DEFAULT '[]',
+       preconditions TEXT NOT NULL DEFAULT '', steps TEXT NOT NULL DEFAULT '', expected_result TEXT NOT NULL DEFAULT '',
+       start_url TEXT, needs_login INTEGER NOT NULL DEFAULT 0, missing_json TEXT NOT NULL DEFAULT '[]',
+       status TEXT NOT NULL DEFAULT 'ready',
+       test_case_id TEXT,                    -- set once the user creates a test case from it
+       created_at INTEGER NOT NULL, UNIQUE(doc_id, ref))`,
+    `CREATE INDEX IF NOT EXISTS areqsc_doc_idx ON autosim_req_scenarios (project_id, doc_id)`,
+    `CREATE TABLE IF NOT EXISTS autosim_requirement_runs (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, autosim_project_id TEXT NOT NULL, doc_id TEXT,
+       status TEXT NOT NULL DEFAULT 'queued',  -- queued | running | cancelling | done | cancelled
+       created_by TEXT, created_at INTEGER NOT NULL, started_at INTEGER, finished_at INTEGER)`,
+    `CREATE INDEX IF NOT EXISTS areqrun_ap_idx ON autosim_requirement_runs (project_id, autosim_project_id)`,
+    `CREATE TABLE IF NOT EXISTS autosim_requirement_run_items (
+       id TEXT PRIMARY KEY, run_id TEXT NOT NULL, project_id TEXT NOT NULL, position INTEGER NOT NULL,
+       test_case_id TEXT NOT NULL,
+       status TEXT NOT NULL DEFAULT 'queued',  -- queued | running | passed | failed | blocked | error | cancelled
+       mode TEXT,                              -- record (no AutoSim yet) | replay
+       author_session_id TEXT, trail_id TEXT, walk_run_id TEXT,
+       expected_result TEXT NOT NULL DEFAULT '', observed TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '',
+       evidence_json TEXT, started_at INTEGER, finished_at INTEGER)`,
+    `CREATE INDEX IF NOT EXISTS areqitem_run_idx ON autosim_requirement_run_items (run_id, position)`,
+    `CREATE INDEX IF NOT EXISTS areqitem_tc_idx ON autosim_requirement_run_items (project_id, test_case_id)`,
     // ── AutoSim auth setup (AT3): short-lived write-only setup token + encrypted login config. ──
     `CREATE TABLE IF NOT EXISTS autosim_auth_setup_tokens (
        id TEXT PRIMARY KEY,
@@ -1176,6 +1222,8 @@ export async function applySchema(c: Client) {
     "feedback_occurrences",
     // KD-2255: test_accounts gains autosim_project_id; autosim_test_cases gains test_account_id/start_url.
     "test_accounts", "autosim_test_cases",
+    // F-01: autosim_projects gains setup_steps (common steps run before every test case, e.g. PX4 login).
+    "autosim_projects",
   ]
   const _cols = await loadTableColumns(c, ALTERED_TABLES)
   const needCol = (table: string, col: string) => !(_cols.get(table)?.has(col) ?? false)
@@ -1516,6 +1564,14 @@ export async function applySchema(c: Client) {
     console.warn("autosim_test_cases.test_account_id ALTER skipped:", e?.message || e))
   if (needCol("autosim_test_cases", "start_url")) await c.execute("ALTER TABLE autosim_test_cases ADD COLUMN start_url TEXT").catch((e: any) =>
     console.warn("autosim_test_cases.start_url ALTER skipped:", e?.message || e))
+  // F-01: common setup steps per AutoSim project (login / security code / pick company …) prepended to test cases.
+  if (needCol("autosim_projects", "setup_steps")) await c.execute("ALTER TABLE autosim_projects ADD COLUMN setup_steps TEXT").catch((e: any) =>
+    console.warn("autosim_projects.setup_steps ALTER skipped:", e?.message || e))
+  // F-01: test cases carry their own preconditions + expected result and the requirement they verify.
+  for (const col of ["preconditions", "expected_result", "requirement_id"]) {
+    if (needCol("autosim_test_cases", col)) await c.execute(`ALTER TABLE autosim_test_cases ADD COLUMN ${col} TEXT`).catch((e: any) =>
+      console.warn(`autosim_test_cases.${col} ALTER skipped:`, e?.message || e))
+  }
   if (needCol("test_accounts", "autosim_project_id")) await c.execute("ALTER TABLE test_accounts ADD COLUMN autosim_project_id TEXT").catch((e: any) =>
     console.warn("test_accounts.autosim_project_id ALTER skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS trail_tc_idx ON trails(project_id, test_case_id)").catch((e: any) =>
@@ -4287,6 +4343,23 @@ export async function notifyAssigneeOfTicketUpdate(a: ActivityInsert): Promise<n
   return uniq.length
 }
 
+// KD-3134: deleting a ticket (single or bulk — both go through deleteTicketsBulk) notifies its assignee and
+// reporter, never the person who deleted it. The ticket row is already gone, so its title/number ride in meta.
+export async function notifyTicketsDeleted(projectId: string, tickets: DeletedTicketInfo[], actorEmail: string | null): Promise<number> {
+  if (!db) return 0
+  const actor = _notifEmail(actorEmail)
+  let sent = 0
+  for (const t of tickets) {
+    const uniq = [...new Set([t.assignee, t.reporter].filter((e): e is string => !!e))].filter(e => e !== actor)
+    for (const to of uniq) {
+      await createNotification({ recipientEmail: to, projectId, feedbackId: t.id, type: "ticket_deleted", actorEmail: actor,
+        meta: { title: t.title, seqNum: t.seqNum } })
+      sent++
+    }
+  }
+  return sent
+}
+
 export type NotificationRow = {
   id: string; projectId: string; projectName: string | null; feedbackId: string | null; type: string
   actorEmail: string | null; meta: any; createdAt: number; readAt: number | null
@@ -4312,8 +4385,10 @@ export async function listNotifications(recipientEmail: string, limit = 30): Pro
       feedbackId: x.feedback_id != null ? String(x.feedback_id) : null, type: String(x.type),
       actorEmail: x.actor_email != null ? String(x.actor_email) : null, meta,
       createdAt: Number(x.created_at), readAt: x.read_at != null ? Number(x.read_at) : null,
-      ticketTitle: Number(x.f_exists) ? effectiveTicketTitle({ title: x.f_title, suggested_bug_json: x.f_sb, observation: x.f_obs }) : null,
-      ticketSeq: x.f_seq != null ? Number(x.f_seq) : null,
+      // A deleted ticket's row is gone — fall back to the title/number captured in meta at delete time (KD-3134).
+      ticketTitle: Number(x.f_exists) ? effectiveTicketTitle({ title: x.f_title, suggested_bug_json: x.f_sb, observation: x.f_obs })
+        : (meta?.title != null ? String(meta.title) : null),
+      ticketSeq: x.f_seq != null ? Number(x.f_seq) : (meta?.seqNum != null ? Number(meta.seqNum) : null),
     }
   })
 }
@@ -9334,23 +9409,36 @@ export async function listTicketsPaginated(
   return { tickets, total, page, totalPages }
 }
 
+export type DeletedTicketInfo = {
+  id: string; assignee: string | null; reporter: string | null; title: string; seqNum: number | null
+}
+
 export async function deleteTicketsBulk(
   projectId: string,
   ticketIds: string[],
   actor: string | null = null,
-): Promise<{ deleted: number; ticketIds: string[] }> {
+): Promise<{ deleted: number; ticketIds: string[]; tickets: DeletedTicketInfo[] }> {
   const cleanIds = Array.isArray(ticketIds)
     ? ticketIds.map(String).map(s => s.trim()).filter(Boolean).slice(0, 200)
     : []
-  if (!cleanIds.length) return { deleted: 0, ticketIds: [] }
+  if (!cleanIds.length) return { deleted: 0, ticketIds: [], tickets: [] }
 
   const placeholders = cleanIds.map(() => "?").join(",")
+  // KD-3134: also read who to notify (assignee + reporter) and the title, since the row is gone afterwards.
   const existingRows = await db!.execute({
-    sql: `SELECT id FROM feedback WHERE project_id = ? AND id IN (${placeholders})`,
+    sql: `SELECT id, assignee, contact_email, actor_email, title, suggested_bug_json, observation, seq_num
+          FROM feedback WHERE project_id = ? AND id IN (${placeholders})`,
     args: [projectId, ...cleanIds],
   })
-  const validIds = existingRows.rows.map((r: any) => String(r.id)).filter(Boolean)
-  if (!validIds.length) return { deleted: 0, ticketIds: [] }
+  const tickets: DeletedTicketInfo[] = existingRows.rows.filter((r: any) => r.id).map((r: any) => ({
+    id: String(r.id),
+    assignee: _notifEmail(r.assignee),
+    reporter: _notifEmail(r.contact_email) || _notifEmail(r.actor_email),
+    title: effectiveTicketTitle(r),
+    seqNum: r.seq_num != null ? Number(r.seq_num) : null,
+  }))
+  const validIds = tickets.map(t => t.id)
+  if (!validIds.length) return { deleted: 0, ticketIds: [], tickets: [] }
 
   const validPlaceholders = validIds.map(() => "?").join(",")
 
@@ -9376,7 +9464,7 @@ export async function deleteTicketsBulk(
   await db!.batch(stmts, "write")
   invalidateDashboardCache(projectId)
 
-  return { deleted: validIds.length, ticketIds: validIds }
+  return { deleted: validIds.length, ticketIds: validIds, tickets }
 }
 
 // ── sim_runs — on-demand Sim run records ─────────────────────────────────────
@@ -9559,18 +9647,22 @@ export async function deleteLabel(projectId: string, labelId: string): Promise<b
   return Number(r.rowsAffected) > 0
 }
 
-export async function attachLabel(labelId: string, feedbackId: string): Promise<void> {
-  await db!.execute({
+// Both return whether the ticket's label set actually changed (false = already attached / not attached), so
+// bulk callers only notify for tickets that really changed.
+export async function attachLabel(labelId: string, feedbackId: string): Promise<boolean> {
+  const r = await db!.execute({
     sql: "INSERT OR IGNORE INTO ticket_labels (label_id, feedback_id, created_at) VALUES (?,?,?)",
     args: [labelId, feedbackId, Date.now()],
   })
+  return (r.rowsAffected ?? 0) > 0
 }
 
-export async function detachLabel(labelId: string, feedbackId: string): Promise<void> {
-  await db!.execute({
+export async function detachLabel(labelId: string, feedbackId: string): Promise<boolean> {
+  const r = await db!.execute({
     sql: "DELETE FROM ticket_labels WHERE label_id=? AND feedback_id=?",
     args: [labelId, feedbackId],
   })
+  return (r.rowsAffected ?? 0) > 0
 }
 
 export async function labelsForFeedback(feedbackId: string): Promise<LabelRow[]> {

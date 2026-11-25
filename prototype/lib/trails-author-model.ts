@@ -165,7 +165,11 @@ export function buildAuthorMessages(input: AuthorStepInput, projectInstructions?
     `ACTIONS SO FAR:\n${input.history.length ? input.history.map((h, i) => `${i + 1}. ${h}`).join("\n") : "(none)"}\n` +
     (input.credFields.length
       ? `CREDENTIAL PLACEHOLDERS AVAILABLE (use literally as "value"): ${input.credFields.join(", ")}\n` +
-        `You CAN log in: if the current page is a login/OTP form, complete it with these placeholders (fill the email, request a code if needed, fill the OTP) instead of setting isAuthGate — the credentials get you past this gate.\n` : "") +
+        `You CAN log in: if the current page is a login/OTP form, complete it with these placeholders (fill the email, request a code if needed, fill the OTP) instead of setting isAuthGate — the credentials get you past this gate.\n` +
+        `If the OBJECTIVE itself gives a value for a field (e.g. "Security code: 147852", a PIN, a company name), type that value literally — only use a placeholder that is listed above; never invent one.\n` : "") +
+    // Never guess a code: a security/verification code, OTP, PIN or similar that is neither in the OBJECTIVE nor a
+    // listed placeholder can't be known — guessing (e.g. "123456") just loops on a rejected code. Stop and say so.
+    `NEVER guess a security / verification code, OTP, PIN or password. If the page needs one that is not written in the OBJECTIVE and not a listed placeholder, use op "stall" with a rationale naming the missing value (e.g. "The security code is not in the steps — add it to the test case").\n` +
     (input.uploads && input.uploads.length
       ? `AVAILABLE UPLOADS (use the name literally as "value" of an "upload" op): ${input.uploads.join(", ")}\n` : "") +
     `PAGE URL (untrusted): <<<${input.pageUrl}>>>\n` +

@@ -235,3 +235,75 @@ test("test case start_url: required on create, must be http(s), returned on read
   const p = await call("me", "PATCH", `/api/autosim-projects/${apId}/test-cases/${ok.body.testCase.id}`, { status: "draft" })
   expect(p.body.testCase.startUrl).toBe("https://qa2.example.com/")
 })
+
+// Upload & Extract: multipart endpoint validation (no LLM call is reached in these cases).
+test("POST /api/autosim-projects/:id/extract validates auth, project and file", async () => {
+  const apId = (await call("me", "POST", "/api/autosim-projects", { name: "Extract " + ts })).body.project.id
+  const up = (who: "me" | "x" | null, id: string, file?: File, project = P) => {
+    const fd = new FormData(); if (file) fd.append("file", file)
+    return fetch(`${BASE}/api/autosim-projects/${id}/extract?project=${project}`, { method: "POST", headers: who ? { cookie: as(who) } : {}, body: fd })
+      .then(async r => ({ status: r.status, body: await r.json().catch(() => ({})) as any }))
+  }
+  expect((await up(null, apId, new File(["x"], "a.txt"))).status).toBe(401)
+  expect((await up("me", "ap_nope", new File(["x"], "a.txt"))).status).toBe(404)
+  expect((await up("x", apId, new File(["x"], "a.txt"), OTHER)).status).toBe(404)   // other Klavity project can't see it
+  const none = await up("me", apId)
+  expect(none.status).toBe(400); expect(none.body.error).toContain("Attach a document")
+  const png = await up("me", apId, new File([new Uint8Array([1, 2, 3])], "shot.png", { type: "image/png" }))
+  expect(png.status).toBe(400); expect(png.body.error).toContain("PDF, DOCX or TXT")
+  const empty = await up("me", apId, new File([], "req.txt"))
+  expect(empty.status).toBe(400); expect(empty.body.error).toContain("empty")
+})
+
+// F-01: requirement documents, scenario → test case creation, test case fields, run endpoints (validation
+// paths only — a successful run would start a real AutoSim browser in this subprocess).
+test("requirements endpoints: docs, create linked test cases, F-01 test case fields, runs validation", async () => {
+  const apId = (await call("me", "POST", "/api/autosim-projects", { name: "Reqs " + ts })).body.project.id
+  const NOW2 = Date.now(), doc = "areqdoc_t" + ts, rq = "areq_t" + ts, sc = "areqsc_t" + ts
+  await raw.execute({ sql: "INSERT INTO autosim_requirement_docs (id,project_id,autosim_project_id,filename,size_bytes,title,issues_json,created_at) VALUES (?,?,?,?,?,?,?,?)", args: [doc, P, apId, "spec.pdf", 10, "Spec", "[]", NOW2] })
+  await raw.execute({ sql: "INSERT INTO autosim_requirements (id,project_id,doc_id,autosim_project_id,ref,title,section,expected_result,created_at) VALUES (?,?,?,?,?,?,?,?,?)", args: [rq, P, doc, apId, "REQ-001", "Login", "3.1", "Dashboard shown", NOW2] })
+  await raw.execute({ sql: "INSERT INTO autosim_req_scenarios (id,project_id,doc_id,ref,title,requirement_ids_json,steps,expected_result,created_at) VALUES (?,?,?,?,?,?,?,?,?)", args: [sc, P, doc, "TS-001", "Valid login", JSON.stringify([rq]), "1. Open\n2. Sign in", "Dashboard shown", NOW2] })
+
+  const list = await call("me", "GET", `/api/autosim-projects/${apId}/requirement-docs`)
+  expect(list.status).toBe(200); expect(list.body.docs.map((d: any) => [d.id, d.requirementCount])).toEqual([[doc, 1]])
+  expect((await call("x", "GET", `/api/autosim-projects/${apId}/requirement-docs/${doc}`, undefined, OTHER)).status).toBe(404)
+
+  const base = `/api/autosim-projects/${apId}/requirement-docs/${doc}/test-cases`
+  expect((await call("me", "POST", base, { items: [] })).status).toBe(400)
+  expect((await call("me", "POST", base, { items: [{ scenario_id: sc, name: "x", start_url: "ftp://nope" }] })).status).toBe(400)
+  const made = await call("me", "POST", base, { items: [{ scenario_id: sc, name: "Valid login", start_url: "https://app.test", steps: "1. Open\n2. Sign in", preconditions: "Account exists", expected_result: "Dashboard shown" }], status: "active" })
+  expect(made.status).toBe(201); expect(made.body.failed).toEqual([])
+  const tcId = made.body.created[0].testCaseId
+
+  const detail = await call("me", "GET", `/api/autosim-projects/${apId}/requirement-docs/${doc}`)
+  expect(detail.body.requirements[0]).toMatchObject({ ref: "REQ-001", status: "not_run" })
+  expect(detail.body.requirements[0].testCases.map((t: any) => t.id)).toEqual([tcId])
+  expect(detail.body.activeRun).toBeNull()
+
+  const ap = await call("me", "GET", `/api/autosim-projects/${apId}`)
+  expect(ap.body.testCases.find((t: any) => t.id === tcId)).toMatchObject({ preconditions: "Account exists", expectedResult: "Dashboard shown", requirementId: rq })
+  const patched = await call("me", "PATCH", `/api/autosim-projects/${apId}/test-cases/${tcId}`, { expected_result: "Home page shown" })
+  expect(patched.body.testCase.expectedResult).toBe("Home page shown")
+  expect((await call("me", "PATCH", `/api/autosim-projects/${apId}/test-cases/${tcId}`, { expected_result: "x".repeat(1001) })).status).toBe(400)
+  const val = await call("me", "GET", `/api/autosim-projects/${apId}/test-cases/${tcId}/validation`)
+  expect(val.body.requirement).toMatchObject({ ref: "REQ-001", docFilename: "spec.pdf" }); expect(val.body.validations).toEqual([])
+
+  const runs = `/api/autosim-projects/${apId}/requirement-runs`
+  expect((await call("me", "GET", runs)).body).toEqual({ active: null, runs: [] })
+  expect((await call("me", "POST", runs, { test_case_ids: [] })).status).toBe(400)
+  expect((await call("me", "POST", runs, { test_case_ids: ["atc_not_mine"] })).status).toBe(400)
+  expect((await call("me", "GET", `${runs}/areqrun_nope`)).status).toBe(404)
+  expect((await call("me", "GET", `/api/autosim-projects/${apId}/requirement-docs/${doc}/source`)).status).toBe(404) // not stored in this test
+  expect((await call("me", "DELETE", `/api/autosim-projects/${apId}/requirement-docs/${doc}`)).status).toBe(200)
+  expect((await call("me", "GET", `/api/autosim-projects/${apId}`)).body.testCases.find((t: any) => t.id === tcId).requirementId).toBeNull()
+})
+
+test("AutoSim project common setup steps: saved via PATCH, returned with the project, length-capped", async () => {
+  const apId = (await call("me", "POST", "/api/autosim-projects", { name: "Setup " + ts })).body.project.id
+  const steps = '1. Log in\n2. Security code: 147852\n3. Choose "PX4 Softwaress" company'
+  const r = await call("me", "PATCH", `/api/autosim-projects/${apId}`, { setup_steps: steps })
+  expect(r.status).toBe(200); expect(r.body.project.setupSteps).toBe(steps)
+  expect((await call("me", "GET", `/api/autosim-projects/${apId}`)).body.project.setupSteps).toBe(steps)
+  expect((await call("me", "PATCH", `/api/autosim-projects/${apId}`, { setup_steps: "x".repeat(2001) })).status).toBe(400)
+  expect((await call("me", "PATCH", `/api/autosim-projects/${apId}`, { setup_steps: "" })).body.project.setupSteps).toBe("")
+})

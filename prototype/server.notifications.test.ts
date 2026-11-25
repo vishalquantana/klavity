@@ -187,6 +187,40 @@ test("KD-3134: a comment still notifies only the assignee, not the reporter", as
   expect((await forTicket(DEV2, fid)).length).toBe(0)
 })
 
+test("KD-3134: bulk adding/removing a label notifies the assignee, only for tickets that actually changed", async () => {
+  const f1 = `fb_ntf_bl1_${RUN}`, f2 = `fb_ntf_bl2_${RUN}`
+  for (const fid of [f1, f2]) await exec("INSERT INTO feedback (id, project_id, title, observation, priority, status, assignee, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [fid, PROJ, "Bulk " + fid, "x", "low", "open", DEV, NOW])
+  const lbl = await (await req("POST", `/api/projects/${PROJ}/labels`, ADMIN, { name: "Bulky" })).json()
+  // f2 already has the label — adding it again isn't a change, so no notification for f2.
+  await req("POST", `/api/feedback/${f2}/labels`, DEV, { labelId: lbl.label.id })
+  expect((await req("PATCH", `/api/projects/${PROJ}/tickets/bulk`, ADMIN, { ticketIds: [f1, f2], addLabelId: lbl.label.id })).status).toBe(200)
+  const l1 = await waitForTicket(DEV, f1, 1)
+  expect(l1[0]).toMatchObject({ type: "ticket_label_added", actorEmail: ADMIN, meta: { label: "Bulky" } })
+  await Bun.sleep(200)
+  expect((await forTicket(DEV, f2)).length).toBe(0)
+  expect((await req("PATCH", `/api/projects/${PROJ}/tickets/bulk`, ADMIN, { ticketIds: [f1, f2], removeLabelId: lbl.label.id })).status).toBe(200)
+  expect((await waitForTicket(DEV, f2, 1)).map((n: any) => n.type)).toEqual(["ticket_label_removed"])
+  expect((await waitForTicket(DEV, f1, 2)).map((n: any) => n.type).sort()).toEqual(["ticket_label_added", "ticket_label_removed"])
+})
+
+test("KD-3134: deleting tickets (single and bulk) notifies assignee and reporter, not the deleter", async () => {
+  const f1 = `fb_ntf_del1_${RUN}`, f2 = `fb_ntf_del2_${RUN}`, f3 = `fb_ntf_del3_${RUN}`
+  await exec("INSERT INTO feedback (id, project_id, title, observation, priority, status, actor_email, assignee, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [f1, PROJ, "Gone ticket", "x", "low", "open", DEV2, DEV, NOW])
+  await exec("INSERT INTO feedback (id, project_id, title, observation, priority, status, actor_email, assignee, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [f2, PROJ, "Bulk gone A", "x", "low", "open", ADMIN, DEV, NOW])
+  await exec("INSERT INTO feedback (id, project_id, title, observation, priority, status, actor_email, assignee, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [f3, PROJ, "Bulk gone B", "x", "low", "open", DEV2, null, NOW])
+  // Single delete (the drawer's Delete button sends one id).
+  expect((await req("DELETE", `/api/projects/${PROJ}/tickets/bulk`, ADMIN, { ticketIds: [f1] })).status).toBe(200)
+  const d1 = await waitForTicket(DEV, f1, 1)
+  expect(d1[0]).toMatchObject({ type: "ticket_deleted", actorEmail: ADMIN, ticketTitle: "Gone ticket" })
+  expect((await waitForTicket(DEV2, f1, 1)).map((n: any) => n.type)).toEqual(["ticket_deleted"])
+  // Bulk delete: f2's reporter is the deleter (ADMIN) → only the assignee hears; f3 is unassigned → reporter hears.
+  expect((await req("POST", `/api/projects/${PROJ}/tickets/bulk-delete`, ADMIN, { ticketIds: [f2, f3] })).status).toBe(200)
+  expect((await waitForTicket(DEV, f2, 1))[0]).toMatchObject({ type: "ticket_deleted", ticketTitle: "Bulk gone A" })
+  expect((await waitForTicket(DEV2, f3, 1))[0]).toMatchObject({ type: "ticket_deleted", ticketTitle: "Bulk gone B" })
+  await Bun.sleep(200)
+  for (const fid of [f1, f2, f3]) expect((await forTicket(ADMIN, fid)).length).toBe(0)
+})
+
 test("the notifications API requires sign-in", async () => {
   const r = await fetch(`${BASE}/api/notifications`, { redirect: "manual" })
   expect([401, 302]).toContain(r.status)

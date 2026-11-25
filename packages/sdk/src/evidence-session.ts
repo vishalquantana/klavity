@@ -27,6 +27,9 @@ export interface EvidenceShot {
   // no DOM nodes or functions) → structured-clone / JSON safe for IndexedDB. Absent = nothing drawn.
   annotations?: unknown
   dataUrl?: string
+  // KD-3088: where the page's numbers were when this shot was taken ({ geo, capture } from the composer), so
+  // "Mask numbers" can still mask it after Minimize → Resume. JSON-safe. Absent = page had no numbers / unknown.
+  numberMask?: unknown
 }
 
 /**
@@ -64,6 +67,8 @@ export interface EvidenceSession {
    *  walkthrough recording `recordingId`, so Minimize → Resume keeps "N issues identified" instead of losing it. */
   multi?: { recordingId: string; items: unknown[]; original: unknown[] | null } | null
   isOpen?: boolean
+  /** KD-3088: the reporter's "Mask numbers" choice, so Resume re-opens the composer with the same state. */
+  maskNumbers?: boolean
 }
 
 export interface EvidenceFile {
@@ -253,10 +258,11 @@ export async function addShot(sessionId: string, shot: EvidenceShot): Promise<Ad
 /** Patch the report's text fields (title/desc/type/env/isOpen). Returns the updated session, or null if gone. */
 export async function updateFields(
   sessionId: string,
-  fields: { title?: string; desc?: string; reportType?: string; env?: string; isOpen?: boolean },
+  fields: { title?: string; desc?: string; reportType?: string; env?: string; isOpen?: boolean; maskNumbers?: boolean },
 ): Promise<EvidenceSession | null> {
   const cur = await getById(sessionId)
   if (!cur) return null
+  if (fields.maskNumbers !== undefined) cur.maskNumbers = fields.maskNumbers
   if (fields.title !== undefined) cur.title = fields.title
   if (fields.desc !== undefined) cur.desc = fields.desc
   if (fields.reportType !== undefined) cur.reportType = fields.reportType
