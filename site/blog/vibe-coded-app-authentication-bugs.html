@@ -1,0 +1,193 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vibe-Coded App Authentication Bugs: What to Test First · Klavity</title>
+<meta name="description" content="Vibe coded app authentication bugs come from one gap: the AI built login but not authorization. Here's the two-account test that finds them.">
+<link rel="canonical" href="https://klavity.in/blog/vibe-coded-app-authentication-bugs">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Vibe-Coded App Authentication Bugs: What to Test First"><meta property="og:description" content="Vibe coded app authentication bugs come from one gap: the AI built login but not authorization. Here's the two-account test that finds them.">
+<meta property="og:url" content="https://klavity.in/blog/vibe-coded-app-authentication-bugs"><meta property="og:image" content="https://klavity.in/blog/vibe-coded-app-authentication-bugs.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Vibe-Coded App Authentication Bugs: What to Test First"><meta name="twitter:description" content="Vibe coded app authentication bugs come from one gap: the AI built login but not authorization. Here's the two-account test that finds them."><meta name="twitter:image" content="https://klavity.in/blog/vibe-coded-app-authentication-bugs.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Vibe-Coded App Authentication Bugs: What to Test First","description":"Vibe coded app authentication bugs come from one gap: the AI built login but not authorization. Here's the two-account test that finds them.","datePublished":"2026-11-25","dateModified":"2026-11-25","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/vibe-coded-app-authentication-bugs.svg"}},"mainEntityOfPage":"https://klavity.in/blog/vibe-coded-app-authentication-bugs","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Vibe-Coded App Authentication Bugs: What to Test First","item":"https://klavity.in/blog/vibe-coded-app-authentication-bugs"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/vibe-coded-app-authentication-bugs"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Why do AI code generators get authentication wrong?","acceptedAnswer":{"@type":"Answer","text":"They usually get authentication right and authorization wrong. Login forms and session handling are extremely common patterns, so generators reproduce them well. Per-user access rules depend on your specific data model and are rarely mentioned in the prompt, so no code gets written to enforce them."}},{"@type":"Question","name":"Is hiding the admin button enough to protect an admin feature?","acceptedAnswer":{"@type":"Answer","text":"No. Hiding or disabling UI is cosmetic. The endpoint behind the button is still reachable with a direct request, so authorization has to be enforced on the server for every protected action, not just in the component that renders it."}},{"@type":"Question","name":"How do I test for IDOR bugs in a vibe-coded app?","acceptedAnswer":{"@type":"Answer","text":"Create two accounts with their own data. Logged in as the second user, request the first user's record IDs through URLs and API endpoints. A correct app returns 403 or 404 from the server. If the data comes back, the ownership check is missing — and likely missing on similar endpoints too."}},{"@type":"Question","name":"Do I need to worry about Supabase or Firebase rules if the AI set them up?","acceptedAnswer":{"@type":"Answer","text":"Yes. The client gets a public anonymous key that ships in the browser bundle, so row-level security policies or security rules are the only barrier to your tables. Verify that each policy actually scopes rows to their owner rather than allowing any authenticated user."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-11-25</div>
+    <h1>Vibe-Coded App Authentication Bugs: What to Test First</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <line x1="0" y1="104" x2="800" y2="104" stroke="#f5f0e8" stroke-opacity="0.05" stroke-width="1"/>
+  <line x1="0" y1="316" x2="800" y2="316" stroke="#f5f0e8" stroke-opacity="0.05" stroke-width="1"/>
+  <circle cx="400" cy="210" r="168" fill="none" stroke="#6366f1" stroke-opacity="0.12" stroke-width="1"/>
+
+  <rect x="54" y="118" width="226" height="190" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.5" stroke-width="1.5"/>
+  <rect x="54" y="118" width="226" height="30" rx="12" fill="#6366f1" fill-opacity="0.22"/>
+  <circle cx="74" cy="133" r="4" fill="#f87171" fill-opacity="0.7"/>
+  <circle cx="88" cy="133" r="4" fill="#f5f0e8" fill-opacity="0.25"/>
+  <circle cx="102" cy="133" r="4" fill="#f5f0e8" fill-opacity="0.25"/>
+  <circle cx="92" cy="186" r="18" fill="#6366f1" fill-opacity="0.35" stroke="#6366f1" stroke-width="1.5"/>
+  <circle cx="92" cy="180" r="6" fill="#f5f0e8" fill-opacity="0.55"/>
+  <path d="M80 198 q12 -11 24 0" fill="none" stroke="#f5f0e8" stroke-opacity="0.55" stroke-width="2.5" stroke-linecap="round"/>
+  <rect x="124" y="176" width="88" height="7" rx="3.5" fill="#f5f0e8" fill-opacity="0.3"/>
+  <rect x="124" y="190" width="56" height="7" rx="3.5" fill="#f5f0e8" fill-opacity="0.16"/>
+  <rect x="76" y="228" width="182" height="20" rx="5" fill="#f5f0e8" fill-opacity="0.1"/>
+  <rect x="76" y="256" width="182" height="20" rx="5" fill="#f5f0e8" fill-opacity="0.1"/>
+  <rect x="76" y="228" width="5" height="20" rx="2.5" fill="#4ade80"/>
+  <rect x="76" y="256" width="5" height="20" rx="2.5" fill="#4ade80"/>
+
+  <rect x="520" y="118" width="226" height="190" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.5" stroke-width="1.5"/>
+  <rect x="520" y="118" width="226" height="30" rx="12" fill="#6366f1" fill-opacity="0.22"/>
+  <circle cx="540" cy="133" r="4" fill="#f87171" fill-opacity="0.7"/>
+  <circle cx="554" cy="133" r="4" fill="#f5f0e8" fill-opacity="0.25"/>
+  <circle cx="568" cy="133" r="4" fill="#f5f0e8" fill-opacity="0.25"/>
+  <circle cx="558" cy="186" r="18" fill="#f87171" fill-opacity="0.3" stroke="#f87171" stroke-width="1.5"/>
+  <circle cx="558" cy="180" r="6" fill="#f5f0e8" fill-opacity="0.55"/>
+  <path d="M546 198 q12 -11 24 0" fill="none" stroke="#f5f0e8" stroke-opacity="0.55" stroke-width="2.5" stroke-linecap="round"/>
+  <rect x="590" y="176" width="88" height="7" rx="3.5" fill="#f5f0e8" fill-opacity="0.3"/>
+  <rect x="590" y="190" width="56" height="7" rx="3.5" fill="#f5f0e8" fill-opacity="0.16"/>
+  <rect x="542" y="228" width="182" height="20" rx="5" fill="#f5f0e8" fill-opacity="0.1"/>
+  <rect x="542" y="256" width="182" height="20" rx="5" fill="#f87171" fill-opacity="0.14"/>
+  <rect x="542" y="256" width="5" height="20" rx="2.5" fill="#f87171"/>
+
+  <path d="M520 266 C 460 300, 340 300, 282 248" fill="none" stroke="#f87171" stroke-opacity="0.8" stroke-width="2.5" stroke-dasharray="8 7" stroke-linecap="round"/>
+  <polyline points="292 234 278 246 290 258" fill="none" stroke="#f87171" stroke-opacity="0.8" stroke-width="2.5" stroke-linecap="round"/>
+
+  <path d="M400 92 L452 116 L452 184 Q452 232 400 254 Q348 232 348 184 L348 116 Z" fill="#1e1b2e" stroke="#4ade80" stroke-width="2.5"/>
+  <path d="M400 92 L452 116 L452 184 Q452 232 400 254 Q348 232 348 184 L348 116 Z" fill="#4ade80" fill-opacity="0.09"/>
+  <rect x="381" y="158" width="38" height="30" rx="5" fill="none" stroke="#6366f1" stroke-width="2.5"/>
+  <path d="M389 158 v-11 a11 11 0 0 1 22 0 v11" fill="none" stroke="#6366f1" stroke-width="2.5"/>
+  <polyline points="386 203 396 213 416 192" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="340" y1="288" x2="460" y2="288" stroke="#4ade80" stroke-opacity="0.35" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="400" cy="312" r="5" fill="#4ade80" fill-opacity="0.6"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Vibe coded app authentication bugs almost always trace to one gap: AI generators build authentication (login, sessions) but skip authorization (who may read or change which record). Because a single-account click-through can never reveal a missing ownership rule, the essential test is logging in as a second user and requesting the first user's data directly — the server should answer 403 or 404, not render the page.</div>
+    <div class="prose"><p><strong>Vibe coded app authentication bugs almost always come from the same gap: the AI built a login screen but never built authorization.</strong> Tools like Cursor, Lovable, Bolt and v0 reliably scaffold a sign-up form, a session and a "logged in" state, because that pattern appears everywhere in their training data. What they rarely add is the per-user, per-row, server-side enforcement that decides <em>which</em> data an authenticated user is allowed to see or change. The result is an app that looks secure — you can't reach the dashboard without logging in — but where any logged-in user can read another user's records by changing an ID in the URL or querying the database directly from the browser. To find these bugs you have to test with two real accounts, not just logged-in versus logged-out.</p>
+
+<h2>What causes authentication bugs in vibe-coded apps?</h2>
+
+<p>Authentication answers "who are you?" Authorization answers "what are you allowed to do?" AI code generators are good at the first and weak at the second, for three structural reasons.</p>
+
+<ul>
+<li><strong>The prompt rarely mentions authorization.</strong> You ask for "a dashboard where users can see their projects." The generator produces a projects page and a login flow. Nobody specified that user B must not see user A's projects, so no rule enforcing it gets written.</li>
+<li><strong>Hiding the UI feels like finishing the job.</strong> A generated app typically guards routes in the client: if there's no session, redirect to <code>/login</code>; if the role isn't <em>admin</em>, don't render the admin button. That is cosmetic. The API endpoint behind the hidden button is still live, and anyone can call it with <code>curl</code>.</li>
+<li><strong>Backend-as-a-service defaults are permissive until you tighten them.</strong> When an AI wires your app to Supabase or Firebase, the client gets a public anonymous key that ships inside the browser bundle — by design. The only thing standing between that key and your whole table is a row-level security policy or security rule. If the generator created the table but skipped the policy, or wrote a policy that resolves to "allow all authenticated users," every row is readable by every account.</li>
+</ul>
+
+<p>This is why authentication bugs survive the usual "I clicked around and it worked" check. One person, one account, one browser session will never surface a missing ownership rule. For the wider pattern of what AI generators systematically leave out, see our guide on <a href="/blog/vibe-coding-security-risks">vibe coding security risks</a>.</p>
+
+<h2>Which vibe coded app authentication bugs should you test for first?</h2>
+
+<p>Work down this list in order. The top rows are the ones that leak data; the bottom rows mostly annoy users.</p>
+
+<table>
+<tr><th>Bug class</th><th>How it shows up</th><th>How to test it</th></tr>
+<tr><td>Missing ownership check (IDOR)</td><td>Changing a record ID in the URL or API call returns someone else's data</td><td>Log in as user B, request a URL or endpoint containing user A's record ID</td></tr>
+<tr><td>Permissive database rules</td><td>The public client key can read or write the full table directly</td><td>Query the table from the browser console as a logged-in non-owner; confirm it returns only your rows</td></tr>
+<tr><td>Client-only route guard</td><td>Protected content flashes before the redirect, or the API still answers</td><td>Call the endpoint directly with no session and with a non-admin session</td></tr>
+<tr><td>Role escalation</td><td>Role stored in a client-editable place, or admin endpoints trust a request field</td><td>Edit the role value in local storage or the request body, then retry the admin action</td></tr>
+<tr><td>Broken session lifecycle</td><td>Logged-in shell with every API call failing; logout doesn't invalidate; expired token never refreshes</td><td>Let a session sit until expiry, then use the app; log out and press Back</td></tr>
+<tr><td>Auth flow dead ends</td><td>Password reset, email verification or OAuth callback loops or 404s</td><td>Walk each flow end to end on a fresh account, including the email link</td></tr>
+</table>
+
+<h3>The two-account test is non-negotiable</h3>
+
+<p>Create two accounts, A and B, and give each one data. Then, logged in as B, try to reach every one of A's resources: detail pages, edit forms, delete buttons, file downloads, API routes. Correct behaviour is a 403 or 404 from the server — not a redirect, not an empty page rendered by the client. If B sees A's data even once, you have a missing server-side ownership check, and it's almost certainly missing on sibling endpoints too.</p>
+
+<h2>How do you test client-side versus server-side authorization?</h2>
+
+<p>The distinction matters because only one of them is real. A quick way to tell which you have:</p>
+
+<ol>
+<li><strong>Find a protected action in the UI</strong> — say, deleting a project.</li>
+<li><strong>Watch the network tab while you do it</strong> and note the request: method, path, payload.</li>
+<li><strong>Replay that request from a second account</strong> (or with no session at all) using the browser console or a terminal, substituting the other user's record ID.</li>
+<li><strong>Read the status code.</strong> A 200 means your protection was entirely in the UI. A 401, 403 or 404 means the server is actually deciding.</li>
+</ol>
+
+<p>Do this once per resource type, not once per app. Generated code tends to be copy-pasted between endpoints, so a missing check on <code>/api/projects/[id]</code> usually has a twin on <code>/api/invoices/[id]</code>. When you review generated code directly, our notes on <a href="/blog/how-to-review-ai-generated-code">how to review AI generated code</a> cover what to grep for.</p>
+
+<h2>What about session expiry, refresh and logout?</h2>
+
+<p>Session lifecycle is the most common non-security authentication bug in vibe-coded apps, because it only appears after time passes — and nobody tests an app by waiting. Typical symptoms: the app still renders a logged-in header while every request 401s; a refresh token exists but nothing calls it, so users are silently signed out mid-task; logout clears local state without invalidating the server session, so the Back button restores the old view.</p>
+
+<p>Three checks cover most of it. First, leave a session idle past its expiry window, come back and use the app — you should land on a clear re-login prompt, not a broken dashboard. Second, log out, then press Back and refresh; protected data must not reappear. Third, open the app in two tabs, log out in one, and act in the other; the second tab should not keep working.</p>
+
+<h2>How can AI QA catch authentication bugs before users do?</h2>
+
+<p>Authentication bugs are a good fit for automation because they're combinatorial: every role multiplied by every resource multiplied by every action. That's tedious by hand and trivial to script. Klavity's <a href="/sims">Sims</a> runs AI personas with separate accounts and roles against your app, so the cross-account attempts above happen on every build instead of when you remember. <a href="/autosim">AutoSim</a> turns the flows that matter — sign-up, login, password reset, logout — into end-to-end tests that repair themselves when your selectors change, which matters when an AI assistant is rewriting your components. And when a client or teammate does hit a permissions bug in the wild, <a href="/snap">Snap</a> captures the session, console and network context with the report, so you can see which request returned the wrong data instead of guessing.</p>
+
+<p>Whatever tooling you use, the sequence is the same: enumerate your roles, enumerate your resources, then prove at the server that each role can only touch what it owns. For the broader framework this fits into, read our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>Ready to find the auth bugs in your app?</h2>
+
+<p>If you shipped a vibe-coded app without running the two-account test, assume the gap is there until you've proved otherwise. It takes one focused sitting by hand, and a few seconds per build once it's automated.</p>
+
+<p><strong><a href="/onboarding">Try Klavity free</a></strong> — run AI personas with real accounts and roles against your app, and catch the authorization gaps your login screen hides.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Test with two accounts, never just logged-in vs logged-out</li><li>Replay protected requests as a non-owner and check the status code</li><li>Verify row-level security scopes rows to their owner, not to any logged-in user</li><li>Test session expiry, logout and the Back button before launch</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Why do AI code generators get authentication wrong?</summary><p>They usually get authentication right and authorization wrong. Login forms and session handling are extremely common patterns, so generators reproduce them well. Per-user access rules depend on your specific data model and are rarely mentioned in the prompt, so no code gets written to enforce them.</p></details><details><summary>Is hiding the admin button enough to protect an admin feature?</summary><p>No. Hiding or disabling UI is cosmetic. The endpoint behind the button is still reachable with a direct request, so authorization has to be enforced on the server for every protected action, not just in the component that renders it.</p></details><details><summary>How do I test for IDOR bugs in a vibe-coded app?</summary><p>Create two accounts with their own data. Logged in as the second user, request the first user's record IDs through URLs and API endpoints. A correct app returns 403 or 404 from the server. If the data comes back, the ownership check is missing — and likely missing on similar endpoints too.</p></details><details><summary>Do I need to worry about Supabase or Firebase rules if the AI set them up?</summary><p>Yes. The client gets a public anonymous key that ships in the browser bundle, so row-level security policies or security rules are the only barrier to your tables. Verify that each policy actually scopes rows to their owner rather than allowing any authenticated user.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

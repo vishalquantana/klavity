@@ -1139,5 +1139,12 @@
     "excerpt": "AI QA for landing pages tests the whole conversion path — form, success state and every CTA — on each deploy, before paid traffic finds the break.",
     "category": "Guides",
     "date": "2026-11-24"
+  },
+  {
+    "slug": "vibe-coded-app-authentication-bugs",
+    "title": "Vibe-Coded App Authentication Bugs: What to Test First",
+    "excerpt": "Vibe coded app authentication bugs come from one gap: the AI built login but not authorization. Here's the two-account test that finds them.",
+    "category": "Guides",
+    "date": "2026-11-25"
   }
 ]
