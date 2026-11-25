@@ -13792,6 +13792,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               }
             })()
           }
+          // Tell the ticket's assignee (never the person who deleted it) — fire-and-forget like the other comment notifications.
+          void notifyAssigneeOfTicketUpdate({ projectId: fbRow.projectId, type: "ticket_comment_deleted", actorEmail: me, feedbackId: fid,
+            meta: { snippet: String(existing.body || "").slice(0, 160) } }).catch((e: any) => console.warn("comment-delete notification skipped:", e?.message || e))
           return json({ ok: true })
         }
 
@@ -13813,6 +13816,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
           })()
         }
+        // Tell the ticket's assignee (never the editor) that a comment was edited.
+        void notifyAssigneeOfTicketUpdate({ projectId: fbRow.projectId, type: "ticket_comment_edited", actorEmail: me, feedbackId: fid,
+          meta: { snippet: String(updated.body || "").slice(0, 160) } }).catch((e: any) => console.warn("comment-edit notification skipped:", e?.message || e))
         return json({ comment: { ...updated, attachments: signCommentAttachments(updated.attachments) } })
       }
 

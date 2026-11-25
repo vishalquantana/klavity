@@ -221,6 +221,35 @@ test("KD-3134: deleting tickets (single and bulk) notifies assignee and reporter
   for (const fid of [f1, f2, f3]) expect((await forTicket(ADMIN, fid)).length).toBe(0)
 })
 
+test("editing and deleting a comment notify the assignee, not the actor", async () => {
+  const fid = `fb_ntf_cdel_${RUN}`
+  await exec("INSERT INTO feedback (id, project_id, title, observation, priority, status, actor_email, assignee, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [fid, PROJ, "Comment gone", "x", "low", "open", DEV2, DEV, NOW])
+  const c = await (await req("POST", `/api/feedback/${fid}/comments`, ADMIN, { body: "Please remove me" })).json()
+  const cid = c.comment?.id ?? c.id
+  expect((await waitForTicket(DEV, fid, 1)).map((n: any) => n.type)).toEqual(["ticket_commented"])
+  expect((await req("PATCH", `/api/feedback/${fid}/comments/${cid}`, ADMIN, { body: "Edited text" })).status).toBe(200)
+  const edited = await waitForTicket(DEV, fid, 2)
+  expect(edited.find((n: any) => n.type === "ticket_comment_edited")).toMatchObject({ actorEmail: ADMIN, meta: { snippet: "Edited text" } })
+  expect((await req("DELETE", `/api/feedback/${fid}/comments/${cid}`, ADMIN)).status).toBe(200)
+  const list = await waitForTicket(DEV, fid, 3)
+  expect(list.map((n: any) => n.type).sort()).toEqual(["ticket_comment_deleted", "ticket_comment_edited", "ticket_commented"])
+  expect(list.find((n: any) => n.type === "ticket_comment_deleted")).toMatchObject({ actorEmail: ADMIN, meta: { snippet: "Edited text" } })
+  await Bun.sleep(200)
+  expect((await forTicket(ADMIN, fid)).length).toBe(0)
+})
+
+test("restoring a deleted ticket notifies assignee and reporter, not the restorer", async () => {
+  const fid = `fb_ntf_rest_${RUN}`
+  await exec("INSERT INTO feedback (id, project_id, title, observation, priority, status, actor_email, assignee, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [fid, PROJ, "Back again", "x", "low", "open", DEV2, DEV, NOW])
+  expect((await req("DELETE", `/api/projects/${PROJ}/tickets/bulk`, ADMIN, { ticketIds: [fid] })).status).toBe(200)
+  await waitForTicket(DEV, fid, 1)
+  expect((await req("POST", `/api/projects/${PROJ}/tickets/deleted/${fid}/restore`, ADMIN)).status).toBe(200)
+  expect((await waitForTicket(DEV, fid, 2)).map((n: any) => n.type).sort()).toEqual(["ticket_deleted", "ticket_restored"])
+  expect((await waitForTicket(DEV2, fid, 2)).map((n: any) => n.type).sort()).toEqual(["ticket_deleted", "ticket_restored"])
+  await Bun.sleep(200)
+  expect((await forTicket(ADMIN, fid)).length).toBe(0)
+})
+
 test("the notifications API requires sign-in", async () => {
   const r = await fetch(`${BASE}/api/notifications`, { redirect: "manual" })
   expect([401, 302]).toContain(r.status)
