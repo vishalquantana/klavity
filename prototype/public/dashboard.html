@@ -28011,21 +28011,12 @@
             // KLA-199: Wire up priority picker — auto-saves on change, updates state + rail + chip in-place
             const priSelEl = detailEl.querySelector(".tkt-pri-sel")
             if (priSelEl) {
-              priSelEl.addEventListener("change", async (ev) => {
-                ev.stopPropagation()
-                const newPri = priSelEl.value || null
-                // #532: guard the liveness poll during the save so it can't clobber the picked priority.
-                window.__klavMutating++
-                priSelEl.disabled = true; priSelEl.setAttribute("aria-busy", "true")
-                let d = {}
-                try {
-                  const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
-                    method: "PATCH", headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ priority: newPri })
-                  }).catch(() => null)
-                  d = r ? await r.json().catch(() => ({})) : {}
-                } finally { window.__klavMutating--; priSelEl.disabled = false; priSelEl.removeAttribute("aria-busy") }
-                if (d.ok) {
+              // KD-3159: OPTIMISTIC priority change. Every place that shows the priority (severity square, chip, rail,
+              // the board / Sim Reports card behind the preview) updates the moment it is picked; the PATCH runs in the
+              // background and a failure puts the previous priority back. Before, all of this waited for the server
+              // round-trip, so on a slow network the preview looked like it hadn't changed.
+              let _priSaved = priSelEl.value || null, _priSeq = 0, _priReverting = false
+              const _applyPriority = (newPri) => {
                   const tkt = (state.tickets || []).find(x => String(x.id) === String(ticketId))
                   if (tkt) tkt.priority = newPri
                   // KLA-777: also patch the board's warm cache (_tktBoardTickets) — the Kanban renders from it,
@@ -28062,9 +28053,38 @@
                   const chipEl = detailEl.querySelector(".chip[class*='sev-']")
                   if (chipEl && newPri) { chipEl.className = "chip sev-" + newPri; chipEl.textContent = newPri }
                   if (onChange) onChange("priority", newPri)
+              }
+              priSelEl.addEventListener("change", async (ev) => {
+                ev.stopPropagation()
+                if (_priReverting) return                 // our own rollback below — repaint only, never re-save
+                const newPri = priSelEl.value || null
+                const prevPri = _priSaved
+                const seq = ++_priSeq
+                _priSaved = newPri
+                _applyPriority(newPri)                    // instant, before any network
+                { const _m = detailEl.querySelector(".tkt-msg-el"); if (_m) _m.classList.add("hide") }   // drop a stale "saved"
+                // #532: guard the liveness poll during the save so it can't clobber the picked priority.
+                window.__klavMutating++
+                priSelEl.setAttribute("aria-busy", "true")
+                let d = {}
+                try {
+                  const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
+                    method: "PATCH", headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ priority: newPri })
+                  }).catch(() => null)
+                  d = r ? await r.json().catch(() => ({})) : {}
+                } finally { window.__klavMutating--; if (seq === _priSeq) priSelEl.removeAttribute("aria-busy") }
+                if (seq !== _priSeq) return              // a newer pick is in flight — it owns the final state
+                if (d.ok) {
                   showTktMsg(detailEl, "Priority saved.", false)
                 } else {
-                  showTktMsg(detailEl, d.error || "Couldn't save priority.", true)
+                  // Roll back: restore the previous priority everywhere, and repaint the dropdown from the select.
+                  _priSaved = prevPri
+                  _applyPriority(prevPri)
+                  _priReverting = true
+                  try { priSelEl.value = prevPri || "medium"; priSelEl.dispatchEvent(new Event("change", { bubbles: true })) }
+                  finally { _priReverting = false }
+                  showTktMsg(detailEl, (d && d.error) || "Couldn't save priority — reverted.", true)
                 }
               })
             }
