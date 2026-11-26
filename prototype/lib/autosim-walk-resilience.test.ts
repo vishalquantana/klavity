@@ -137,3 +137,15 @@ describe("walk-red-alert infra-vs-flow routing + outage escalation", () => {
     expect(recordWalkInfraOutcome(true, t0 + 3).escalate).toBe(false)
   })
 })
+
+describe("acquireWalkBrowser - hung launch", () => {
+  test("a launch that never returns fails fast with BrowserAcquireTimeoutError and is NOT retried", async () => {
+    let calls = 0
+    const t0 = Date.now()
+    await expect(
+      acquireWalkBrowser({}, { attempts: 3, attemptTimeoutMs: 30, sleep: async () => {}, acquire: () => { calls++; return new Promise(() => {}) } }),
+    ).rejects.toThrow(/did not start within/)
+    expect(calls).toBe(1)
+    expect(Date.now() - t0).toBeLessThan(1500)
+  })
+})

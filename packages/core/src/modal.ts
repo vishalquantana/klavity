@@ -451,6 +451,10 @@ export interface ShotPageMeta {
 // collapsing to a full-screen grab. A region shot re-crops its rect; a picked-element shot re-crops that
 // element (re-resolved live from its selector); a viewport/full shot redoes that same sharp mode. Carried
 // index-aligned with screenshots[] and threaded to onRetakeSharp so the host knows exactly what to redo.
+/** KD-3088: where a shot's numbers were on the page at capture time (+ how it was captured), so "Mask numbers"
+ *  can still be applied to it after Minimize → Resume. JSON-safe: hosts persist it next to the shot. */
+export interface ShotNumberMask { geo: NumberGeo; capture?: ShotCapture }
+
 export interface ShotCapture {
   kind: 'region' | 'element' | 'viewport' | 'full' | 'other'
   /** Region/element bounding rect in CSS viewport px at capture time (fallback if a selector re-resolve fails). */
@@ -746,7 +750,12 @@ export interface ModalCallbacks {
   // (Full Page / Screen / Region / Upload / paste / auto-capture). NOT fired for shots seeded via the
   // controller's addScreenshot() (the host already knows those). The host uses it to append the shot,
   // tagged with the current page URL, to the evidence session. Absent => nothing extra happens.
-  onShotAdded?: (dataUrl: string, quality: CaptureQuality | undefined) => void
+  // KD-3088: `numberMask` (when the page had numbers) is where they were at capture time — persist it with the
+  // shot and pass it back to addScreenshot() on resume so "Mask numbers" still works on the restored shot.
+  onShotAdded?: (dataUrl: string, quality: CaptureQuality | undefined, numberMask?: ShotNumberMask) => void
+  // KD-3088: the reporter ticked/unticked "Mask numbers". The host persists it and re-opens the composer with
+  // the same state (config.maskNumbers) after Minimize → Resume. Absent => no-op.
+  onMaskNumbersChange?: (on: boolean) => void
   // Fired when an in-place capture (e.g. background full-page render) swaps out a fast preview.
   onShotReplaced?: (index: number, dataUrl: string, quality: CaptureQuality | undefined) => void
   // Fired when the reporter removes a thumbnail, with its strip index, so the host can drop the matching
@@ -778,7 +787,9 @@ export interface ModalController {
   // so Retake redoes that exact selection instead of a full-frame grab. Backward compatible.
   // KLA-772: an optional 6th arg re-seeds the shot's saved annotation overlay ({ w, h, shapes }) so a report
   // restored after navigation repaints the shapes the reporter drew. Absent => the shot seeds with no overlay.
-  addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture, annotations?: any) => void
+  // KD-3088: an optional 7th arg re-seeds the shot's number positions (from onShotAdded) so Mask numbers can
+  // mask a restored shot; if masking is on, the restored shot is masked right away.
+  addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture, annotations?: any, numberMask?: ShotNumberMask) => void
   // Like addScreenshot, but treats the shot as a GENUINE user capture: it becomes the ACTIVE/selected hero
   // (activeIndex → the new last shot, scrolled into view) AND fires onShotAdded (so the host persists it to
   // any evidence session). Use for a shot the reporter just captured — e.g. a right-click-drag region shot
@@ -1321,6 +1332,10 @@ export function buildModal(
     @keyframes kl-rise{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
     .kl-side>.klavity-toggle,.kl-side>.klavity-page,.kl-side>.klavity-proof,.kl-hero>.klavity-strip,.kl-side>.klavity-actions,.kl-side>.klavity-desc,.kl-side>.klavity-remail-label,.kl-side>.klavity-remail-wrap,.kl-side>.klavity-submit{animation:kl-rise .5s cubic-bezier(.16,1,.3,1) both;}
     .kl-side>.klavity-toggle{animation-delay:.05s}.kl-side>.klavity-page{animation-delay:.09s}.kl-side>.klavity-proof{animation-delay:.11s}.kl-hero>.klavity-strip{animation-delay:.12s}.kl-side>.klavity-actions{animation-delay:.15s}.kl-side>.klavity-desc{animation-delay:.18s}.kl-side>.klavity-remail-label{animation-delay:.20s}.kl-side>.klavity-remail-wrap{animation-delay:.21s}.kl-side>.klavity-submit{animation-delay:.23s}
+    /* KD-3087: fill-mode BOTH kept kl-rise's final opacity:1 applied forever, overriding .klavity-submit:disabled
+       {opacity:.5} -- a disabled Submit looked fully clickable. BACKWARDS still hides it during the delay, then
+       hands opacity back to the normal cascade once the entrance ends. */
+    .kl-side>.klavity-submit{animation-fill-mode:backwards}
     .klavity-modal.kl-closing{animation:kl-genie-out .5s cubic-bezier(.55,0,.85,.25) both;}
     .klavity-toggle{display:flex;gap:8px;margin-bottom:16px;padding-right:34px;}
     .klavity-toggle button{flex:1;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600;background:var(--kl-chip);color:var(--kl-fg);line-height:1;}
@@ -2211,7 +2226,7 @@ export function buildModal(
     shadowRoot,
     // Host seeds shots it already tracks (evidence-session restore, region-initial): fireAdded=false so
     // onShotAdded does NOT re-fire (which would double-persist). Page metadata is carried through as-is.
-    addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture, annotations?: any) => addScreenshot(dataUrl, quality, pageMeta, false, !!suggestSharp, capture, annotations),
+    addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture, annotations?: any, numberMask?: ShotNumberMask) => addScreenshot(dataUrl, quality, pageMeta, false, !!suggestSharp, capture, annotations, numberMask),
     // fireAdded=true: select the new shot as the active hero + fire onShotAdded (persist). See interface doc.
     addCapturedShot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => addScreenshot(dataUrl, quality, pageMeta, true, !!suggestSharp, capture),
     close,
@@ -2588,7 +2603,7 @@ export function buildModal(
     }
   }
 
-  function addScreenshot(dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, fireAdded = true, suggestSharp = false, capture?: ShotCapture, annotations?: any) {
+  function addScreenshot(dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, fireAdded = true, suggestSharp = false, capture?: ShotCapture, annotations?: any, numberMask?: ShotNumberMask) {
     // Hard cap — every capture/upload/paste path funnels through here, so the limit holds everywhere.
     if (screenshots.length >= MAX_IMAGES) { showError(`You can attach up to ${MAX_IMAGES} images.`); return }
     clearError()
@@ -2617,7 +2632,13 @@ export function buildModal(
     // A genuine new capture becomes the hero — drop any video/recording hero selection so the fresh image shows.
     if (fireAdded) { activeIndex = screenshots.length - 1; activeVideoIndex = null; activeRecordingIndex = null }
     updateStrip()
-    if (fireAdded) { try { callbacks.onShotAdded?.(dataUrl, quality) } catch { /* host persistence best-effort */ } }
+    // KD-3088: a restored shot brings back where its numbers were, so Mask numbers works on it after Resume
+    // (masking it straight away when the toggle is on). A fresh capture already recorded this in noteNumberGeo.
+    if (numberMask && numberMask.geo && Array.isArray(numberMask.geo.rects) && !numberGeoByUrl.has(dataUrl)) {
+      numberGeoByUrl.set(dataUrl, { geo: numberMask.geo, capture: numberMask.capture })
+      if (maskOn && !fireAdded) scheduleNumberMask()
+    }
+    if (fireAdded) { try { callbacks.onShotAdded?.(dataUrl, quality, numberGeoByUrl.get(dataUrl)) } catch { /* host persistence best-effort */ } }
   }
 
   // KD-3088: start a capture. The page the user is looking at is NEVER modified for masking — masking happens
@@ -3478,6 +3499,11 @@ export function buildModal(
   }
 
   let _stopVoice: (() => void) | null = null
+  // KD-3156: Enhance with AI must end dictation first. _settleVoice stops a live session, waits (bounded) for its
+  // last words to land in the description, then DETACHES it so no late result can overwrite the text afterwards.
+  // _voiceLock disables the Voice button while Enhance runs. Both stay null when there is no Voice button.
+  let _settleVoice: ((maxMs?: number) => Promise<void>) | null = null
+  let _voiceLock: ((on: boolean) => void) | null = null
 
   // opts.immediate — tear the host down synchronously (no genie-out animation) so the backdrop dim is
   // gone AT ONCE; used by the non-blocking background-upload submit so the page is never left dimmed
@@ -3787,7 +3813,13 @@ export function buildModal(
   // and reintroduce the empty gap. Kept as a named no-op so the prefill path (widget.ts dispatches an 'input'
   // event) still funnels through refreshSubmit + the live Markdown render without duplicating layout math.
   const autosizeDesc = () => { /* intentionally empty — flex:1 owns the sizing now */ }
+  // KD-3087: true from the first Submit click until the submit fails (success never re-opens the composer).
+  // Many async paths call refreshSubmit() -- a background full-page render swapping in, voice stopping,
+  // capture/compression settling -- and without this they re-enabled Submit mid-upload, inviting a
+  // duplicate submission. Declared here (before refreshSubmit) so it is never read in its TDZ.
+  let submitInFlight = false
   const refreshSubmit = () => {
+    if (submitInFlight) { submitBtn.disabled = true; return }
     const noDesc = desc.value.trim() === ''
     submitBtn.disabled = (noDesc && !hasEvidence()) || !emailValid()
     // Hint appears only when evidence is present but nothing has been typed ("we'll title it from your shot").
@@ -4026,12 +4058,17 @@ export function buildModal(
 
     const runEnhance = async () => {
       if (busy) return
-      const text = desc.value.trim()
-      originalText = desc.value   // snapshot the restore point (current field text) before THIS enhance
       const seq = ++enhanceSeq
       if (enhanceBtn) enhanceBtn.disabled = true
       if (spinEl) spinEl.hidden = false
+      _voiceLock?.(true)   // KD-3156: no new dictation while Enhance runs
       try {
+        // KD-3156: stop a live dictation and let its last words land BEFORE reading the text, so the draft is
+        // built from everything that was said and the recorder can't keep writing over the description.
+        if (_settleVoice) await _settleVoice()
+        if (seq !== enhanceSeq) return
+        const text = desc.value.trim()
+        originalText = desc.value   // snapshot the restore point (current field text) before THIS enhance
         const picked = pickedTarget ? { selector: pickedTarget.selector, text: pickedTarget.text } : null
         const targetIdx = activeIndex >= 0 && activeIndex < screenshots.length ? activeIndex : 0
         const ann = annotationsByIndex[targetIdx] ?? (targetIdx === 0 ? annotationsByIndex[0] : null)
@@ -4064,7 +4101,7 @@ export function buildModal(
         refreshSubmit()
       } catch { /* best-effort — a failure never disturbs the composer */ }
       finally {
-        if (seq === enhanceSeq) { if (enhanceBtn) enhanceBtn.disabled = false; if (spinEl) spinEl.hidden = true }
+        if (seq === enhanceSeq) { if (enhanceBtn) enhanceBtn.disabled = false; if (spinEl) spinEl.hidden = true; _voiceLock?.(false) }
       }
     }
     enhanceBtn?.addEventListener('click', () => { void runEnhance() })
@@ -4284,6 +4321,12 @@ export function buildModal(
     // transient preview past it (a textarea can't style substrings, so the live partial is a plain preview
     // that is replaced on each interim and dropped if it never finalizes).
     let streamBase = ''
+    // KD-3156: once Enhance (or anything else) takes over the description, the finished dictation session is
+    // DETACHED — a late final/interim/stop from it must never write its own copy of the text back over the field.
+    // A new Voice click starts a fresh, attached session. settleWaiters resolve when the session has stopped.
+    let voiceDetached = false
+    const settleWaiters: Array<() => void> = []
+    const notifyVoiceStopped = () => { settleWaiters.splice(0).forEach((f) => { try { f() } catch { /* no-op */ } }) }
 
     const startRing = () => {
       startTime = Date.now()
@@ -4348,6 +4391,7 @@ export function buildModal(
     const wire = (engine: DictationEngine) => {
       let lastInterim = ''
       engine.onTranscript = (text) => {
+        if (voiceDetached) return   // KD-3156
         lastInterim = ''
         streamBase = joinSpeechSegments(streamBase, text)
         desc.value = streamBase
@@ -4356,6 +4400,7 @@ export function buildModal(
         refreshSubmit()
       }
       engine.onInterim = (text) => {
+        if (voiceDetached) return   // KD-3156
         lastInterim = text || ''
         const sep = streamBase.length > 0 && !/\s$/.test(streamBase) ? ' ' : ''
         desc.value = streamBase + (text ? sep + text : '')
@@ -4374,21 +4419,24 @@ export function buildModal(
         setVoiceStatus('err', message, 4000)
       }
       engine.onStop = () => {
-        if (lastInterim) {
-          streamBase = joinSpeechSegments(streamBase, lastInterim)
-          lastInterim = ''
+        if (!voiceDetached) {   // KD-3156: a detached session only resets its UI, never the description
+          if (lastInterim) {
+            streamBase = joinSpeechSegments(streamBase, lastInterim)
+            lastInterim = ''
+          }
+          if (streamBase) {
+            streamBase = formatSpeechFinal(streamBase)
+            desc.value = streamBase
+          }
+          try { desc.scrollTop = desc.scrollHeight } catch {}
+          try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         }
-        if (streamBase) {
-          streamBase = formatSpeechFinal(streamBase)
-          desc.value = streamBase
-        }
-        try { desc.scrollTop = desc.scrollHeight } catch {}
-        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         voiceRecording = false
         setVoiceBtnMode(false)
         stopRing()
         clearInfoStatus()
         refreshSubmit()
+        notifyVoiceStopped()
       }
     }
 
@@ -4427,6 +4475,7 @@ export function buildModal(
       // (slow/dropped final), we still commit the last spoken words instead of discarding them on onStop.
       let lastInterim = ''
       s.onTranscript = (text) => {
+        if (voiceDetached) return   // KD-3156
         lastInterim = ''
         streamBase = joinSpeechSegments(streamBase, text)
         desc.value = streamBase
@@ -4435,6 +4484,7 @@ export function buildModal(
         refreshSubmit()
       }
       s.onInterim = (text) => {
+        if (voiceDetached) return   // KD-3156
         lastInterim = text || ''
         desc.value = streamBase + sep() + text
         try { desc.scrollTop = desc.scrollHeight } catch {}
@@ -4446,21 +4496,26 @@ export function buildModal(
       s.onStop = () => {
         // Commit a still-uncommitted interim (no final arrived) so short utterances aren't lost; else the
         // final already folded into streamBase and lastInterim is ''.
-        if (lastInterim) {
-          streamBase = joinSpeechSegments(streamBase, lastInterim)
-          lastInterim = ''
+        if (!voiceDetached) {   // KD-3156: a detached session only resets its UI, never the description
+          if (lastInterim) {
+            streamBase = joinSpeechSegments(streamBase, lastInterim)
+            lastInterim = ''
+          }
+          if (streamBase) {
+            streamBase = formatSpeechFinal(streamBase)
+          }
+          desc.value = streamBase
+          try { desc.scrollTop = desc.scrollHeight } catch {}
+          try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         }
-        if (streamBase) {
-          streamBase = formatSpeechFinal(streamBase)
-        }
-        desc.value = streamBase
-        try { desc.scrollTop = desc.scrollHeight } catch {}
-        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         voiceRecording = false; setVoiceBtnMode(false); stopRing(); clearInfoStatus(); refreshSubmit()
+        notifyVoiceStopped()
       }
       s.onUnavailable = () => {
-        desc.value = streamBase // clear the interim preview before another engine takes over
-        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
+        if (!voiceDetached) {   // KD-3156
+          desc.value = streamBase // clear the interim preview before another engine takes over
+          try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
+        }
         if (!voiceRecording) { setVoiceBtnMode(false); stopRing(); clearInfoStatus(); return }
         const batch = makeBatchServer()
         if (batch) { voice = batch; setVoiceStatus('info', 'Reconnecting dictation…'); void voice.start(); return }
@@ -4484,6 +4539,7 @@ export function buildModal(
     voiceBtn.addEventListener('click', () => {
       if (!voiceRecording) {
         clearVoiceStatus() // fresh start — drop any leftover error/reconnect line
+        voiceDetached = false   // KD-3156: a new session is attached to the description again
         streamBase = desc.value // #647: capture the durable text streaming finals/interims build on
         voice = makeEngine() // fresh engine per session (a prior fallback may have swapped it)
         voiceRecording = true
@@ -4495,6 +4551,27 @@ export function buildModal(
     })
 
     _stopVoice = () => { if (voiceRecording) voice.stop() }
+    // KD-3156: stop + wait for the last words (bounded), then detach the session from the description.
+    _settleVoice = (maxMs = 2500) => {
+      if (!voiceRecording) { voiceDetached = true; return Promise.resolve() }
+      return new Promise<void>((resolve) => {
+        let done = false
+        const finish = () => {
+          if (done) return
+          done = true
+          clearTimeout(timer)
+          voiceDetached = true
+          // The engine never confirmed its stop in time: reset the control ourselves (and keep the
+          // fallback-to-Web-Speech path from resurrecting it, which checks voiceRecording).
+          if (voiceRecording) { voiceRecording = false; setVoiceBtnMode(false); stopRing(); clearInfoStatus() }
+          resolve()
+        }
+        const timer = setTimeout(finish, maxMs)
+        settleWaiters.push(finish)
+        try { voice.stop() } catch { finish() }
+      })
+    }
+    _voiceLock = (on) => { voiceBtn.disabled = on || submitInFlight }
   }
 
   // QPQ-31: the field is always shown, and optional unless requireEmail gated it. A half-typed address must
@@ -4510,7 +4587,11 @@ export function buildModal(
   }
 
   submitBtn.addEventListener('click', async () => {
-    if (busy || submitBtn.disabled) return // re-entrancy: ignore double-clicks / clicks while a capture runs
+    if (submitInFlight || busy || submitBtn.disabled) return // re-entrancy: ignore double-clicks / clicks while a capture runs
+    // KD-3087: disable Submit SYNCHRONOUSLY on the first click, before any await below, so the button is
+    // never clickable again for this report (refreshSubmit honours submitInFlight until a failure clears it).
+    submitInFlight = true
+    submitBtn.disabled = true
     // KLAVITYKLA-497: Submit is NEVER blocked by report clarity. The old gate here surfaced the pre-submit
     // nudge and RETURNED — forcing a SECOND click on "Submit anyway". That two-step WAS the block users hit.
     // A weak / vague / empty description now submits on the FIRST click, always. The passive inline warning
@@ -4631,6 +4712,7 @@ export function buildModal(
       errEl.textContent = cfg.debug ? `Couldn't submit your report — ${raw}` : "Couldn't submit your report. Please check your connection and try again."
       errEl.style.display = 'block'
       submitBtn.textContent = 'Submit'
+      submitInFlight = false // KD-3087: a FAILED submit may be retried -- let refreshSubmit re-enable Submit
       lockComposer(false) // re-enable capture buttons + Submit (Submit only if still valid)
     }
   })
@@ -5018,7 +5100,7 @@ export function buildModal(
       // text's words (double-click) or delete it (Delete key).
       t('select', 'Select & edit', heroGlyph('<path d="M5 3l14 8-6 1.5L9.5 19z"/>', TOOL_ICON), 'v') +
       `<span class="kl-hsep"></span>` +
-      // Annotation tools, in the product-specified order: Rectangle (the default), Arrow, Text, Counter,
+      // Annotation tools, in the product-specified order: Rectangle, Arrow, Text, Counter,
       // Pencil, Line, Circle — larger glyphs (TOOL_ICON) so they're easy to tell apart and select.
       t('rect', 'Rectangle', heroGlyph('<rect x="4" y="5" width="16" height="14" rx="1.5"/>', TOOL_ICON), 'r') +
       t('arrow', 'Arrow', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>', TOOL_ICON), 'a') +
@@ -5345,7 +5427,7 @@ export function buildModal(
       // host in utm_source/utm_content can never break out of the attribute (this file's XSS discipline).
       const logoLink = tools.querySelector('#kl-hero-logo') as HTMLAnchorElement | null
       if (logoLink) logoLink.href = heroLogoHref(cfg.projectId)
-      let activeTool = 'rect' // default tool = Rectangle (hierarchy: rect → circle → arrow → text)
+      let activeTool = 'select' // KD-3154: default tool = Select (V) — was Rectangle
       let activeColor = '#ef4444'
       let textSize = 26
       let textOutline: 'black' | 'white' | 'none' = 'black'
@@ -5385,6 +5467,8 @@ export function buildModal(
         persist()
         return true
       }
+      // KD-3154: set once the zoom state exists (further down) — keeps the cursor honest for the zoom level.
+      const toolHook: { after: (() => void) | null } = { after: null }
       const selectTool = (t: string) => {
         activeTool = t
         tools.querySelectorAll<HTMLElement>('[data-tool]').forEach(el => el.classList.toggle('kl-on', el.dataset.tool === t))
@@ -5392,6 +5476,7 @@ export function buildModal(
         if (textOpts) textOpts.hidden = !(t === 'text' || (annotator.selected && annotator.selected.type === 'text'))
         // (zoom state is declared further down — don't read it here; applyZoomTransform owns the zoomed cursor)
         canvas.style.cursor = t === 'select' ? 'default' : 'crosshair'
+        toolHook.after?.()
       }
       const customBtn = tools.querySelector('.kl-hcolor-custom') as HTMLElement | null
       const colorInput = tools.querySelector('.kl-hcolor-input') as HTMLInputElement | null
@@ -5421,7 +5506,11 @@ export function buildModal(
       // drives the same `maskOn` flag consumed by every capture path, AND (KD-3088) applies to the shots
       // already taken: it used to only affect the NEXT capture, so toggling it while marking up did nothing.
       const maskCb = tools.querySelector('.kl-hmask-cb') as HTMLInputElement | null
-      if (maskCb) maskCb.addEventListener('change', () => { maskOn = maskCb.checked; trackMaskPass(applyNumberMask()) })
+      if (maskCb) maskCb.addEventListener('change', () => {
+        maskOn = maskCb.checked
+        trackMaskPass(applyNumberMask())
+        try { callbacks.onMaskNumbersChange?.(maskOn) } catch { /* host persistence best-effort */ }   // KD-3088
+      })
       tools.querySelectorAll('[data-outline]').forEach(b => b.addEventListener('click', () => {
         textOutline = (b as HTMLElement).dataset.outline as 'black' | 'white' | 'none'
         tools.querySelectorAll<HTMLElement>('[data-outline]').forEach(el => el.classList.toggle('kl-on', el === b))
@@ -5530,13 +5619,22 @@ export function buildModal(
         minimap.hidden = false
       }
 
+      // KD-3154: the cursor matches what a drag will do. Select (the default tool) shows a grab hand while zoomed in,
+      // because dragging the image then moves it; drawing tools keep the crosshair. Before, every tool showed "grab"
+      // while zoomed, yet a plain drag drew a shape (the only pan was an undiscoverable Shift+drag).
+      const toolCursor = () => activeTool === 'select' ? (zoom > 1 ? 'grab' : 'default') : 'crosshair'
       const applyZoomTransform = () => {
-        if (zoom === 1) { panX = 0; panY = 0; canvas.style.transform = ''; canvas.style.cursor = 'crosshair'; updateMinimap(); return }
+        if (zoom === 1) {
+          panX = 0; panY = 0; canvas.style.transform = ''; canvas.style.willChange = ''
+          canvas.style.cursor = toolCursor(); updateMinimap(); return
+        }
         canvas.style.transformOrigin = '0 0'
+        canvas.style.willChange = 'transform'   // KD-3154: keep the zoomed image on its own layer → smooth dragging
         canvas.style.transform = `translate(${panX}px,${panY}px) scale(${zoom})`
-        canvas.style.cursor = 'grab'
+        canvas.style.cursor = toolCursor()
         updateMinimap()
       }
+      toolHook.after = () => { canvas.style.cursor = toolCursor() }
       const zoomToward = (clientX: number, clientY: number, factor: number) => {
         const h = getHome(); if (!h) return
         const prev = zoom
@@ -5593,6 +5691,8 @@ export function buildModal(
       let drawing = false, startX = 0, startY = 0, penPoints: Array<{ x: number; y: number }> = []
       // Shift-drag pan state (only active while zoomed in).
       let panning = false, panSX = 0, panSY = 0, panBaseX = 0, panBaseY = 0
+      let panFrame = 0   // KD-3154: pending requestAnimationFrame for the next pan paint
+      const endPan = () => { panning = false; if (panFrame) { cancelAnimationFrame(panFrame); panFrame = 0 } applyZoomTransform(); canvas.style.cursor = toolCursor() }
       // Crop drag state: a dashed overlay box tracks the selection in stage-relative pixels.
       let cropBox: HTMLDivElement | null = null
       let cropClient = { x: 0, y: 0 }
@@ -5649,20 +5749,23 @@ export function buildModal(
         const hit = annotator.hitShape(toImg(e as unknown as PointerEvent).x, toImg(e as unknown as PointerEvent).y)
         if (hit && hit.type === 'text') { e.stopPropagation(); editTextContent(hit, e.clientX, e.clientY) }
       })
+      const startPan = (e: PointerEvent) => {
+        panning = true; panSX = e.clientX; panSY = e.clientY; panBaseX = panX; panBaseY = panY
+        canvas.style.transition = 'none' // pan must track the pointer 1:1 — no easing lag
+        canvas.style.cursor = 'grabbing'; try { canvas.setPointerCapture(e.pointerId) } catch { /* noop */ }
+        e.preventDefault()
+      }
       canvas.addEventListener('pointerdown', (e) => {
-        // Shift+drag pans the zoomed image instead of drawing.
-        if (e.shiftKey && zoom > 1) {
-          panning = true; panSX = e.clientX; panSY = e.clientY; panBaseX = panX; panBaseY = panY
-          canvas.style.transition = 'none' // pan must track the pointer 1:1 — no easing lag
-          canvas.style.cursor = 'grabbing'; try { canvas.setPointerCapture(e.pointerId) } catch { /* noop */ }
-          e.preventDefault(); return
-        }
+        // While zoomed in, Shift+drag (as before) or a middle-mouse drag (KD-3154) pans with ANY tool. With the
+        // Select tool, dragging the image itself pans too (handled below).
+        if (zoom > 1 && (e.shiftKey || e.button === 1)) { startPan(e); return }
         const pt = toImg(e); startX = pt.x; startY = pt.y
         if (activeTool === 'select') {
           annotator.uiScale = 1 / displayScale()
           const handle = annotator.hitHandle(pt.x, pt.y)
           const target = handle ? annotator.selected : annotator.hitShape(pt.x, pt.y)
-          if (!target) { setSelected(null); return }
+          // KD-3154: Select tool + drag on empty image while zoomed in pans (no annotation to move there).
+          if (!target) { setSelected(null); if (zoom > 1) startPan(e); return }
           if (target !== annotator.selected) setSelected(target)
           const bounds = annotator.shapeBounds(target) || { x: pt.x, y: pt.y, w: 0, h: 0 }
           editDrag = { shape: target, orig: cloneShape(target), bounds, mode: handle ? 'resize' : 'move', handle, grabX: pt.x, grabY: pt.y, snap: snapshotShot(index), moved: false }
@@ -5734,7 +5837,13 @@ export function buildModal(
         if (activeTool === 'pen') penPoints = [pt]
       })
       canvas.addEventListener('pointermove', (e) => {
-        if (panning) { canvas.style.transition = 'none'; panX = panBaseX + (e.clientX - panSX); panY = panBaseY + (e.clientY - panSY); applyZoomTransform(); canvas.style.cursor = 'grabbing'; return }
+        if (panning) {
+          // KD-3154: smooth drag — record the target and paint it once per animation frame (pointer events can
+          // fire faster than the screen refreshes, and each transform write also re-syncs the minimap).
+          panX = panBaseX + (e.clientX - panSX); panY = panBaseY + (e.clientY - panSY)
+          if (!panFrame) panFrame = requestAnimationFrame(() => { panFrame = 0; if (panning) { applyZoomTransform(); canvas.style.cursor = 'grabbing' } })
+          return
+        }
         if (editDrag) {
           const pt = toImg(e)
           if (!editDrag.moved) {
@@ -5798,7 +5907,7 @@ export function buildModal(
         if (prov) annotator.drawPreview(prov)
       })
       canvas.addEventListener('pointerup', (e) => {
-        if (panning) { panning = false; canvas.style.cursor = zoom > 1 ? 'grab' : 'crosshair'; try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ } return }
+        if (panning) { endPan(); try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ } return }
         if (editDrag) {
           const moved = editDrag.moved
           editDrag = null
@@ -5830,7 +5939,7 @@ export function buildModal(
         }
         // #449: snapshot before adding so this shape becomes one undo step in the unified history.
         const isPixel = activeTool === 'pixelate' && Math.abs(pt.x - startX) > 4 && Math.abs(pt.y - startY) > 4
-        // Rectangle is now the default tool, so a plain click (no drag) must not drop an invisible 0×0 shape + an
+        // A drawing tool is the default (Arrow), so a plain click (no drag) must not drop an invisible 0×0 shape + an
         // undo step. Line / rect / circle / arrow are added only after a real drag of a few pixels.
         const dragged = Math.abs(pt.x - startX) > 3 || Math.abs(pt.y - startY) > 3
         const isShape = (activeTool === 'line' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'arrow') && dragged
@@ -5851,7 +5960,7 @@ export function buildModal(
       canvas.addEventListener('pointercancel', (e) => {
         try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ }
         if (cropBox) { safeRemove(cropBox); cropBox = null }
-        if (panning) { panning = false; canvas.style.cursor = zoom > 1 ? 'grab' : 'crosshair' }
+        if (panning) endPan()
         // KLA-770: an interrupted text drag keeps its last position (already mutated); commit + clear state so
         // the gesture can't get stuck holding the shape.
         if (textDrag) { textDrag = null; canvas.style.cursor = 'crosshair'; annotator.redraw(); persist() }
@@ -5995,7 +6104,7 @@ export function buildModal(
       toolbar.querySelector('#klavity-fit-width')!.addEventListener('click', () => applyScale(fitWidthScale()))
       toolbar.querySelector('#klavity-fit-page')!.addEventListener('click', () => applyScale(fitPageScale()))
 
-      let activeTool = 'rect'
+      let activeTool = 'arrow'   // this older full-screen editor has no Select tool; Arrow is its default (was Rectangle)
       let activeColor = '#ef4444'
       let drawing = false
       let penPoints: Array<{ x: number; y: number }> = []

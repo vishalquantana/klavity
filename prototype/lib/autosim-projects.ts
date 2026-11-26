@@ -16,6 +16,8 @@ export interface AutosimProject {
   id: string; name: string; description: string
   createdBy: string | null; createdAt: number; updatedAt: number
   groupCount: number; testCaseCount: number; trailCount: number
+  /** F-01: steps every test case in this project starts with (e.g. log in, security code, choose company). "" = none. */
+  setupSteps: string
 }
 export interface TestCaseGroup { id: string; autosimProjectId: string; name: string; description: string; createdAt: number; updatedAt: number }
 export interface TestCase {
@@ -25,6 +27,12 @@ export interface TestCase {
   testAccountId: string | null
   /** Where this test case's AutoSims start (http/https). Description holds the execution steps. */
   startUrl: string | null
+  /** F-01: state that must hold before the steps run ("" = none). */
+  preconditions: string
+  /** F-01: the observable outcome that makes this test case PASS ("" = not specified). */
+  expectedResult: string
+  /** F-01: requirement (autosim_requirements.id) this test case verifies, if it came from a requirements document. */
+  requirementId: string | null
 }
 export interface LinkedTrail { id: string; name: string; status: string; baseUrl: string; testCaseId: string | null; updatedAt: number }
 
@@ -41,6 +49,7 @@ const rowToProject = (r: any): AutosimProject => ({
   id: s(r.id), name: s(r.name), description: s(r.description),
   createdBy: r.created_by ? s(r.created_by) : null, createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   groupCount: Number(r.group_count || 0), testCaseCount: Number(r.tc_count || 0), trailCount: Number(r.trail_count || 0),
+  setupSteps: s(r.setup_steps),
 })
 const rowToGroup = (r: any): TestCaseGroup => ({
   id: s(r.id), autosimProjectId: s(r.autosim_project_id), name: s(r.name), description: s(r.description),
@@ -53,6 +62,8 @@ const rowToTestCase = (r: any): TestCase => ({
   trailCount: Number(r.trail_count || 0),
   testAccountId: r.test_account_id ? s(r.test_account_id) : null,
   startUrl: r.start_url ? s(r.start_url) : null,
+  preconditions: s(r.preconditions), expectedResult: s(r.expected_result),
+  requirementId: r.requirement_id ? s(r.requirement_id) : null,
 })
 const rowToTrail = (r: any): LinkedTrail => ({
   id: s(r.id), name: s(r.name), status: s(r.status), baseUrl: s(r.base_url),
@@ -82,10 +93,11 @@ export async function createAutosimProject(projectId: string, input: { name: str
   return id
 }
 
-export async function updateAutosimProject(projectId: string, id: string, patch: { name?: string; description?: string }): Promise<boolean> {
+export async function updateAutosimProject(projectId: string, id: string, patch: { name?: string; description?: string; setupSteps?: string }): Promise<boolean> {
   const sets = ["updated_at=?"]; const args: any[] = [now()]
   if (patch.name !== undefined) { sets.push("name=?"); args.push(patch.name) }
   if (patch.description !== undefined) { sets.push("description=?"); args.push(patch.description) }
+  if (patch.setupSteps !== undefined) { sets.push("setup_steps=?"); args.push(patch.setupSteps) }
   const r = await db!.execute({ sql: `UPDATE autosim_projects SET ${sets.join(",")} WHERE project_id=? AND id=?`, args: [...args, projectId, id] })
   return r.rowsAffected > 0
 }
@@ -97,6 +109,12 @@ export async function deleteAutosimProject(projectId: string, id: string): Promi
     { sql: `UPDATE test_accounts SET autosim_project_id=NULL WHERE project_id=? AND autosim_project_id=?`, args: a },
     { sql: `DELETE FROM autosim_test_cases WHERE project_id=? AND autosim_project_id=?`, args: a },
     { sql: `DELETE FROM autosim_test_case_groups WHERE project_id=? AND autosim_project_id=?`, args: a },
+    // F-01: requirements documents and their requirements / scenarios / runs go with the project.
+    { sql: `DELETE FROM autosim_requirement_run_items WHERE project_id=? AND run_id IN (SELECT id FROM autosim_requirement_runs WHERE project_id=? AND autosim_project_id=?)`, args: [projectId, projectId, id] },
+    { sql: `DELETE FROM autosim_requirement_runs WHERE project_id=? AND autosim_project_id=?`, args: a },
+    { sql: `DELETE FROM autosim_req_scenarios WHERE project_id=? AND doc_id IN (SELECT id FROM autosim_requirement_docs WHERE project_id=? AND autosim_project_id=?)`, args: [projectId, projectId, id] },
+    { sql: `DELETE FROM autosim_requirements WHERE project_id=? AND autosim_project_id=?`, args: a },
+    { sql: `DELETE FROM autosim_requirement_docs WHERE project_id=? AND autosim_project_id=?`, args: a },
     { sql: `DELETE FROM autosim_projects WHERE project_id=? AND id=?`, args: a },
   ], "write")
   return rs[rs.length - 1].rowsAffected > 0
@@ -150,18 +168,18 @@ export async function getTestCase(projectId: string, id: string): Promise<TestCa
   return r.rows.length ? rowToTestCase(r.rows[0]) : null
 }
 
-export async function createTestCase(projectId: string, apId: string, input: { name: string; description?: string; groupId?: string | null; status?: TestCaseStatus; testAccountId?: string | null; startUrl?: string | null; createdBy?: string }): Promise<string> {
+export async function createTestCase(projectId: string, apId: string, input: { name: string; description?: string; groupId?: string | null; status?: TestCaseStatus; testAccountId?: string | null; startUrl?: string | null; preconditions?: string; expectedResult?: string; requirementId?: string | null; createdBy?: string }): Promise<string> {
   const id = "atc_" + crypto.randomUUID(); const t = now()
   await db!.execute({
-    sql: `INSERT INTO autosim_test_cases (id,project_id,autosim_project_id,group_id,name,description,status,test_account_id,start_url,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-    args: [id, projectId, apId, input.groupId ?? null, input.name, input.description ?? "", input.status ?? "active", input.testAccountId ?? null, input.startUrl ?? null, input.createdBy ?? null, t, t],
+    sql: `INSERT INTO autosim_test_cases (id,project_id,autosim_project_id,group_id,name,description,status,test_account_id,start_url,preconditions,expected_result,requirement_id,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    args: [id, projectId, apId, input.groupId ?? null, input.name, input.description ?? "", input.status ?? "active", input.testAccountId ?? null, input.startUrl ?? null, input.preconditions ?? "", input.expectedResult ?? "", input.requirementId ?? null, input.createdBy ?? null, t, t],
   })
   await touchProject(projectId, apId)
   return id
 }
 
 /** groupId: undefined = leave as-is, null = ungroup. Moving groups never touches linked Trails. */
-export async function updateTestCase(projectId: string, apId: string, id: string, patch: { name?: string; description?: string; status?: TestCaseStatus; groupId?: string | null; testAccountId?: string | null; startUrl?: string | null }): Promise<boolean> {
+export async function updateTestCase(projectId: string, apId: string, id: string, patch: { name?: string; description?: string; status?: TestCaseStatus; groupId?: string | null; testAccountId?: string | null; startUrl?: string | null; preconditions?: string; expectedResult?: string }): Promise<boolean> {
   const sets = ["updated_at=?"]; const args: any[] = [now()]
   if (patch.name !== undefined) { sets.push("name=?"); args.push(patch.name) }
   if (patch.description !== undefined) { sets.push("description=?"); args.push(patch.description) }
@@ -169,6 +187,8 @@ export async function updateTestCase(projectId: string, apId: string, id: string
   if (patch.groupId !== undefined) { sets.push("group_id=?"); args.push(patch.groupId) }
   if (patch.testAccountId !== undefined) { sets.push("test_account_id=?"); args.push(patch.testAccountId) }
   if (patch.startUrl !== undefined) { sets.push("start_url=?"); args.push(patch.startUrl) }
+  if (patch.preconditions !== undefined) { sets.push("preconditions=?"); args.push(patch.preconditions) }
+  if (patch.expectedResult !== undefined) { sets.push("expected_result=?"); args.push(patch.expectedResult) }
   const r = await db!.execute({ sql: `UPDATE autosim_test_cases SET ${sets.join(",")} WHERE project_id=? AND autosim_project_id=? AND id=?`, args: [...args, projectId, apId, id] })
   if (r.rowsAffected) await touchProject(projectId, apId)
   return r.rowsAffected > 0
@@ -178,10 +198,13 @@ export async function updateTestCase(projectId: string, apId: string, id: string
 export async function deleteTestCase(projectId: string, apId: string, id: string): Promise<boolean> {
   const rs = await db!.batch([
     { sql: `UPDATE trails SET test_case_id=NULL WHERE project_id=? AND test_case_id=?`, args: [projectId, id] },
+    // F-01: the scenario it was generated from becomes "not created" again (its validation history stays).
+    { sql: `UPDATE autosim_req_scenarios SET test_case_id=NULL WHERE project_id=? AND test_case_id=?`, args: [projectId, id] },
     { sql: `DELETE FROM autosim_test_cases WHERE project_id=? AND autosim_project_id=? AND id=?`, args: [projectId, apId, id] },
   ], "write")
-  if (rs[1].rowsAffected) await touchProject(projectId, apId)
-  return rs[1].rowsAffected > 0
+  const del = rs[rs.length - 1].rowsAffected
+  if (del) await touchProject(projectId, apId)
+  return del > 0
 }
 
 // ── Detail + Trail links ────────────────────────────────────────────────────────────────────────
@@ -256,7 +279,10 @@ export interface TestCaseRun {
   trigger: string; status: string; startedAt: number; durationMs: number | null
   /** 0 = pure deterministic replay of the recorded script; >0 = AI self-heal/vision was needed. */
   aiCalls: number
-  steps: number; passed: number; failed: number; healed: number; skipped: number; findings: number
+  /** steps = total steps in the AutoSim (denominator); executed = steps that ran (numerator) =
+   *  passed + healed ("fixed") + review + failed. notRun = steps - executed (skipped or not reached). */
+  steps: number; executed: number; passed: number; failed: number; healed: number; review: number
+  skipped: number; notRun: number; findings: number
 }
 
 /** Execution history of a test case — every Walk of every AutoSim it has had (re-recordings included). */
@@ -264,9 +290,16 @@ export async function testCaseRuns(projectId: string, testCaseId: string, limit 
   const r = await db!.execute({
     sql: `SELECT tr.id, tr.trail_id, t.name AS trail_name, t.status AS trail_status, tr.trigger, tr.status, tr.llm_calls,
                  tr.started_at, tr.finished_at,
-                 COUNT(rs.id) AS steps,
-                 COALESCE(SUM(rs.verdict='green'),0) AS passed, COALESCE(SUM(rs.verdict='red'),0) AS failed,
-                 COALESCE(SUM(rs.healed=1),0) AS healed, COALESCE(SUM(rs.verdict='skip'),0) AS skipped,
+                 COUNT(rs.id) AS step_rows,
+                 (SELECT COUNT(*) FROM trail_steps ts WHERE ts.project_id=tr.project_id AND ts.trail_id=tr.trail_id) AS trail_steps,
+                 -- Every executed step lands in exactly ONE bucket: passed (clean) | fixed (self-healed, then passed) |
+                 -- review (inconclusive amber) | failed. skip = not executed.
+                 COALESCE(SUM(rs.verdict IN ('green','amber','red')),0) AS executed,
+                 COALESCE(SUM(rs.verdict='green' AND COALESCE(rs.healed,0)!=1),0) AS passed,
+                 COALESCE(SUM(rs.verdict IN ('green','amber') AND rs.healed=1),0) AS healed,
+                 COALESCE(SUM(rs.verdict='amber' AND COALESCE(rs.healed,0)!=1),0) AS review,
+                 COALESCE(SUM(rs.verdict='red'),0) AS failed,
+                 COALESCE(SUM(rs.verdict='skip'),0) AS skipped,
                  (SELECT COUNT(*) FROM findings f WHERE f.project_id=tr.project_id AND f.run_id=tr.id) AS findings
           FROM trail_runs tr
           JOIN trails t ON t.id=tr.trail_id AND t.project_id=tr.project_id
@@ -279,8 +312,14 @@ export async function testCaseRuns(projectId: string, testCaseId: string, limit 
     runId: s(x.id), trailId: s(x.trail_id), trailName: s(x.trail_name), current: x.trail_status !== "archived",
     trigger: s(x.trigger), status: s(x.status), startedAt: Number(x.started_at),
     durationMs: x.finished_at != null ? Number(x.finished_at) - Number(x.started_at) : null,
-    aiCalls: Number(x.llm_calls || 0), steps: Number(x.steps), passed: Number(x.passed), failed: Number(x.failed),
-    healed: Number(x.healed), skipped: Number(x.skipped), findings: Number(x.findings),
+    aiCalls: Number(x.llm_calls || 0),
+    // Agreed formula: denominator = the AutoSim's total steps; numerator = executed steps (passed + fixed +
+    // needs-review + failed). If the AutoSim changed since this run, never report fewer total than recorded rows.
+    steps: Math.max(Number(x.trail_steps || 0), Number(x.step_rows || 0)),
+    executed: Number(x.executed), passed: Number(x.passed), failed: Number(x.failed),
+    healed: Number(x.healed), review: Number(x.review), skipped: Number(x.skipped),
+    notRun: Math.max(0, Math.max(Number(x.trail_steps || 0), Number(x.step_rows || 0)) - Number(x.executed)),
+    findings: Number(x.findings),
   }))
 }
 

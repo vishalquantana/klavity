@@ -1,5 +1,6 @@
 // Turso / libSQL access: users, email-OTP login, sessions, accounts, projects, memberships.
 import { createClient, type Client } from "@libsql/client"
+import { usableCheckpointFromJson, isNewerUsableCheckpoint } from "./author-checkpoint"
 import { insightsFromTraits, type Trait, type TraitKind, type TraitStatus, type TraitEventRow } from "./provenance"
 import { encryptSecret, sha256hex } from "./crypto"
 import type { SanitizedAttr } from "./attr"
@@ -18,12 +19,39 @@ const authToken = process.env.TURSO_AUTH_TOKEN
 // SQL + duration (surfaces in prod journalctl). Wall-clock captures network RTT to remote Turso, which is
 // the cost that actually dominates hot paths. Args are deliberately NOT logged (avoid PII/emails/tokens).
 const SLOW_QUERY_MS = Number(process.env.KLAV_SLOW_QUERY_MS) || 200
-function instrumentClient(c: Client): Client {
+
+// KD-2878: a dropped connection to remote Turso ("The socket connection was closed unexpectedly", ECONNRESET,
+// "fetch failed"…) is almost always a one-off network blip. It used to fail the whole request — on a page load
+// that surfaced as Bun's raw error page. Retry ONCE, but only for READ statements: a write whose socket dropped
+// may already have been applied, so repeating it could duplicate it.
+const TRANSIENT_DB_ERROR = /socket connection was closed|ECONNRESET|ECONNREFUSED|EPIPE|ETIMEDOUT|fetch failed|network (?:error|connection was lost)|connection (?:reset|closed)|other side closed|UND_ERR_SOCKET/i
+export function isTransientDbError(e: unknown): boolean {
+  const err = e as any
+  const parts = [err?.message, err?.code, err?.cause?.message, err?.cause?.code].filter(Boolean).map(String)
+  return parts.some((p) => TRANSIENT_DB_ERROR.test(p))
+}
+export function isReadOnlySql(sql: unknown): boolean {
+  const s = String(sql || "").replace(/^\s*(?:--[^\n]*\n|\/\*[\s\S]*?\*\/|\s)*/, "").toUpperCase()
+  if (s.startsWith("SELECT") || s.startsWith("PRAGMA") || s.startsWith("EXPLAIN")) return true
+  // WITH … SELECT (a CTE that ends in a read); a CTE feeding INSERT/UPDATE/DELETE is a write.
+  return s.startsWith("WITH") && !/\b(INSERT|UPDATE|DELETE|REPLACE)\b/.test(s)
+}
+const DB_RETRY_DELAY_MS = 150
+
+export function instrumentClient(c: Client): Client {
   const orig = c.execute.bind(c)
   ;(c as any).execute = async (stmt: any, ...rest: any[]) => {
     const t0 = performance.now()
     try {
-      return await orig(stmt, ...rest)
+      try {
+        return await orig(stmt, ...rest)
+      } catch (e) {
+        const sql = typeof stmt === "string" ? stmt : stmt?.sql
+        if (!isTransientDbError(e) || !isReadOnlySql(sql)) throw e
+        console.warn(`[db-retry] ${String((e as any)?.message || e).slice(0, 120)} — retrying read once`)
+        await new Promise((r) => setTimeout(r, DB_RETRY_DELAY_MS))
+        return await orig(stmt, ...rest)
+      }
     } finally {
       const ms = performance.now() - t0
       if (ms >= SLOW_QUERY_MS) {
@@ -762,6 +790,52 @@ export async function applySchema(c: Client) {
        created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
     `CREATE INDEX IF NOT EXISTS atc_group_ap_idx ON autosim_test_case_groups (project_id, autosim_project_id)`,
     `CREATE INDEX IF NOT EXISTS atc_case_ap_idx ON autosim_test_cases (project_id, autosim_project_id)`,
+    // ── F-01 Requirements-driven validation: an uploaded requirements document → its requirements
+    //    (REQ-001…) → generated test scenarios (TS-001…, each linked to requirement(s) and, once created,
+    //    to a test case) → requirement runs (a queue of test cases executed one after another) whose
+    //    items hold the validation result (actual vs expected) + evidence. Tenant-scoped by project_id. ──
+    `CREATE TABLE IF NOT EXISTS autosim_requirement_docs (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, autosim_project_id TEXT NOT NULL,
+       filename TEXT NOT NULL, content_type TEXT, size_bytes INTEGER NOT NULL DEFAULT 0,
+       source_key TEXT,                      -- stored original document (object storage), NULL if not kept
+       title TEXT NOT NULL DEFAULT '', start_url TEXT,
+       features_json TEXT, workflows_json TEXT, issues_json TEXT, clarifications_json TEXT,
+       created_by TEXT, created_at INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS areqdoc_ap_idx ON autosim_requirement_docs (project_id, autosim_project_id)`,
+    `CREATE TABLE IF NOT EXISTS autosim_requirements (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, doc_id TEXT NOT NULL, autosim_project_id TEXT NOT NULL,
+       ref TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0,
+       title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', type TEXT NOT NULL DEFAULT 'functional',
+       feature TEXT NOT NULL DEFAULT '', section TEXT NOT NULL DEFAULT '', quote TEXT NOT NULL DEFAULT '',
+       preconditions TEXT NOT NULL DEFAULT '', expected_result TEXT NOT NULL DEFAULT '',
+       ambiguous INTEGER NOT NULL DEFAULT 0, clarification TEXT NOT NULL DEFAULT '',
+       created_at INTEGER NOT NULL, UNIQUE(doc_id, ref))`,
+    `CREATE INDEX IF NOT EXISTS areq_doc_idx ON autosim_requirements (project_id, doc_id)`,
+    `CREATE TABLE IF NOT EXISTS autosim_req_scenarios (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, doc_id TEXT NOT NULL,
+       ref TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0, title TEXT NOT NULL,
+       requirement_ids_json TEXT NOT NULL DEFAULT '[]',
+       preconditions TEXT NOT NULL DEFAULT '', steps TEXT NOT NULL DEFAULT '', expected_result TEXT NOT NULL DEFAULT '',
+       start_url TEXT, needs_login INTEGER NOT NULL DEFAULT 0, missing_json TEXT NOT NULL DEFAULT '[]',
+       status TEXT NOT NULL DEFAULT 'ready',
+       test_case_id TEXT,                    -- set once the user creates a test case from it
+       created_at INTEGER NOT NULL, UNIQUE(doc_id, ref))`,
+    `CREATE INDEX IF NOT EXISTS areqsc_doc_idx ON autosim_req_scenarios (project_id, doc_id)`,
+    `CREATE TABLE IF NOT EXISTS autosim_requirement_runs (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, autosim_project_id TEXT NOT NULL, doc_id TEXT,
+       status TEXT NOT NULL DEFAULT 'queued',  -- queued | running | cancelling | done | cancelled
+       created_by TEXT, created_at INTEGER NOT NULL, started_at INTEGER, finished_at INTEGER)`,
+    `CREATE INDEX IF NOT EXISTS areqrun_ap_idx ON autosim_requirement_runs (project_id, autosim_project_id)`,
+    `CREATE TABLE IF NOT EXISTS autosim_requirement_run_items (
+       id TEXT PRIMARY KEY, run_id TEXT NOT NULL, project_id TEXT NOT NULL, position INTEGER NOT NULL,
+       test_case_id TEXT NOT NULL,
+       status TEXT NOT NULL DEFAULT 'queued',  -- queued | running | passed | failed | blocked | error | cancelled
+       mode TEXT,                              -- record (no AutoSim yet) | replay
+       author_session_id TEXT, trail_id TEXT, walk_run_id TEXT,
+       expected_result TEXT NOT NULL DEFAULT '', observed TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '',
+       evidence_json TEXT, started_at INTEGER, finished_at INTEGER)`,
+    `CREATE INDEX IF NOT EXISTS areqitem_run_idx ON autosim_requirement_run_items (run_id, position)`,
+    `CREATE INDEX IF NOT EXISTS areqitem_tc_idx ON autosim_requirement_run_items (project_id, test_case_id)`,
     // ── AutoSim auth setup (AT3): short-lived write-only setup token + encrypted login config. ──
     `CREATE TABLE IF NOT EXISTS autosim_auth_setup_tokens (
        id TEXT PRIMARY KEY,
@@ -1148,6 +1222,8 @@ export async function applySchema(c: Client) {
     "feedback_occurrences",
     // KD-2255: test_accounts gains autosim_project_id; autosim_test_cases gains test_account_id/start_url.
     "test_accounts", "autosim_test_cases",
+    // F-01: autosim_projects gains setup_steps (common steps run before every test case, e.g. PX4 login).
+    "autosim_projects",
   ]
   const _cols = await loadTableColumns(c, ALTERED_TABLES)
   const needCol = (table: string, col: string) => !(_cols.get(table)?.has(col) ?? false)
@@ -1488,6 +1564,14 @@ export async function applySchema(c: Client) {
     console.warn("autosim_test_cases.test_account_id ALTER skipped:", e?.message || e))
   if (needCol("autosim_test_cases", "start_url")) await c.execute("ALTER TABLE autosim_test_cases ADD COLUMN start_url TEXT").catch((e: any) =>
     console.warn("autosim_test_cases.start_url ALTER skipped:", e?.message || e))
+  // F-01: common setup steps per AutoSim project (login / security code / pick company …) prepended to test cases.
+  if (needCol("autosim_projects", "setup_steps")) await c.execute("ALTER TABLE autosim_projects ADD COLUMN setup_steps TEXT").catch((e: any) =>
+    console.warn("autosim_projects.setup_steps ALTER skipped:", e?.message || e))
+  // F-01: test cases carry their own preconditions + expected result and the requirement they verify.
+  for (const col of ["preconditions", "expected_result", "requirement_id"]) {
+    if (needCol("autosim_test_cases", col)) await c.execute(`ALTER TABLE autosim_test_cases ADD COLUMN ${col} TEXT`).catch((e: any) =>
+      console.warn(`autosim_test_cases.${col} ALTER skipped:`, e?.message || e))
+  }
   if (needCol("test_accounts", "autosim_project_id")) await c.execute("ALTER TABLE test_accounts ADD COLUMN autosim_project_id TEXT").catch((e: any) =>
     console.warn("test_accounts.autosim_project_id ALTER skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS trail_tc_idx ON trails(project_id, test_case_id)").catch((e: any) =>
@@ -2186,17 +2270,94 @@ export async function backfillTrailStatus(c: Client): Promise<{ activated: numbe
 
 // Authoring runs in-process holding the walk slot; a service restart (the merge-train restarts on
 // every deploy) kills it mid-flight and leaves its author_sessions row 'running' forever — the UI
-// polls a zombie. At boot no authoring can legitimately be in flight (single-process design), so
-// mark every 'running' session failed with an honest reason. Observed live 2026-07-04.
-export async function sweepOrphanedAuthorSessions(c: Client): Promise<{ swept: number }> {
-  const r = await c.execute({
-    sql: `UPDATE author_sessions SET status='failed',
-            stall_reason='interrupted by a server restart - please retry', updated_at=?
-          WHERE status='running'`,
-    args: [Date.now()],
+// polls a zombie. Boot sweep: every 'running' session that is not demonstrably alive is ended. Observed live 2026-07-04.
+// R1 (A4): blue/green deploys run two processes against one DB, so a row with a FRESH heartbeat may belong to the other
+// slot - leave it to the stale reaper. Rows with no heartbeat (pre-KLA-55) are swept.
+// R1 (A1): a row with a USABLE checkpoint (the single shared rule in lib/author-checkpoint.ts) is resumable -> 'stalled';
+// anything else has nothing to resume -> 'failed'.
+async function endRunningAuthorSessions(
+  c: Client, beatSql: string, beatArgs: any[],
+  reasons: { resumable: string; failed: string },
+): Promise<number> {
+  const rows = await c.execute({ sql: `SELECT id, checkpoint_json FROM author_sessions WHERE status='running' AND ${beatSql}`, args: beatArgs })
+  let swept = 0
+  for (const row of rows.rows as any[]) {
+    const resumable = usableCheckpointFromJson(row.checkpoint_json) !== null
+    // Re-assert the 'running' + heartbeat predicate so a session that beats between the SELECT and this UPDATE is left alone.
+    const r = await c.execute({
+      sql: `UPDATE author_sessions SET status=?, stall_reason=?, updated_at=? WHERE id=? AND status='running' AND ${beatSql}`,
+      args: [resumable ? "stalled" : "failed", resumable ? reasons.resumable : reasons.failed, Date.now(), row.id, ...beatArgs],
+    })
+    swept += Number(r.rowsAffected ?? 0)
+  }
+  return swept
+}
+
+// R2: a prior session sits in `resuming` while a resume child owns it. If that child is gone, or ended in failure, nothing else would
+// ever move the prior again - its checkpoint would be unreachable. Runs after the child sweep, from BOTH the boot sweep and the
+// stale reaper, so it also sees the children those sweeps just ended. Idempotent: a crash part-way is simply redone next tick.
+//   - child row missing AND the claim older than the grace window   -> prior restored to 'stalled'
+//   - child 'failed' (retryable failure / process died)             -> prior restored to 'stalled', carrying the child's latest USABLE
+//                                                                      checkpoint if it is further along than the prior's (one transaction)
+//   - child 'failed' because the USER cancelled                     -> prior terminal 'failed' (never made resumable again; no transfer)
+//   - child running / crystallized / stalled / needs_auth           -> untouched (live, or the prior was consumed by progress)
+// Every UPDATE re-asserts `status='resuming' AND resumed_by=<that child>` (and the child's state), so it can never act on a claim a
+// newer attempt has since taken. Restoring never touches updated_at, so it cannot extend the seven-day retention window.
+//
+// BLUE/GREEN: an OLD (pre-R2) process claims with two statements (UPDATE prior, then INSERT child) and stamps updated_at=now when it
+// claims. A claim with no child row is therefore only provably orphaned once it is older than RESUME_CLAIM_GHOST_GRACE_MS; inside the
+// window the old process is (at most milliseconds) from inserting its child. New-code claims are one transaction and can never be
+// ghosts, so the window never delays recovery of anything R2 itself created. Needs clocks of the two slots to agree to within seconds.
+export const RESUME_CLAIM_GHOST_GRACE_MS = 5 * 60 * 1000
+export async function recoverOrphanedResumeClaims(c: Client, ghostGraceMs = RESUME_CLAIM_GHOST_GRACE_MS): Promise<number> {
+  const ghostCutoff = Date.now() - ghostGraceMs
+  const rows = await c.execute(`SELECT p.id AS pid, p.project_id AS proj, p.resumed_by AS rby, p.updated_at AS pupd, p.checkpoint_json AS pcp,
+                                       ch.id AS cid, ch.status AS cstatus, ch.stall_reason AS creason, ch.checkpoint_json AS ccp
+                                FROM author_sessions p LEFT JOIN author_sessions ch ON ch.id = p.resumed_by AND ch.project_id = p.project_id
+                                WHERE p.status='resuming'`)
+  let recovered = 0
+  for (const r of rows.rows as any[]) {
+    if (r.cid == null) {                                                         // ghost: claim without a child row
+      if (Number(r.pupd) >= ghostCutoff) continue                                // too fresh: an old process may be about to insert the child
+      const res = await c.execute({
+        sql: `UPDATE author_sessions SET status='stalled', resumed_by=NULL
+              WHERE id=? AND project_id=? AND status='resuming' AND resumed_by IS ? AND updated_at < ?
+                AND NOT EXISTS (SELECT 1 FROM author_sessions x WHERE x.id IS ?)`,
+        args: [r.pid, r.proj, r.rby ?? null, ghostCutoff, r.rby ?? null],
+      })
+      recovered += Number(res.rowsAffected ?? 0)
+      continue
+    }
+    if (String(r.cstatus) !== "failed") continue
+    const cancelled = String(r.creason) === "cancelled by user"
+    const stmts: Array<{ sql: string; args: any[] }> = []
+    if (!cancelled && r.ccp != null && isNewerUsableCheckpoint(usableCheckpointFromJson(r.ccp), usableCheckpointFromJson(r.pcp))) {
+      stmts.push({
+        sql: `UPDATE author_sessions SET checkpoint_json=?
+              WHERE id=? AND project_id=? AND status='resuming' AND resumed_by=?
+                AND EXISTS (SELECT 1 FROM author_sessions x WHERE x.id=? AND x.status='failed' AND x.checkpoint_json=?)`,
+        args: [String(r.ccp), r.pid, r.proj, r.rby, r.rby, String(r.ccp)],
+      })
+    }
+    stmts.push({
+      sql: `UPDATE author_sessions SET ${cancelled ? "status='failed', stall_reason='resume cancelled by user'" : "status='stalled', resumed_by=NULL"}
+            WHERE id=? AND project_id=? AND status='resuming' AND resumed_by=? AND EXISTS (SELECT 1 FROM author_sessions x WHERE x.id=? AND x.status='failed')`,
+      args: [r.pid, r.proj, r.rby, r.rby],
+    })
+    const rs = await c.batch(stmts, "write")
+    recovered += Number(rs[rs.length - 1].rowsAffected ?? 0)
+  }
+  if (recovered) console.log(`[author-sessions] recovered ${recovered} orphaned resume claim(s)`)
+  return recovered
+}
+
+export async function sweepOrphanedAuthorSessions(c: Client, freshMs = DEFAULT_STALE_MS): Promise<{ swept: number }> {
+  const swept = await endRunningAuthorSessions(c, "(last_beat_at IS NULL OR last_beat_at < ?)", [Date.now() - freshMs], {
+    resumable: "interrupted by a server restart - Resume to continue from the last checkpoint",
+    failed: "interrupted by a server restart - please retry",
   })
-  const swept = Number(r.rowsAffected ?? 0)
-  if (swept) console.log(`[author-sessions] swept ${swept} orphaned running session(s) → failed`)
+  if (swept) console.log(`[author-sessions] swept ${swept} orphaned running session(s) → stalled/failed`)
+  await recoverOrphanedResumeClaims(c)
   return { swept }
 }
 
@@ -2223,7 +2384,8 @@ export async function touchWalkHeartbeat(runId: string, c?: Client): Promise<voi
 }
 
 export async function touchAuthorHeartbeat(sessionId: string, c?: Client): Promise<void> {
-  await (c ?? db!).execute({ sql: `UPDATE author_sessions SET last_beat_at=? WHERE id=?`, args: [Date.now(), sessionId] })
+  // R2 fence: only a still-running session takes heartbeats (a recovered / ended row is never touched by its stale worker).
+  await (c ?? db!).execute({ sql: `UPDATE author_sessions SET last_beat_at=? WHERE id=? AND status='running'`, args: [Date.now(), sessionId] })
 }
 
 // KLA-55: Stale-heartbeat reaper — sweeps rows whose heartbeat is older than thresholdMs.
@@ -2246,16 +2408,13 @@ export async function sweepStaleWalks(c: Client, thresholdMs = DEFAULT_STALE_MS)
 }
 
 export async function sweepStaleAuthorSessions(c: Client, thresholdMs = DEFAULT_STALE_MS): Promise<{ swept: number }> {
-  const cutoff = Date.now() - thresholdMs
-  const now = Date.now()
-  const r = await c.execute({
-    sql: `UPDATE author_sessions SET status='failed', updated_at=?,
-            stall_reason='stale heartbeat — process may have crashed, please retry'
-          WHERE status='running' AND last_beat_at IS NOT NULL AND last_beat_at < ?`,
-    args: [now, cutoff],
+  // R1 (A1): usable checkpoint (shared rule) -> 'stalled' (resumable); otherwise 'failed'.
+  const swept = await endRunningAuthorSessions(c, "(last_beat_at IS NOT NULL AND last_beat_at < ?)", [Date.now() - thresholdMs], {
+    resumable: "stale heartbeat - process may have crashed. Resume to continue from the last checkpoint",
+    failed: "stale heartbeat — process may have crashed, please retry",
   })
-  const swept = Number(r.rowsAffected ?? 0)
-  if (swept) console.log(`[author-sessions] stale reaper swept ${swept} session(s) → failed`)
+  if (swept) console.log(`[author-sessions] stale reaper swept ${swept} session(s) → stalled/failed`)
+  await recoverOrphanedResumeClaims(c)
   return { swept }
 }
 
@@ -4133,7 +4292,13 @@ export const NOTIFY_ASSIGNEE_TYPES = new Set([
   "ticket_status_changed", "ticket_priority_changed", "ticket_assignee_changed", "ticket_title_changed",
   "ticket_attachment_added", "ticket_attachment_removed", "ticket_screenshot_annotated", "ticket_qa_closed",
   "ticket_commented", "ticket_label_added", "ticket_label_removed", "ticket_description_changed",
+  "ticket_comment_edited",  // someone edited a comment on a ticket assigned to you
+  "ticket_comment_deleted", // someone deleted a comment on a ticket assigned to you
+  "ticket_restored",        // a deleted ticket was put back (pairs with ticket_deleted, which already notifies)
 ])
+
+// KD-3134: updates the ticket's reporter hears about too (besides the assignee).
+export const REPORTER_NOTIFY_TYPES = new Set(["ticket_status_changed", "ticket_priority_changed", "ticket_restored"])
 
 const _notifEmail = (v: unknown): string | null => {
   const e = v == null ? "" : String(v).trim().toLowerCase()
@@ -4162,15 +4327,40 @@ export async function notifyAssigneeOfTicketUpdate(a: ActivityInsert): Promise<n
   if (a.type === "ticket_assignee_changed") {
     for (const e of [a.meta?.to, a.meta?.from]) { const r = _notifEmail(e); if (r) recipients.push(r) }
   } else {
-    const r = await db.execute({ sql: "SELECT assignee FROM feedback WHERE id=? AND project_id=?", args: [a.feedbackId, a.projectId] })
-    const assignee = _notifEmail(r.rows[0]?.assignee)
+    const r = await db.execute({ sql: "SELECT assignee, contact_email, actor_email FROM feedback WHERE id=? AND project_id=?", args: [a.feedbackId, a.projectId] })
+    const row: any = r.rows[0] || {}
+    const assignee = _notifEmail(row.assignee)
     if (assignee) recipients.push(assignee)
+    // KD-3134: a status or priority change also notifies the ticket's REPORTER (the "Reporter" shown on the ticket:
+    // the composer's contact email, else whoever filed it), matching who the status-change email goes to. Before,
+    // only the assignee heard, so a change to an unassigned ticket, or by its assignee, put nothing in anyone's bell.
+    if (REPORTER_NOTIFY_TYPES.has(a.type)) {
+      const reporter = _notifEmail(row.contact_email) || _notifEmail(row.actor_email)
+      if (reporter) recipients.push(reporter)
+    }
   }
   const uniq = [...new Set(recipients)].filter(e => e !== actor)
   for (const to of uniq) {
     await createNotification({ recipientEmail: to, projectId: a.projectId, feedbackId: a.feedbackId, type: a.type, actorEmail: actor, meta: a.meta ?? null })
   }
   return uniq.length
+}
+
+// KD-3134: deleting a ticket (single or bulk — both go through deleteTicketsBulk) notifies its assignee and
+// reporter, never the person who deleted it. The ticket row is already gone, so its title/number ride in meta.
+export async function notifyTicketsDeleted(projectId: string, tickets: DeletedTicketInfo[], actorEmail: string | null): Promise<number> {
+  if (!db) return 0
+  const actor = _notifEmail(actorEmail)
+  let sent = 0
+  for (const t of tickets) {
+    const uniq = [...new Set([t.assignee, t.reporter].filter((e): e is string => !!e))].filter(e => e !== actor)
+    for (const to of uniq) {
+      await createNotification({ recipientEmail: to, projectId, feedbackId: t.id, type: "ticket_deleted", actorEmail: actor,
+        meta: { title: t.title, seqNum: t.seqNum } })
+      sent++
+    }
+  }
+  return sent
 }
 
 export type NotificationRow = {
@@ -4198,8 +4388,10 @@ export async function listNotifications(recipientEmail: string, limit = 30): Pro
       feedbackId: x.feedback_id != null ? String(x.feedback_id) : null, type: String(x.type),
       actorEmail: x.actor_email != null ? String(x.actor_email) : null, meta,
       createdAt: Number(x.created_at), readAt: x.read_at != null ? Number(x.read_at) : null,
-      ticketTitle: Number(x.f_exists) ? effectiveTicketTitle({ title: x.f_title, suggested_bug_json: x.f_sb, observation: x.f_obs }) : null,
-      ticketSeq: x.f_seq != null ? Number(x.f_seq) : null,
+      // A deleted ticket's row is gone — fall back to the title/number captured in meta at delete time (KD-3134).
+      ticketTitle: Number(x.f_exists) ? effectiveTicketTitle({ title: x.f_title, suggested_bug_json: x.f_sb, observation: x.f_obs })
+        : (meta?.title != null ? String(meta.title) : null),
+      ticketSeq: x.f_seq != null ? Number(x.f_seq) : (meta?.seqNum != null ? Number(meta.seqNum) : null),
     }
   })
 }
@@ -9129,8 +9321,10 @@ export async function listTicketsPaginated(
 
   const search = opts.search?.trim()
   if (search) {
-    // Treat %, _, and backslash as literal user input rather than LIKE wildcards.
-    const escaped = search.replace(/[\\%_]/g, "\\\\$&")
+    // Treat %, _, and backslash as literal user input rather than LIKE wildcards. ONE backslash per char (ESCAPE '\'):
+    // KD-3139 — this used to insert TWO ("\\\\$&"), so the pattern demanded a literal backslash and any search
+    // containing "_" or "%" (e.g. "user_id", "50%") found nothing in the List while the Board still matched it.
+    const escaped = search.replace(/[\\%_]/g, "\\$&")
     const pattern = `%${escaped}%`
     // Titles and descriptions generated by Sims live in suggested_bug_json; manual-ticket
     // descriptions live in observation, while notes are the editable ticket description. #543: a
@@ -9218,23 +9412,36 @@ export async function listTicketsPaginated(
   return { tickets, total, page, totalPages }
 }
 
+export type DeletedTicketInfo = {
+  id: string; assignee: string | null; reporter: string | null; title: string; seqNum: number | null
+}
+
 export async function deleteTicketsBulk(
   projectId: string,
   ticketIds: string[],
   actor: string | null = null,
-): Promise<{ deleted: number; ticketIds: string[] }> {
+): Promise<{ deleted: number; ticketIds: string[]; tickets: DeletedTicketInfo[] }> {
   const cleanIds = Array.isArray(ticketIds)
     ? ticketIds.map(String).map(s => s.trim()).filter(Boolean).slice(0, 200)
     : []
-  if (!cleanIds.length) return { deleted: 0, ticketIds: [] }
+  if (!cleanIds.length) return { deleted: 0, ticketIds: [], tickets: [] }
 
   const placeholders = cleanIds.map(() => "?").join(",")
+  // KD-3134: also read who to notify (assignee + reporter) and the title, since the row is gone afterwards.
   const existingRows = await db!.execute({
-    sql: `SELECT id FROM feedback WHERE project_id = ? AND id IN (${placeholders})`,
+    sql: `SELECT id, assignee, contact_email, actor_email, title, suggested_bug_json, observation, seq_num
+          FROM feedback WHERE project_id = ? AND id IN (${placeholders})`,
     args: [projectId, ...cleanIds],
   })
-  const validIds = existingRows.rows.map((r: any) => String(r.id)).filter(Boolean)
-  if (!validIds.length) return { deleted: 0, ticketIds: [] }
+  const tickets: DeletedTicketInfo[] = existingRows.rows.filter((r: any) => r.id).map((r: any) => ({
+    id: String(r.id),
+    assignee: _notifEmail(r.assignee),
+    reporter: _notifEmail(r.contact_email) || _notifEmail(r.actor_email),
+    title: effectiveTicketTitle(r),
+    seqNum: r.seq_num != null ? Number(r.seq_num) : null,
+  }))
+  const validIds = tickets.map(t => t.id)
+  if (!validIds.length) return { deleted: 0, ticketIds: [], tickets: [] }
 
   const validPlaceholders = validIds.map(() => "?").join(",")
 
@@ -9260,7 +9467,7 @@ export async function deleteTicketsBulk(
   await db!.batch(stmts, "write")
   invalidateDashboardCache(projectId)
 
-  return { deleted: validIds.length, ticketIds: validIds }
+  return { deleted: validIds.length, ticketIds: validIds, tickets }
 }
 
 // ── sim_runs — on-demand Sim run records ─────────────────────────────────────
@@ -9443,18 +9650,22 @@ export async function deleteLabel(projectId: string, labelId: string): Promise<b
   return Number(r.rowsAffected) > 0
 }
 
-export async function attachLabel(labelId: string, feedbackId: string): Promise<void> {
-  await db!.execute({
+// Both return whether the ticket's label set actually changed (false = already attached / not attached), so
+// bulk callers only notify for tickets that really changed.
+export async function attachLabel(labelId: string, feedbackId: string): Promise<boolean> {
+  const r = await db!.execute({
     sql: "INSERT OR IGNORE INTO ticket_labels (label_id, feedback_id, created_at) VALUES (?,?,?)",
     args: [labelId, feedbackId, Date.now()],
   })
+  return (r.rowsAffected ?? 0) > 0
 }
 
-export async function detachLabel(labelId: string, feedbackId: string): Promise<void> {
-  await db!.execute({
+export async function detachLabel(labelId: string, feedbackId: string): Promise<boolean> {
+  const r = await db!.execute({
     sql: "DELETE FROM ticket_labels WHERE label_id=? AND feedback_id=?",
     args: [labelId, feedbackId],
   })
+  return (r.rowsAffected ?? 0) > 0
 }
 
 export async function labelsForFeedback(feedbackId: string): Promise<LabelRow[]> {

@@ -348,3 +348,31 @@ test("PATCH observation edits the description, persists, and round-trips on a fr
   const blocked = await req("PATCH", `/api/feedback/${FID}`, { observation: "hax" }, OUTSIDE_SID)
   expect(blocked.status).toBe(404)
 })
+
+// KD-3152: a Sim Report opened by URL / after a page refresh showed its WHOLE description as the title. The
+// single-ticket endpoint jumped from the (usually empty) saved title straight to the full observation, while
+// the Sim Reports list used the AI suggested-bug title. It now resolves like the list: saved title → suggested
+// title → the description's first line.
+test("GET /api/feedback/:id resolves the title: saved title, then suggested title, then first line (KD-3152)", async () => {
+  const longObs = "The checkout total does not refresh after removing an item.\nSteps: add two items, remove one.\nExpected the total to drop."
+  const rows: Array<[string, string | null, string | null]> = [
+    [`fb_kd3152_sug_${RUN}`, null, JSON.stringify({ title: "Checkout total doesn't update after removing an item" })],
+    [`fb_kd3152_own_${RUN}`, "Reporter's own title", JSON.stringify({ title: "AI title" })],
+    [`fb_kd3152_obs_${RUN}`, null, null],
+  ]
+  let simNo = 700
+  for (const [id, title, sug] of rows) {
+    await exec(
+      "INSERT INTO feedback (id, project_id, observation, title, suggested_bug_json, priority, status, sim_seq_num, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [id, PROJ, longObs, title, sug, "medium", "new", simNo++, NOW],
+    )
+  }
+  const get = async (id: string) => (await (await req("GET", `/api/feedback/${id}`)).json()).report
+  const sug = await get(rows[0][0])
+  expect(sug.title).toBe("Checkout total doesn't update after removing an item")
+  expect(sug.observation).toBe(longObs)               // the description itself is unchanged
+  expect((await get(rows[1][0])).title).toBe("Reporter's own title")
+  const obs = await get(rows[2][0])
+  expect(obs.title).toBe("The checkout total does not refresh after removing an item.")
+  expect(obs.title).not.toContain("\n")
+})

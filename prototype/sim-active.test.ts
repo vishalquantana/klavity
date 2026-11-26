@@ -62,7 +62,7 @@ test("Baseline QA can be deactivated but not deleted", () => {
 // ── dashboard ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 test("Sim cards show Active/Inactive, a Deactivate/Activate button (admins), a confirmation, and grey the inactive Sim", () => {
   for (const s of ['class="sf-state"', "Deactivate", "Activate", "is-inactive", "data-sim-toggle", "toggleSimActive("]) expect(DASH).toContain(s)
-  const t = block(DASH, "async function toggleSimActive(", 1800)
+  const t = block(DASH, "async function toggleSimActive(", 2600)   // KD-3143: the function grew (Activate confirms too)
   expect(t).toContain("klavConfirm(")                       // confirm before deactivating
   expect(t).toContain('method: "PATCH"')
   expect(DASH).toContain("canToggle")                       // admin-only control
