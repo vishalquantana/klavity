@@ -3696,9 +3696,7 @@ export function buildModal(
         const r = sel.getRangeAt(0)
         if (!desc.contains(r.endContainer)) return -1
         const pre = r.cloneRange(); pre.selectNodeContents(desc); pre.setEnd(r.endContainer, r.endOffset)
-        // Count <br> as one newline, exactly like descPlainText/setCaret do. Range.toString() skips <br>, so on a
-        // multi-line (e.g. AI-enhanced) description the restored caret drifted back one char per line above it.
-        return descPlainText(pre.cloneContents()).length
+        return pre.toString().length
       } catch { return -1 }
     }
     const setCaret = (off: number): void => {
