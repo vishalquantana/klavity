@@ -21973,7 +21973,10 @@
         try { const _fr = new URLSearchParams(location.search).get("fromRun"); if (_fr && ticketId) _fromSimRun = { run: _fr, ticket: ticketId } } catch (e) { }
         if (!ticketId) return
         const isTriage = (location.hash || "").indexOf("triage") >= 0 || (document.body && document.body.getAttribute("data-view") === "triage")
-        const targetMode = isTriage ? "panel" : "full"
+        // KD-3153: a refreshed preview (its URL carries tpanel=1) comes back as the preview panel, not the full page.
+        // Shared ?ticket= links (Slack, invites, regression alerts) carry no marker and still open full-page.
+        const wasPanel = new URLSearchParams(location.search).get("tpanel") === "1"
+        const targetMode = (isTriage || wasPanel) ? "panel" : "full"
         const targetCtx = isTriage ? "triage" : "tickets"
         // Find the ticket in loaded state; if the list hasn't loaded the individual ticket yet, try fetching it
         const t = (state.tickets || []).find(x => String(x.id) === String(ticketId))
@@ -30461,6 +30464,7 @@
                 const u = new URL(location.href)
                 const already = u.searchParams.get("ticket") === String(id)
                 u.searchParams.set("ticket", String(id))
+                u.searchParams.set("tpanel", "1")   // KD-3153: a refresh of this URL reopens the preview panel
                 if (already) history.replaceState(null, "", u.toString())
                 else history.pushState(null, "", u.toString())
               } else {
@@ -30578,6 +30582,7 @@
               } else {
                 const u = new URL(location.href)
                 u.searchParams.delete("ticket")
+                u.searchParams.delete("tpanel")   // KD-3153
                 if (/^#?tickets\//.test(u.hash || "")) {
                   u.hash = _tktOriginContext === "triage" ? "triage" : "tickets"
                 }
@@ -36933,7 +36938,7 @@
                 // rewriting it to "#tickets" flashed a board URL until the ticket rendered and restored it.
                 if (!window.__klavTktBootKeepUrl) try {
                   var _u = new URL(location.href);
-                  if (v !== 'tickets') _u.searchParams.delete('ticket');
+                  if (v !== 'tickets') { _u.searchParams.delete('ticket'); _u.searchParams.delete('tpanel'); }   // KD-3153: + the preview marker
                   // KD-2255: the Projects & Test Cases sub-tab's state belongs to the AutoSims view only.
                   if (v !== 'autosims') ['asp', 'asp_tc', 'asp_tab'].forEach(function (k) { _u.searchParams.delete(k) });
                   var _viewUrl = v === 'overview' ? (_u.pathname + _u.search) : (_u.pathname + _u.search + '#' + v);
@@ -37080,7 +37085,31 @@
               var deepTkt = init.match(/^tickets\/(.+)$/);
               // KD-229: served at a ticket permalink (reload of the full ticket page) → same no-board Tickets boot.
               if (!deepTriage && !deepTkt && document.querySelector('meta[name="klav-boot-ticket"]')) deepTkt = true;
-              if (deepTriage) { window._pendingTriageFocus = decodeURIComponent(deepTriage[1]); setView('triage'); }
+              // KD-3153: refreshing a ticket preview landed on Overview. The deep link can open the ticket BEFORE this
+              // routing runs (cached data paints at once); it then rewrites the URL (no #tickets left), so the fallback
+              // below sent the page to Overview and closed the ticket. And a ?ticket= on #triage was stripped by setView
+              // before the deep link could open it. So: if a ticket is already showing, leave the view alone; otherwise
+              // keep ?ticket= in the address bar through this first setView.
+              var qTkt = null; try { qTkt = new URLSearchParams(location.search).get('ticket'); } catch (e) { }
+              var tktShowing = !!window.__klavTktPageOpen || document.body.classList.contains('tkt-panel-open');
+              if (tktShowing) {
+                // The ticket already set its view + URL. Exception: a Sim Reports preview doesn't switch views itself,
+                // so put Sim Reports behind it (setView closes the panel, so re-open it straight after).
+                if (init === 'triage' && qTkt && document.body.classList.contains('tkt-panel-open')
+                  && document.body.getAttribute('data-view') !== 'triage' && typeof window.openSingleTicket === 'function') {
+                  window.__klavTktBootKeepUrl = true;
+                  try { setView('triage'); } finally { window.__klavTktBootKeepUrl = false; }
+                  window.openSingleTicket(qTkt, 'panel', 'triage');
+                }
+              }
+              else if (qTkt && !deepTriage && !deepTkt) {
+                var qPanel = false; try { qPanel = new URLSearchParams(location.search).get('tpanel') === '1'; } catch (e) { }
+                var qView = init === 'triage' ? 'triage' : 'tickets';
+                if (qView === 'tickets' && !qPanel) { window.__klavTktPageOpen = true; document.body.classList.add('tkt-page-open'); }   // shared link → full page (as before)
+                window.__klavTktBootKeepUrl = true;
+                try { setView(qView); } finally { window.__klavTktBootKeepUrl = false; }
+              }
+              else if (deepTriage) { window._pendingTriageFocus = decodeURIComponent(deepTriage[1]); setView('triage'); }
               // KD-181: also apply the page-mode body class NOW (not only once the ticket renders) so the board's
               // heading/toolbar/filter chrome never paints, and keep the ticket URL intact through setView.
               else if (deepTkt) {
