@@ -526,6 +526,13 @@
       position: relative
     }
 
+    /* KD-3158: while a refreshed view is still booting (data-view-preset), keep the page heading blank instead of showing the
+       static "Dashboard" text; the boot setView() fills in the real title ("Tickets", …) and removes the marker. */
+    body[data-view-preset] #hello,
+    body[data-view-preset] #lead {
+      visibility: hidden
+    }
+
     /* view switching — show only blocks tagged for the active view */
     body[data-view="overview"] [data-view]:not([data-view~="overview"]),
     body[data-view="snap"] [data-view]:not([data-view~="snap"]),
@@ -18632,8 +18639,23 @@
 </head>
 
 <body data-view="overview">
-  <!-- A #sims deep link (e.g. "‹ Sims" back from a Sim page) shows the Sims tab from the first paint; the boot setView() below still owns the rest. -->
-  <script>if (location.hash === "#sims") document.body.setAttribute("data-view", "sims")</script>
+  <!-- KD-3158: start on the view the URL asks for, from the FIRST paint. The page used to paint Overview (the default
+       data-view above) until the boot routing at the very end of this page switched to the real view, so refreshing
+       Tickets (or any view) flashed the Overview first. Mirrors the boot routing: a #<view> hash, a #tickets/<id> /
+       #triage/<id> deep link, or a ticket permalink (/t/<id>, /<slug>/<KEY>-<n>) which opens the ticket page. The boot
+       setView() still runs and owns everything else; data-view-preset tells code the view isn't set up yet. -->
+  <script>(function () {
+    try {
+      var V = ['overview', 'tickets', 'triage', 'recurring', 'sims', 'autosims', 'snap', 'pagebugs', 'guards', 'team', 'settings'];
+      var h = String(location.hash || '').replace(/^#/, '');
+      var v = h.split('/')[0].split('?')[0], b = document.body;
+      var tktPage = h.indexOf('tickets/') === 0 && h.length > 8 || !!document.querySelector('meta[name="klav-boot-ticket"]');
+      if (tktPage) v = 'tickets';
+      if (V.indexOf(v) < 0 || v === 'overview') return;
+      b.setAttribute('data-view', v); b.setAttribute('data-view-preset', '1');
+      if (tktPage) b.classList.add('tkt-page-open');   // the ticket page, not the board behind it
+    } catch (e) { }
+  })()</script>
   <!-- Apply the saved collapsed-sidebar preference before the sidebar paints, so it doesn't render expanded and then snap to the
        icon rail when the boot script (#677 toggle below) runs. That script still owns the button state + toggling. -->
   <script>try { if (localStorage.getItem("klav-side-collapsed") === "1") document.body.classList.add("side-collapsed") } catch (e) { }</script>
@@ -18901,6 +18923,16 @@
          server-side when /dashboard is served (sourced from package.json) — never hardcode. -->
       <div class="side-version" aria-label="Software version">v__APP_VERSION__</div>
     </aside>
+    <!-- KD-3158: on a refresh of a view (#tickets, …) move the sidebar highlight to that view straight away, instead of
+         showing "Overview" highlighted until the boot routing at the end of the page runs. -->
+    <script>(function () {
+      try {
+        var b = document.body;
+        if (!b.hasAttribute('data-view-preset')) return;
+        var v = b.getAttribute('data-view');
+        document.querySelectorAll('.side .nv[data-go]').forEach(function (n) { n.classList.toggle('active', n.getAttribute('data-go') === v) });
+      } catch (e) { }
+    })()</script>
     <div class="content">
       <div class="head">
         <div>
@@ -30149,7 +30181,7 @@
             if (panel) {
               // Panel mode: the tickets board must be mounted behind the overlay, so activate it the normal way.
               document.body.classList.remove("tkt-page-open")
-              if (_tktOriginContext !== "triage" && document.body.getAttribute("data-view") !== "tickets") {
+              if (_tktOriginContext !== "triage" && (document.body.getAttribute("data-view") !== "tickets" || document.body.hasAttribute("data-view-preset"))) {
                 const nv = document.querySelector('.side .nv[data-go="tickets"]'); if (nv) nv.click()
               }
             } else {
@@ -30161,7 +30193,7 @@
               // Only switch views on the FIRST render (not the cache→fresh re-render for the same open): setView
               // resets the hash to #tickets, which would otherwise clobber our #tickets/<id> and push a duplicate
               // history entry each render. Once data-view is 'tickets' the chrome is already correct.
-              if (_tktOriginContext !== "triage" && document.body.getAttribute("data-view") !== "tickets") {
+              if (_tktOriginContext !== "triage" && (document.body.getAttribute("data-view") !== "tickets" || document.body.hasAttribute("data-view-preset"))) {
                 if (typeof window.setView === "function") window.setView("tickets")
                 else document.body.setAttribute("data-view", "tickets")
               }
@@ -36892,6 +36924,7 @@
                 });
               }
               function setView(v) {
+                document.body.removeAttribute('data-view-preset');   // KD-3158: the early first-paint view is now set up for real
                 // #652: any navigation instantly aborts an in-flight idle prefetch so it can never race — or
                 // delay — the view we're about to load. A fresh pass is scheduled at the end of this function.
                 if (typeof window.klavCancelPrefetch === 'function') window.klavCancelPrefetch();
