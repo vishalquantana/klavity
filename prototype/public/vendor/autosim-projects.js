@@ -97,6 +97,91 @@
     '#aspRoot .asp-ibtn:hover{color:var(--indigo);border-color:var(--indigo);background:rgba(99,102,241,.07)}',
     '#aspRoot .asp-ibtn.danger:hover{color:var(--rose);border-color:var(--rose);background:rgba(225,29,72,.07)}',
     '#aspRoot .asp-ibtn:focus-visible{outline:2px solid var(--indigo);outline-offset:1px}',
+    // New module wizard (step 1 of 4)
+    '#aspModWiz .mw{max-width:560px;width:100%;padding:0;overflow:hidden;border-radius:20px}',
+    '#aspModWiz .mw-head{display:flex;align-items:center;gap:14px;padding:20px 24px;background:rgba(99,102,241,.08);border-bottom:1px solid var(--line)}',
+    '#aspModWiz .mw-ic{width:44px;height:44px;border-radius:12px;background:rgba(99,102,241,.18);color:var(--indigo);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}',
+    '#aspModWiz .mw-title{flex:1;min-width:0}',
+    '#aspModWiz .mw-title h2{font:700 22px var(--display);margin:0 0 2px}',
+    '#aspModWiz .mw-eyebrow{font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--indigo)}',
+    '#aspModWiz .mw-x{background:none;border:0;color:var(--paper-dim);cursor:pointer;padding:6px;border-radius:8px;line-height:0}#aspModWiz .mw-x:hover{background:var(--ink-3);color:var(--paper)}',
+    '#aspModWiz .mw-body{padding:22px 24px 8px}',
+    '#aspModWiz .mw-body label{display:block;font:700 14px var(--body);margin-bottom:8px}',
+    '#aspModWiz .mw-body input,#aspModWiz .mw-body textarea{width:100%;font:15px var(--body);color:var(--paper);background:var(--ink-2);border:1px solid var(--line);border-radius:12px;padding:12px 14px}',
+    '#aspModWiz .mw-body input:focus,#aspModWiz .mw-body textarea:focus{outline:none;border-color:var(--indigo);box-shadow:0 0 0 2px rgba(99,102,241,.25)}',
+    '#aspModWiz .mw-body textarea{min-height:120px;resize:vertical}',
+    '#aspModWiz .mw-field{margin-bottom:18px}',
+    '#aspModWiz .mw-err{color:var(--rose);font-size:13px;min-height:18px;padding:0 24px}',
+    '#aspModWiz .mw-foot{display:flex;justify-content:flex-end;gap:12px;padding:16px 24px 20px;border-top:1px solid var(--line)}',
+    '#aspModWiz .mw-foot .btn{padding:10px 20px;border-radius:12px;font-weight:700}',
+    '#aspModWiz .mw-head2{display:flex;align-items:flex-start;gap:14px;padding:22px 24px 14px}',
+    '#aspModWiz .mw-head2 h2{font:700 21px var(--display);margin:6px 0 0;line-height:1.25}',
+    '#aspModWiz .mw-prog{display:flex;gap:8px;padding:0 24px 18px}',
+    '#aspModWiz .mw-prog i{flex:1;height:5px;border-radius:99px;background:var(--ink-3)}#aspModWiz .mw-prog i.on{background:var(--indigo)}',
+    '#aspModWiz .mw-cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}',
+    '#aspModWiz .mw-card{text-align:left;display:grid;gap:6px;align-content:start;background:var(--ink-2);border:1.5px solid var(--line);border-radius:16px;padding:16px;cursor:pointer;color:var(--paper);font:inherit}',
+    '#aspModWiz .mw-card.sel{border-color:var(--indigo);background:rgba(99,102,241,.08)}',
+    '#aspModWiz .mw-card b{font:700 16px var(--body)}#aspModWiz .mw-card>span:last-child{font-size:13.5px;color:var(--paper-dim)}',
+    '#aspModWiz .mw-cic{width:44px;height:44px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;background:var(--ink-3);color:var(--paper-dim);margin-bottom:8px}',
+    '#aspModWiz .mw-cic.on{background:var(--indigo);color:#fff}',
+    '#aspModWiz .mw-paths{display:grid;gap:10px}',
+    '#aspModWiz .mw-path{display:flex;align-items:center;gap:14px;border:1.5px solid var(--line);border-radius:14px;padding:14px 16px;cursor:pointer;background:var(--ink-2)}',
+    '#aspModWiz .mw-path.sel{border-color:var(--indigo);background:rgba(99,102,241,.08)}',
+    '#aspModWiz .mw-path input{position:absolute;opacity:0;pointer-events:none}',
+    '#aspModWiz .mw-dot{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--line);flex-shrink:0;position:relative}',
+    '#aspModWiz .mw-path.sel .mw-dot{border-color:var(--indigo);background:var(--indigo)}',
+    '#aspModWiz .mw-path.sel .mw-dot::after{content:\'\';position:absolute;inset:5px;border-radius:50%;background:#fff}',
+    '#aspModWiz .mw-path:has(input:focus-visible){outline:2px solid var(--indigo);outline-offset:2px}',
+    '#aspModWiz .mw-path b{display:block;font:700 15px var(--body);margin-bottom:3px}',
+    '#aspModWiz .mw-steps{display:block;font:12px var(--mono);color:var(--paper-dim)}',
+    '#aspModWiz .mw.mw-wide{max-width:1120px;border-radius:22px}',
+    '#aspModWiz .mw-split{display:grid;grid-template-columns:minmax(300px,420px) 1fr;gap:0;min-height:560px}',
+    '#aspModWiz .mw-left{padding:24px;display:flex;flex-direction:column;gap:14px;max-height:86vh;overflow-y:auto}',
+    '#aspModWiz .mw-h3{font:700 22px var(--display);margin:0}',
+    '#aspModWiz .mw-f>label{display:block;font:700 13px var(--body);margin-bottom:6px}',
+    '#aspModWiz .mw-f input,#aspModWiz .mw-f textarea,#aspModWiz .mw-f select{width:100%;font:14px var(--body);color:var(--paper);background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}',
+    '#aspModWiz .mw-f input:focus,#aspModWiz .mw-f textarea:focus,#aspModWiz .mw-f select:focus{outline:none;border-color:var(--indigo);box-shadow:0 0 0 2px rgba(99,102,241,.25)}',
+    '#aspModWiz .mw-f textarea{min-height:96px;resize:vertical}',
+    '#aspModWiz .mw-hint{font-size:12px;color:var(--paper-faint);margin-top:5px}',
+    '#aspModWiz .mw-opts{display:grid;gap:8px}',
+    '#aspModWiz .mw-opt{display:flex;align-items:center;gap:12px;border:1.5px solid var(--line);border-radius:12px;padding:11px 14px;cursor:pointer;background:var(--ink-2)}',
+    '#aspModWiz .mw-opt.sel{border-color:var(--indigo);background:rgba(99,102,241,.08)}#aspModWiz .mw-opt.dis{opacity:.7;cursor:not-allowed}',
+    '#aspModWiz .mw-opt input{position:absolute;opacity:0;pointer-events:none}',
+    '#aspModWiz .mw-opt.sel .mw-dot{border-color:var(--indigo);background:var(--indigo)}#aspModWiz .mw-opt.sel .mw-dot::after{content:"";position:absolute;inset:5px;border-radius:50%;background:#fff}',
+    '#aspModWiz .mw-opt b{display:block;font:700 14px var(--body)}#aspModWiz .mw-steps2{display:block;font-size:12.5px;color:var(--paper-dim)}',
+    '#aspModWiz .mw-lfoot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:auto;padding-top:10px}',
+    '#aspModWiz .mw-saveclose{background:var(--ink-3);border:0;border-radius:10px;padding:10px 16px;font:600 14px var(--body);color:var(--indigo);cursor:pointer}',
+    '#aspModWiz .mw-right{padding:18px}',
+    '#aspModWiz .mw-prev{height:100%;min-height:420px;border:1.5px dashed rgba(99,102,241,.35);border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;gap:8px;background:rgba(99,102,241,.04)}',
+    '#aspModWiz .mw-prev h3{font:700 20px var(--display);margin:10px 0 0}#aspModWiz .mw-prev p{max-width:360px;color:var(--paper-dim);font-size:14px;margin:0}',
+    '#aspModWiz .mw-hintpill{margin-top:14px;padding:10px 18px;border-radius:99px;background:rgba(99,102,241,.12);color:var(--indigo);font:600 14px var(--body)}',
+    '@media (max-width:820px){#aspModWiz .mw-split{grid-template-columns:1fr}#aspModWiz .mw-right{display:none}}',
+    '#aspModWiz .mw-lock{background:rgba(99,102,241,.1);border-radius:12px;padding:10px 14px;display:grid;gap:2px;font-size:12.5px;color:var(--paper-dim)}#aspModWiz .mw-lock b{color:var(--indigo);font-size:13px}',
+    '#aspModWiz .mw-ro{background:var(--ink-3);border-radius:10px;padding:10px 12px;font-size:14px;color:var(--paper-dim);white-space:pre-wrap;word-break:break-word}#aspModWiz .mw-ro.tall{max-height:120px;overflow:auto}',
+    '#aspModWiz .mw-left button:disabled{opacity:.55;cursor:not-allowed}',
+    '#aspModWiz .mw-runpane{height:100%;border:1.5px solid rgba(99,102,241,.35);border-radius:18px;display:flex;flex-direction:column;overflow:hidden;max-height:86vh}',
+    '#aspModWiz .mw-rhead{display:flex;align-items:center;gap:14px;padding:18px 20px;border-bottom:1px solid var(--line)}',
+    '#aspModWiz .mw-rtitle{flex:1;min-width:0}#aspModWiz .mw-rtitle h3{font:700 19px var(--display);margin:0}#aspModWiz .mw-rtitle div{font-size:13.5px;color:var(--paper-dim)}',
+    '#aspModWiz .mw-rstate{font-size:13px;color:var(--paper-dim);text-align:right;line-height:1.35}',
+    '#aspModWiz .mw-pause{border:1.5px solid var(--indigo);color:var(--indigo);background:none;border-radius:10px;padding:8px 14px;font:700 14px var(--body);cursor:pointer}',
+    '#aspModWiz .mw-spin,#aspModWiz .mw-sic.spin{width:26px;height:26px;border-radius:50%;border:3px solid rgba(99,102,241,.25);border-top-color:var(--indigo);animation:asp-spin .9s linear infinite;flex-shrink:0}',
+    '#aspModWiz .mw-ricon{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:700;flex-shrink:0}#aspModWiz .mw-ricon.ok{background:var(--green)}#aspModWiz .mw-ricon.bad{background:var(--rose)}',
+    '#aspModWiz .mw-rbody{padding:16px 20px;overflow-y:auto;display:grid;gap:10px;align-content:start}#aspModWiz .mw-rbody h4{font:700 17px var(--display);margin:8px 0 0}',
+    '#aspModWiz .mw-bar{height:10px;border-radius:99px;background:var(--ink-3);overflow:hidden;position:relative}#aspModWiz .mw-bar i{position:absolute;inset:0 auto 0 0;width:100%;background:var(--indigo);border-radius:99px}',
+    '#aspModWiz .mw-bar.ind i{width:35%;animation:mw-ind 1.4s ease-in-out infinite}#aspModWiz .mw-bar.ok i{background:var(--green)}#aspModWiz .mw-bar.bad i{background:var(--rose)}',
+    '@keyframes mw-ind{0%{left:-35%}100%{left:100%}}@media (prefers-reduced-motion:reduce){#aspModWiz .mw-bar.ind i{animation:none;width:100%;opacity:.5}}',
+    '#aspModWiz .mw-counts{display:flex;gap:18px;flex-wrap:wrap;font-size:13.5px;color:var(--paper-dim)}#aspModWiz .c-ok{color:var(--green)}#aspModWiz .c-bad{color:var(--rose)}#aspModWiz .c-run{color:var(--indigo)}#aspModWiz .mw-el{margin-left:auto}',
+    '#aspModWiz .mw-step{border:1.5px solid var(--line);border-radius:14px;background:var(--ink-2)}#aspModWiz .mw-step.pass{background:rgba(15,157,107,.07);border-color:rgba(15,157,107,.3)}#aspModWiz .mw-step.fail{background:rgba(219,39,119,.07);border-color:rgba(219,39,119,.3)}#aspModWiz .mw-step.run{background:rgba(99,102,241,.08);border-color:rgba(99,102,241,.4)}',
+    '#aspModWiz .mw-srow{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;background:none;border:0;text-align:left;color:var(--paper);font:inherit;cursor:pointer}#aspModWiz .mw-step.run .mw-srow{cursor:default}',
+    '#aspModWiz .mw-sic{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700;flex-shrink:0}#aspModWiz .mw-step.pass .mw-sic{background:var(--green)}#aspModWiz .mw-step.fail .mw-sic{background:var(--rose)}',
+    '#aspModWiz .mw-stext{flex:1;min-width:0;display:grid;gap:2px}#aspModWiz .mw-stext b{font:700 14.5px var(--body)}#aspModWiz .mw-stext span{font-size:12.5px;color:var(--paper-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '#aspModWiz .mw-badge{font:700 12px var(--body);padding:3px 12px;border-radius:99px;background:var(--ink-3);color:var(--paper-dim)}#aspModWiz .mw-badge.pass{background:rgba(15,157,107,.16);color:var(--green)}#aspModWiz .mw-badge.fail{background:rgba(219,39,119,.14);color:var(--rose)}#aspModWiz .mw-badge.run{background:rgba(99,102,241,.16);color:var(--indigo)}',
+    '#aspModWiz .mw-sbody{padding:0 14px 14px 52px;display:grid;gap:8px;font-size:13px;color:var(--paper-dim)}#aspModWiz .mw-sbody p{margin:0}#aspModWiz .mw-sbody img{max-width:100%;border-radius:10px;border:1px solid var(--line)}#aspModWiz .mw-serr{color:var(--rose)}',
+    '#aspModWiz .mw-rmsg{border-radius:12px;padding:10px 14px;font-size:13.5px}#aspModWiz .mw-rmsg.ok{background:rgba(15,157,107,.12);color:var(--green)}#aspModWiz .mw-rmsg.bad{background:rgba(219,39,119,.1);color:var(--rose)}',
+    '#aspModWiz .mw-rfoot{display:flex;justify-content:flex-end;gap:10px;padding:14px 20px;border-top:1px solid var(--line)}',
+    '#aspModWiz .mw-foot2{justify-content:space-between;align-items:center}',
+    '#aspModWiz .mw-cancel{background:none;border:0;font:600 14px var(--body);color:var(--paper-dim);cursor:pointer;padding:10px 4px}#aspModWiz .mw-cancel:hover{color:var(--paper)}',
+    '@media (max-width:520px){#aspModWiz .mw-cards{grid-template-columns:1fr}}',
     // Upload & Extract dialog
     '#aspUxBg .asp-ux{max-width:560px;width:100%;max-height:90vh;overflow-y:auto;padding:22px 24px}',
     '#aspUxBg .ux-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}',
@@ -391,14 +476,14 @@
     role = d.role; listData = d.projects
     $('aspMain').innerHTML =
       '<div class="head"><div><h1>Projects &amp; Test Cases</h1><p class="lead">Group AutoSims into projects and test cases. Each project keeps its own login credentials.</p></div>' +
-      '<button class="btn btn-indigo" id="aspNewProj">+ New project</button></div>' +
+      '<button class="btn btn-indigo" id="aspNewProj">+ New module</button></div>' +
       '<div class="toolbar"><input type="search" id="aspPq" placeholder="Search projects" aria-label="Search projects" value="' + esc(listState.q) + '">' +
       '<select id="aspPsort" aria-label="Sort"><option value="updated">Last updated</option><option value="created">Newest</option><option value="name">Name</option><option value="trails">Most AutoSims</option></select></div>' +
       '<div id="aspPlist"></div>'
     $('aspPsort').value = listState.sort
     $('aspPq').addEventListener('input', function () { listState.q = this.value; listState.page = 1; drawList() })
     $('aspPsort').addEventListener('change', function () { listState.sort = this.value; drawList() })
-    $('aspNewProj').addEventListener('click', function () { editProject(null) })
+    $('aspNewProj').addEventListener('click', openModuleWizard)
     drawList()
   }
   function drawList() {
@@ -422,6 +507,222 @@
     $('aspPlist').querySelectorAll('[data-edit]').forEach(function (b) { b.onclick = function () { editProject(byId(b.dataset.edit)) } })
     $('aspPlist').querySelectorAll('[data-del]').forEach(function (b) { b.onclick = function () { deleteProject(byId(b.dataset.del), true) } })
     bindPager('p', function (n) { listState.page = n; drawList() })
+  }
+  // ── New module wizard (steps 1-2 of 4) ─────────────────────────────────────────
+  // 1 = name + description, 2 = which path to add. Steps 3-4 (test case form, run view) plug in at wizNext.
+  var WIZ_PATHS = [   // TODO: replace with the paths AutoSims already knows once that list has an API
+    { id: 'checkout', name: 'Checkout path', steps: 'Log in → Open billing → Select Pro Plan → Complete checkout' },
+    { id: 'signup', name: 'Sign up path', steps: 'Open signup → Enter details → Verify email → Land in app' },
+    { id: 'invite', name: 'Invite a teammate path', steps: 'Open team → Send invite → Accept invite' },
+  ]
+  var wiz = { step: 1, name: '', description: '', mode: 'existing', pathId: 'checkout' }
+  var WIZ_X = '<button type="button" class="mw-x" id="mwX" aria-label="Close"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>'
+  var WIZ_ARROW = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px;margin-left:6px"><path d="M5 12h14M13 6l6 6-6 6"/></svg>'
+  function wizClose() {
+    var bg = $('aspModWiz'); if (bg) bg.classList.remove('show')
+    clearInterval(wiz.tick); wiz.gen = (wiz.gen || 0) + 1   // stop the live poll/timer; a run in progress keeps going server-side
+  }
+  function wizRender() {
+    var box = $('aspModWizBox'), h
+    if (wiz.step === 1) {
+      h = '<div class="mw-head"><span class="mw-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 8l10 5 10-5-10-5z"/><path d="m2 13 10 5 10-5"/></svg></span>' +
+        '<div class="mw-title"><h2 id="aspModWizTitle">New module</h2><div class="mw-eyebrow">Create a module &middot; Step 1 of 4</div></div>' + WIZ_X + '</div>' +
+        '<form id="mwForm" novalidate><div class="mw-body">' +
+        '<div class="mw-field"><label for="mwName">Module name *</label><input id="mwName" maxlength="80" placeholder="e.g. Login Module" autocomplete="off" value="' + esc(wiz.name) + '"></div>' +
+        '<div class="mw-field"><label for="mwDesc">Description</label><textarea id="mwDesc" maxlength="2000" placeholder="Add a brief description of this module...">' + esc(wiz.description) + '</textarea></div></div>' +
+        '<div class="mw-err" id="mwErr" role="alert"></div>' +
+        '<div class="mw-foot"><button type="button" class="btn btn-ghost" id="mwCancel">Cancel</button><button type="submit" class="btn btn-indigo" id="mwNext">Next' + WIZ_ARROW + '</button></div></form>'
+    } else if (wiz.step === 4) {
+      h = wizStep4()
+    } else if (wiz.step === 3) {
+      h = wizStep3()
+    } else {
+      var ex = wiz.mode === 'existing'
+      h = '<div class="mw-head2"><div class="mw-title"><div class="mw-eyebrow">Create a module &middot; Step 1 of 4</div><h2 id="aspModWizTitle">Which path do you want to add to this module?</h2></div>' + WIZ_X + '</div>' +
+        '<div class="mw-prog" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></div>' +
+        '<form id="mwForm" novalidate><div class="mw-body">' +
+        '<div class="mw-cards" role="radiogroup" aria-label="Path source">' +
+        '<button type="button" role="radio" aria-checked="' + ex + '" class="mw-card' + (ex ? ' sel' : '') + '" data-mode="existing"><span class="mw-cic' + (ex ? ' on' : '') + '"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 8l10 5 10-5-10-5z"/><path d="m2 13 10 5 10-5"/><path d="m2 18 10 5 10-5"/></svg></span><b>Use an existing path</b><span>Reuse a path AutoSims already knows.</span></button>' +
+        '<button type="button" role="radio" aria-checked="' + !ex + '" class="mw-card' + (!ex ? ' sel' : '') + '" data-mode="english"><span class="mw-cic' + (!ex ? ' on' : '') + '"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 4 5 5L9 20H4v-5L15 4z"/><path d="M3 3v2M2 4h2M20 15v2M19 16h2"/></svg></span><b>Create a path in plain English</b><span>Describe what to test &mdash; no code needed.</span></button></div>' +
+        (ex ? '<div class="mw-paths" role="radiogroup" aria-label="Existing paths">' + WIZ_PATHS.map(function (p) {
+          return '<label class="mw-path' + (wiz.pathId === p.id ? ' sel' : '') + '"><input type="radio" name="mwPath" value="' + p.id + '"' + (wiz.pathId === p.id ? ' checked' : '') + '><span class="mw-dot"></span><span><b>' + esc(p.name) + '</b><span class="mw-steps">' + esc(p.steps) + '</span></span></label>'
+        }).join('') + '</div>' : '<div class="mw-field"><label for="mwEnglish">Describe the path</label><textarea id="mwEnglish" placeholder="e.g. Log in, open billing, pick the Pro plan and complete checkout"></textarea></div>') +
+        '</div><div class="mw-err" id="mwErr" role="alert"></div>' +
+        '<div class="mw-foot mw-foot2"><button type="button" class="mw-cancel" id="mwCancel">Cancel</button><button type="submit" class="btn btn-indigo" id="mwNext">Continue' + WIZ_ARROW + '</button></div></form>'
+    }
+    box.innerHTML = h
+    box.classList.toggle('mw-wide', wiz.step >= 3)
+    if (wiz.step === 4) { wizRender4(); return }
+    $('mwCancel').onclick = wizClose; if ($('mwX')) $('mwX').onclick = wizClose
+    if (wiz.step === 3) { $('mwRun').onclick = wizRunStub; box.querySelectorAll('input[name=mwExec]').forEach(function (r) { r.onchange = function () { wizReadTc(); wiz.tc.exec = r.value; box.querySelectorAll('.mw-opt').forEach(function (l) { l.classList.toggle('sel', l.contains(r) && r.checked) }) } }) }
+    box.querySelectorAll('.mw-card').forEach(function (b) { b.onclick = function () { wiz.mode = b.dataset.mode; wizRender() } })
+    box.querySelectorAll('input[name=mwPath]').forEach(function (r) { r.onchange = function () { wiz.pathId = r.value; box.querySelectorAll('.mw-path').forEach(function (l) { l.classList.toggle('sel', l.contains(r) && r.checked) }) } })
+    $('mwForm').onsubmit = wizNext
+    var f = $('mwName') || $('mwEnglish'); if (f) f.focus()
+  }
+  async function wizNext(e) {
+    e.preventDefault()
+    if (wiz.step === 1) {
+      wiz.name = $('mwName').value.trim(); wiz.description = $('mwDesc').value.trim()
+      if (!wiz.name) { $('mwErr').textContent = 'Module name is required.'; $('mwName').focus(); return }
+      wiz.step = 2; wizRender(); return
+    }
+    if (wiz.step === 2) { wiz.step = 3; wizRender(); return }
+    // Step 3: Save & Close creates the module, the chosen group and the test case.
+    var tc = wizReadTc()
+    var bad = wizTcError(tc); if (bad) { $('mwErr').textContent = bad.msg; $(bad.id).focus(); return }
+    var btn = $('mwNext'); btn.disabled = true; $('mwRun').disabled = true
+    try {
+      var made = await wizCreate()
+      wizClose(); toast('Module created'); go({ asp: made.apId, tab: 'test-cases' })
+    } catch (err) { $('mwErr').textContent = err.message; btn.disabled = false; $('mwRun').disabled = false }
+  }
+  // Creates the module, the chosen group and the test case once (Save & Close and Run share it).
+  async function wizCreate() {
+    if (wiz.created) return wiz.created
+    var tc = wiz.tc
+    var d = await api('POST', '/api/autosim-projects', { name: wiz.name, description: wiz.description })
+    var base = '/api/autosim-projects/' + encodeURIComponent(d.project.id)
+    var gid = null
+    if (tc.group) { var g = await api('POST', base + '/groups', { name: tc.group }); gid = g.group.id }
+    var t = await api('POST', base + '/test-cases', { name: tc.name, start_url: tc.url, description: tc.steps, group_id: gid, test_account_id: null, status: tc.status })
+    wiz.created = { apId: d.project.id, tcId: t.testCase.id }
+    return wiz.created
+  }
+  function wizReadTc() {
+    if ($('mwTcName')) wiz.tc = Object.assign(wiz.tc || {}, { name: $('mwTcName').value.trim(), url: $('mwTcUrl').value.trim(), steps: $('mwTcSteps').value.trim(), group: $('mwTcGroup').value, status: $('mwTcStatus').value })
+    return wiz.tc
+  }
+  function wizTcError(tc) {
+    if (!tc.name) return { msg: 'Test case name is required.', id: 'mwTcName' }
+    if (!/^https?:\/\/\S+$/.test(tc.url)) return { msg: 'Start URL must start with http:// or https://', id: 'mwTcUrl' }
+    return null
+  }
+  // ── Step 4: run the test case live. Saves the module + test case, starts the real AI recording
+  // (POST /api/trails/author, the same call the New AutoSim dialog makes) and polls its session.
+  async function wizRunStub() {
+    var tc = wizReadTc(), bad = wizTcError(tc)
+    if (!bad && tc.steps.length < 10) bad = { msg: 'Describe the execution steps (at least 10 characters) before running.', id: 'mwTcSteps' }
+    if (bad) { $('mwErr').textContent = bad.msg; $(bad.id).focus(); return }
+    $('mwErr').textContent = ''
+    $('mwRun').disabled = true; $('mwNext').disabled = true
+    try {
+      var made = await wizCreate()
+      var gen = wiz.gen = (wiz.gen || 0) + 1
+      wiz.step = 4; wiz.run = { sid: null, status: 'starting', steps: [], startedAt: Date.now(), open: {}, error: '' }
+      wizRender()
+      var d = await api('POST', '/api/trails/author', { name: tc.name.slice(0, 80), objective: tc.steps, base_url: tc.url, viewport: { preset: 'desktop', width: 1920, height: 1080 }, test_case_id: made.tcId, replace: true })
+      wiz.run.sid = d.sessionId; wiz.run.status = 'running'; wizRender4()
+      wizPoll(gen)
+    } catch (err) {
+      if (wiz.step === 4) { wiz.run.status = 'error'; wiz.run.error = err.message; wizRender4() }
+      else { $('mwErr').textContent = err.message; $('mwRun').disabled = false; $('mwNext').disabled = false }
+    }
+  }
+  async function wizPoll(gen) {
+    var fails = 0
+    while (wiz.gen === gen && wiz.step === 4 && wiz.run.status === 'running') {
+      await new Promise(function (r) { setTimeout(r, 2000) })
+      if (wiz.gen !== gen || wiz.step !== 4) return
+      try {
+        var s = await api('GET', '/api/trails/author/' + encodeURIComponent(wiz.run.sid)); fails = 0
+        if (wiz.gen !== gen) return
+        wiz.run.steps = s.steps || []; wiz.run.limitMs = s.limitMs
+        if (s.status !== 'running') { wiz.run.status = s.status; wiz.run.stall = s.stallReason; wiz.run.verdict = s.verificationVerdict; wiz.run.endedAt = Date.now() }
+        wizRender4()
+      } catch (err) { if (++fails >= 5) { wiz.run.status = 'error'; wiz.run.error = err.message; wizRender4() } }
+    }
+  }
+  function wizCancelRun() {
+    var b = $('mwRunCancel'); if (b) { b.disabled = true; b.textContent = 'Cancelling…' }
+    api('POST', '/api/trails/author/' + encodeURIComponent(wiz.run.sid) + '/cancel').catch(function () { if (b) { b.disabled = false; b.textContent = 'Cancel run' } })
+  }
+  function wizTick() {
+    var el = $('mwElapsed'); if (!el || !wiz.run) return
+    var end = wiz.run.endedAt || Date.now(), sec = Math.max(0, Math.floor((end - wiz.run.startedAt) / 1000))
+    el.textContent = String(Math.floor(sec / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0')
+  }
+  function wizRender4() {
+    var pane = $('mwRunPane'); if (!pane) return
+    pane.innerHTML = wizRunHtml()
+    pane.querySelectorAll('[data-mwstep]').forEach(function (b) { b.onclick = function () { var k = b.dataset.mwstep; wiz.run.open[k] = !wiz.run.open[k]; wizRender4() } })
+    if ($('mwRunCancel')) $('mwRunCancel').onclick = wizCancelRun
+    if ($('mwRunView')) $('mwRunView').onclick = function () { wizClose(); go({ asp: wiz.created.apId, tc: wiz.created.tcId }) }
+    if ($('mwRunClose')) $('mwRunClose').onclick = function () { wizClose(); go({ asp: wiz.created.apId, tab: 'test-cases' }) }
+    wizTick()
+  }
+  function wizRunHtml() {
+    var r = wiz.run, st = r.steps || [], running = r.status === 'running' || r.status === 'starting'
+    var ok = st.filter(function (s) { return s.ok }).length, bad = st.length - ok
+    var done = !running, good = r.status === 'crystallized'
+    if (running) clearInterval(wiz.tick), wiz.tick = setInterval(wizTick, 1000); else clearInterval(wiz.tick)
+    var head = '<div class="mw-rhead"><span class="' + (running ? 'mw-spin' : good ? 'mw-ricon ok' : 'mw-ricon bad') + '">' + (running ? '' : good ? '✓' : '!') + '</span>' +
+      '<div class="mw-rtitle"><h3>' + (running ? 'Running test case' : good ? 'Test case recorded' : r.status === 'error' ? 'Could not run' : 'Run stopped') + '</h3><div>' + esc(wiz.tc.name) + '</div></div>' +
+      '<div class="mw-rstate">' + (running ? 'Running…<br>' + plural(st.length, 'action') : '') + '</div>' +
+      (running && r.sid ? '<button type="button" class="mw-pause" id="mwRunCancel">Cancel run</button>' : '') + '</div>'
+    var bar = '<div class="mw-bar' + (running ? ' ind' : good ? ' ok' : ' bad') + '"><i></i></div>' +
+      '<div class="mw-counts"><span class="c-ok">● ' + ok + ' completed</span>' + (running ? '<span class="c-run">◌ 1 running</span>' : '') + (bad ? '<span class="c-bad">● ' + bad + ' failed</span>' : '') +
+      '<span class="mw-el">Elapsed time: <b id="mwElapsed">00:00</b></span></div>'
+    var P = encodeURIComponent(pid())
+    var rows = st.map(function (s, i) {
+      var key = String(s.idx != null ? s.idx : i), open = !!r.open[key]
+      var shot = s.screenshotKey ? '<img src="/api/trails/author/' + encodeURIComponent(r.sid) + '/steps/' + encodeURIComponent(key) + '/screenshot?project=' + P + '" alt="Screenshot after step ' + (i + 1) + '" loading="lazy">' : '<div class="muted">No screenshot for this step.</div>'
+      return '<div class="mw-step ' + (s.ok ? 'pass' : 'fail') + '"><button type="button" class="mw-srow" data-mwstep="' + key + '" aria-expanded="' + open + '"><span class="mw-sic">' + (s.ok ? '✓' : '✕') + '</span>' +
+        '<span class="mw-stext"><b>Step ' + (i + 1) + ' · ' + esc(s.op || 'action') + '</b><span>' + esc(s.selector || s.url || s.rationale || '') + '</span></span>' +
+        '<span class="mw-badge ' + (s.ok ? 'pass' : 'fail') + '">' + (s.ok ? 'Passed' : 'Failed') + '</span><span class="mw-chev">' + (open ? '⌃' : '⌄') + '</span></button>' +
+        (open ? '<div class="mw-sbody">' + (s.rationale ? '<p>' + esc(s.rationale) + '</p>' : '') + (s.error ? '<p class="mw-serr">' + esc(s.error) + '</p>' : '') + shot + '</div>' : '') + '</div>'
+    }).join('')
+    if (running) rows += '<div class="mw-step run"><div class="mw-srow"><span class="mw-sic spin"></span><span class="mw-stext"><b>Step ' + (st.length + 1) + ' · AI is working</b><span>Deciding and performing the next action…</span></span><span class="mw-badge run">Running</span></div></div>'
+    var msg = ''
+    if (r.status === 'error') msg = '<div class="mw-rmsg bad">' + esc(r.error) + '</div>'
+    else if (done && !good) msg = '<div class="mw-rmsg bad">Stopped: ' + esc(r.stall || r.status) + '. The test case is saved — open it to refine the steps and record again.</div>'
+    else if (good) msg = '<div class="mw-rmsg ok">AutoSim created (draft)' + (r.verdict ? ' · verification: <b>' + esc(String(r.verdict).toUpperCase()) + '</b>' : '') + '.</div>'
+    var foot = done ? '<div class="mw-rfoot"><button type="button" class="mw-saveclose" id="mwRunClose">Close</button><button type="button" class="btn btn-indigo" id="mwRunView">View test case</button></div>' : ''
+    return head + '<div class="mw-rbody">' + bar + '<h4>Execution log</h4>' + (rows || '<div class="muted">Starting the browser…</div>') + msg + '</div>' + foot
+  }
+  function wizStep4() {
+    var tc = wiz.tc
+    var ro = function (label, val, tall) { return '<div class="mw-f"><label>' + label + '</label><div class="mw-ro' + (tall ? ' tall' : '') + '">' + esc(val) + '</div></div>' }
+    return '<div class="mw-split"><div class="mw-left"><h2 id="aspModWizTitle" class="mw-h3">New test case</h2>' +
+      '<div class="mw-lock"><b>Running in progress</b><span>Test case details are locked and cannot be edited.</span></div>' +
+      ro('Test case name', tc.name) + ro('Start URL', tc.url) + ro('Execution steps', tc.steps, true) +
+      ro('How should this test case run?', 'Execute without credentials') + ro('Group', tc.group || 'No group') + ro('Status', tc.status === 'draft' ? 'Draft' : 'Active') +
+      '<div class="mw-lfoot"><button type="button" class="mw-saveclose" id="mwCancel" disabled>Cancel</button><button type="button" class="btn btn-indigo" disabled>Run test case</button></div></div>' +
+      '<div class="mw-right"><div class="mw-runpane" id="mwRunPane"></div></div></div>'
+  }
+  function wizStep3() {
+    var tc = wiz.tc = wiz.tc || { name: '', url: '', steps: '', exec: 'none', group: 'Regression', status: 'active' }
+    var opt = function (v, t, hint, dis) {
+      return '<label class="mw-opt' + (tc.exec === v ? ' sel' : '') + (dis ? ' dis' : '') + '"><input type="radio" name="mwExec" value="' + v + '"' + (tc.exec === v ? ' checked' : '') + (dis ? ' disabled' : '') + '><span class="mw-dot"></span><span><b>' + t + '</b><span class="mw-steps2">' + hint + '</span></span></label>'
+    }
+    var sel = function (id, label, opts, cur) {
+      return '<div class="mw-f"><label for="' + id + '">' + label + '</label><select id="' + id + '">' + opts.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (o[0] === cur ? ' selected' : '') + '>' + esc(o[1]) + '</option>' }).join('') + '</select></div>'
+    }
+    return '<form id="mwForm" novalidate class="mw-split"><div class="mw-left"><h2 id="aspModWizTitle" class="mw-h3">New test case</h2>' +
+      '<div class="mw-f"><label for="mwTcName">Test case name *</label><input id="mwTcName" maxlength="120" value="' + esc(tc.name) + '" autocomplete="off"></div>' +
+      '<div class="mw-f"><label for="mwTcUrl">Start URL *</label><input id="mwTcUrl" type="url" maxlength="500" placeholder="https://app.example.com/login" value="' + esc(tc.url) + '"><div class="mw-hint">Where the AutoSim opens the browser.</div></div>' +
+      '<div class="mw-f"><label for="mwTcSteps">Execution steps</label><textarea id="mwTcSteps" maxlength="4000" placeholder="1. Log in\n2. Choose the &quot;PX4 Softwares&quot; company\n3. Open Reports and check the totals load">' + esc(tc.steps) + '</textarea><div class="mw-hint">What the AutoSim should do and check, in plain words. Used as the AutoSim objective.</div></div>' +
+      '<div class="mw-f"><label>How should this test case run?</label><div class="mw-opts">' +
+      opt('none', 'Execute without credentials', 'Public pages only. No login step.') +
+      opt('creds', 'Execute with credentials', 'Add credentials in the Credentials tab first.', true) + '</div></div>' +
+      sel('mwTcGroup', 'Group', [['Regression', 'Regression'], ['Smoke', 'Smoke'], ['Sanity', 'Sanity'], ['', 'No group']], tc.group) +
+      sel('mwTcStatus', 'Status', [['active', 'Active'], ['draft', 'Draft']], tc.status) +
+      '<div class="mw-err" id="mwErr" role="alert"></div>' +
+      '<div class="mw-lfoot"><button type="button" class="mw-saveclose" id="mwCancel">Cancel</button><button type="submit" class="mw-saveclose" id="mwNext">Save &amp; Close</button><button type="button" class="btn btn-indigo" id="mwRun"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;margin-right:6px"><path d="M7 4v16l13-8z"/></svg>Run test case</button></div></div>' +
+      '<div class="mw-right"><div class="mw-prev"><svg width="150" height="110" viewBox="0 0 150 110" fill="none" aria-hidden="true"><rect x="18" y="14" width="114" height="78" rx="10" fill="var(--ink-2)" stroke="var(--indigo)" stroke-width="2"/><path d="M18 34h114" stroke="var(--indigo)" stroke-width="2"/><circle cx="29" cy="24" r="2.5" fill="var(--indigo)"/><circle cx="38" cy="24" r="2.5" fill="var(--indigo)"/><rect x="28" y="44" width="46" height="36" rx="4" fill="rgba(99,102,241,.18)"/><path d="M45 54v16l13-8z" fill="var(--indigo)"/><path d="M84 48h38M84 58h38M84 68h24" stroke="var(--indigo)" stroke-width="3" stroke-linecap="round" opacity=".5"/></svg>' +
+      '<h3>Run test case to see preview here</h3><p>The execution log, step-by-step progress, and results will appear here once you run the test case.</p><div class="mw-hintpill">&#9655; Click &ldquo;Run test case&rdquo; to start</div></div></div></form>'
+  }
+  function openModuleWizard() {
+    var bg = $('aspModWiz')
+    if (!bg) {
+      bg = document.createElement('div'); bg.className = 'modal-bg'; bg.id = 'aspModWiz'
+      bg.innerHTML = '<div class="modal mw" id="aspModWizBox" role="dialog" aria-modal="true" aria-labelledby="aspModWizTitle"></div>'
+      document.body.appendChild(bg)
+      bg.addEventListener('click', function (e) { if (e.target === bg) wizClose() })
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && bg.classList.contains('show')) wizClose() })
+    }
+    wiz = { step: 1, name: '', description: '', mode: 'existing', pathId: 'checkout' }
+    wizRender(); bg.classList.add('show'); $('mwName').focus()
   }
   function editProject(p) {
     openForm({
