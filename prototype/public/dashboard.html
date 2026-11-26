@@ -8341,6 +8341,13 @@
       background: var(--ink-3)
     }
 
+    /* KD-3164: the keyboard-highlighted option (arrow keys) — same look as hover plus an accent edge */
+    .tap-opt.kbd,
+    .tap-invite.kbd {
+      background: var(--ink-3);
+      box-shadow: inset 2px 0 0 var(--indigo)
+    }
+
     .tap-col {
       display: flex;
       flex-direction: column;
@@ -27782,6 +27789,20 @@
                 _aList.appendChild(row)
               })
             }
+            // KD-3164: keyboard navigation. Arrow keys move a highlight through the visible options (teammates →
+            // Unassigned → Invite by email…), Enter picks it, Home/End jump, Escape closes. Before, the search box
+            // only handled Enter (typed email) and Escape, so arrow keys did nothing.
+            let _aActive = -1
+            const _aOptions = () => _aPop ? Array.from(_aPop.querySelectorAll(".tap-list .tap-opt, .tap-unassigned, .tap-invite")).filter(el => !el.closest(".hide")) : []
+            const _aSetActive = (i) => {
+              const opts = _aOptions()
+              opts.forEach(o => { o.classList.remove("kbd"); o.removeAttribute("aria-selected") })
+              if (!opts.length || i < 0) { _aActive = -1; return }
+              _aActive = ((i % opts.length) + opts.length) % opts.length
+              const el = opts[_aActive]
+              el.classList.add("kbd"); el.setAttribute("aria-selected", "true")
+              try { el.scrollIntoView({ block: "nearest" }) } catch (e) { }
+            }
             // Open below the control, or flip above it / cap the height when the ticket panel or viewport edge would cut it off.
             function _positionAssigneePop() {
               if (!_aPop || !_assigneeCtrlBtn || _aPop.classList.contains("hide")) return
@@ -27812,6 +27833,7 @@
               if (_assigneeCtrlBtn) _assigneeCtrlBtn.classList.add("open")
               if (_aSearch) _aSearch.value = ""
               _renderAssigneeMembers("")
+              _aSetActive(-1)   // KD-3164: no highlight until the first arrow key
               _positionAssigneePop()
               // keep it placed correctly while the panel scrolls / the window resizes
               window.addEventListener("resize", _positionAssigneePop)
@@ -27832,14 +27854,47 @@
                   const q = _aSearch.value.trim()
                   const lbl = _aPop.querySelector(".tap-invite-lbl")
                   if (lbl) lbl.textContent = (q && q.includes("@")) ? ("Invite “" + q + "”") : "Invite by email…"
+                  // KD-3164: typing a name highlights the first matching teammate (type → Enter assigns). Typing an
+                  // email does NOT, so Enter keeps inviting that address.
+                  _aSetActive(q && !q.includes("@") && _aList && _aList.querySelector(".tap-opt") ? 0 : -1)
                 })
                 _aSearch.addEventListener("keydown", ev => {
-                  if (ev.key === "Enter") {
+                  if (ev.key === "Enter" && _aActive < 0) {   // KD-3164: with an option highlighted, Enter picks it (below)
                     const q = _aSearch.value.trim()
                     if (q.includes("@")) { ev.preventDefault(); _assignSelect(q) }
                   } else if (ev.key === "Escape") { ev.preventDefault(); _closeAssigneePop() }
                 })
               }
+              // KD-3164: arrow-key navigation inside the popover (search box or a focused option).
+              _aPop.addEventListener("keydown", ev => {
+                if (ev.target && ev.target.classList && ev.target.classList.contains("assignee-inp")) {
+                  if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); _closeAssigneePop(); try { _assigneeCtrlBtn.focus() } catch (e) { } }
+                  return   // the invite email box keeps its own keys
+                }
+                const n = _aOptions().length
+                if (ev.key === "ArrowDown") { ev.preventDefault(); _aSetActive(_aActive < 0 ? 0 : _aActive + 1) }
+                else if (ev.key === "ArrowUp") { ev.preventDefault(); _aSetActive(_aActive < 0 ? n - 1 : _aActive - 1) }
+                else if (ev.key === "Home") { ev.preventDefault(); _aSetActive(0) }
+                else if (ev.key === "End") { ev.preventDefault(); _aSetActive(n - 1) }
+                else if (ev.key === "Enter" && _aActive >= 0) {
+                  const el = _aOptions()[_aActive]
+                  if (el) { ev.preventDefault(); el.click() }
+                } else if (ev.key === "Escape") {
+                  // Escape closes only the dropdown — never the whole ticket (its Esc handler listens on document)
+                  ev.preventDefault(); ev.stopPropagation(); _closeAssigneePop(); try { _assigneeCtrlBtn.focus() } catch (e) { }
+                }
+              })
+              // The mouse moves the same highlight, so hover and keyboard never show two "current" rows.
+              _aPop.addEventListener("mousemove", ev => {
+                const el = ev.target && ev.target.closest ? ev.target.closest(".tap-opt, .tap-invite") : null
+                if (!el) return
+                const i = _aOptions().indexOf(el)
+                if (i >= 0 && i !== _aActive) _aSetActive(i)
+              })
+              // ArrowDown on the closed control opens the list.
+              _assigneeCtrlBtn.addEventListener("keydown", ev => {
+                if (ev.key === "ArrowDown" && _aPop.classList.contains("hide")) { ev.preventDefault(); _openAssigneePop() }
+              })
               if (_aUnassigned) _aUnassigned.addEventListener("click", ev => { ev.stopPropagation(); _assignSelect("") })
               if (_aInviteBtn && _aInviteRow) {
                 _aInviteBtn.addEventListener("click", ev => {
@@ -27931,6 +27986,36 @@
               }
               document.addEventListener("click", onDocClick, true)
               document.addEventListener("keydown", onDocKey)
+              // KD-3164: keyboard navigation for the Status / Priority / Labels dropdowns (all `.kdd` skins). Arrow keys
+              // on the button open the menu on the current value; inside, ↑/↓/Home/End move focus, Enter/Space pick
+              // (native button click → the existing save path), Tab closes. Escape closes ONLY the open menu and stops
+              // there — before, it also reached the ticket's document-level Esc handler and closed the whole ticket.
+              detailEl.addEventListener("keydown", (ev) => {
+                const kdd = ev.target instanceof Element ? ev.target.closest(".kdd") : null
+                if (!kdd) return
+                const btn = kdd.querySelector(".kdd-btn"), menu = kdd.querySelector(".kdd-menu")
+                if (!btn || !menu) return
+                const isOpen = !menu.classList.contains("hide")
+                const items = () => Array.from(menu.querySelectorAll(".kdd-item")).filter(i => !i.disabled && i.offsetParent !== null)
+                const focusAt = (i) => { const it = items(); if (!it.length) return; it[((i % it.length) + it.length) % it.length].focus() }
+                const close = () => { menu.classList.add("hide"); btn.setAttribute("aria-expanded", "false"); try { btn.focus() } catch (e) { } }
+                if (!isOpen) {
+                  if (ev.target === btn && (ev.key === "ArrowDown" || ev.key === "ArrowUp")) {
+                    ev.preventDefault()
+                    btn.click()   // the existing click handler opens it (and closes the other menus)
+                    const it = items(), cur = it.findIndex(i => i.getAttribute("aria-checked") === "true")
+                    focusAt(cur >= 0 ? cur : (ev.key === "ArrowUp" ? it.length - 1 : 0))
+                  }
+                  return
+                }
+                const it = items(), at = it.indexOf(document.activeElement)
+                if (ev.key === "ArrowDown") { ev.preventDefault(); focusAt(at < 0 ? 0 : at + 1) }
+                else if (ev.key === "ArrowUp") { ev.preventDefault(); focusAt(at < 0 ? it.length - 1 : at - 1) }
+                else if (ev.key === "Home") { ev.preventDefault(); focusAt(0) }
+                else if (ev.key === "End") { ev.preventDefault(); focusAt(it.length - 1) }
+                else if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); close() }
+                else if (ev.key === "Tab") { menu.classList.add("hide"); btn.setAttribute("aria-expanded", "false") }
+              })
             }
 
             const statusSelEl = detailEl.querySelector(".tkt-status-sel")
