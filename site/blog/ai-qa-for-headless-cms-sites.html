@@ -1,0 +1,201 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI QA for Headless CMS Sites: What Actually Breaks · Klavity</title>
+<meta name="description" content="AI QA for headless CMS sites tests the rendered front end, not the CMS admin — catching empty fields, stale caches and broken embeds editors create.">
+<link rel="canonical" href="https://klavity.in/blog/ai-qa-for-headless-cms-sites">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI QA for Headless CMS Sites: What Actually Breaks"><meta property="og:description" content="AI QA for headless CMS sites tests the rendered front end, not the CMS admin — catching empty fields, stale caches and broken embeds editors create.">
+<meta property="og:url" content="https://klavity.in/blog/ai-qa-for-headless-cms-sites"><meta property="og:image" content="https://klavity.in/blog/ai-qa-for-headless-cms-sites.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI QA for Headless CMS Sites: What Actually Breaks"><meta name="twitter:description" content="AI QA for headless CMS sites tests the rendered front end, not the CMS admin — catching empty fields, stale caches and broken embeds editors create."><meta name="twitter:image" content="https://klavity.in/blog/ai-qa-for-headless-cms-sites.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI QA for Headless CMS Sites: What Actually Breaks","description":"AI QA for headless CMS sites tests the rendered front end, not the CMS admin — catching empty fields, stale caches and broken embeds editors create.","datePublished":"2026-11-26","dateModified":"2026-11-26","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-qa-for-headless-cms-sites.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-qa-for-headless-cms-sites","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI QA for Headless CMS Sites: What Actually Breaks","item":"https://klavity.in/blog/ai-qa-for-headless-cms-sites"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-qa-for-headless-cms-sites"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is AI QA for headless CMS sites?","acceptedAnswer":{"@type":"Answer","text":"It is automated QA that runs against the rendered front end instead of the CMS admin. It crawls the live or preview build, exercises each template with the content actually published to it, and flags empty optional fields, stale caches, overflowing text, broken assets and unsupported rich-text blocks — failures that are invisible inside the CMS because the content is schema-valid."}},{"@type":"Question","name":"Why isn't testing the CMS enough?","acceptedAnswer":{"@type":"Answer","text":"The CMS validates field types and required fields, not whether the page still renders. A field that is optional in the schema but required by a component passes CMS validation and breaks the page. Only a check against the rendered output catches that."}},{"@type":"Question","name":"How do I test that published content actually goes live?","acceptedAnswer":{"@type":"Answer","text":"Use a canary publish: update a known entry, then request the public URL without cache and assert the change appears within your expected window. Assert the listing page as well as the detail page — revalidating only the detail route while the listing stays cached is the most common revalidation bug."}},{"@type":"Question","name":"Which headless CMS failures should I cover first?","acceptedAnswer":{"@type":"Answer","text":"Start with the templates carrying the most traffic — usually listing, detail and landing pages — and cover them end to end. Within each, test empty optional fields, the longest and shortest real strings, deleted assets, references to unpublished entries, and pagination boundaries."}},{"@type":"Question","name":"Do I need a QA team to do this?","acceptedAnswer":{"@type":"Answer","text":"No. Run your E2E suite on each deploy and a separate content pass on a schedule or on the CMS publish webhook, and give editors and clients a one-click way to report broken rendering. Self-healing tests matter more than usual here because headless front ends are refactored often."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-11-26</div>
+    <h1>AI QA for Headless CMS Sites: What Actually Breaks</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="A headless CMS feeding content through a cache layer into three rendered templates, one passing, one broken">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+
+  <!-- CMS source panel -->
+  <rect x="48" y="118" width="186" height="186" rx="14" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.55" stroke-width="1.5"/>
+  <rect x="48" y="118" width="4" height="186" rx="2" fill="#6366f1"/>
+  <rect x="70" y="140" width="84" height="9" rx="4.5" fill="#6366f1"/>
+  <rect x="70" y="172" width="142" height="12" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="70" y="200" width="112" height="12" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="70" y="228" width="132" height="12" rx="4" fill="#f5f0e8" fill-opacity="0.12"/>
+  <rect x="70" y="256" width="60" height="12" rx="4" fill="#f87171" fill-opacity="0.45"/>
+  <rect x="136" y="256" width="76" height="12" rx="4" fill="none" stroke="#f87171" stroke-opacity="0.5" stroke-width="1.2" stroke-dasharray="4 4"/>
+
+  <!-- flow into cache layer -->
+  <line x1="240" y1="211" x2="296" y2="211" stroke="#6366f1" stroke-width="2" stroke-opacity="0.8"/>
+  <path d="M296 205 L308 211 L296 217 Z" fill="#6366f1"/>
+  <rect x="314" y="171" width="78" height="80" rx="10" fill="#6366f1" fill-opacity="0.14" stroke="#6366f1" stroke-opacity="0.7" stroke-width="1.5"/>
+  <line x1="330" y1="195" x2="376" y2="195" stroke="#f5f0e8" stroke-opacity="0.35" stroke-width="2"/>
+  <line x1="330" y1="211" x2="376" y2="211" stroke="#f5f0e8" stroke-opacity="0.35" stroke-width="2"/>
+  <line x1="330" y1="227" x2="358" y2="227" stroke="#f5f0e8" stroke-opacity="0.35" stroke-width="2"/>
+
+  <!-- fan-out to three rendered templates -->
+  <path d="M392 211 C436 211 436 92 476 92" fill="none" stroke="#6366f1" stroke-width="2" stroke-opacity="0.65"/>
+  <path d="M392 211 L470 211" fill="none" stroke="#6366f1" stroke-width="2" stroke-opacity="0.65"/>
+  <path d="M392 211 C436 211 436 330 476 330" fill="none" stroke="#6366f1" stroke-width="2" stroke-opacity="0.65"/>
+
+  <!-- template 1: passing -->
+  <rect x="488" y="42" width="212" height="100" rx="10" fill="#f5f0e8" fill-opacity="0.045" stroke="#4ade80" stroke-opacity="0.6" stroke-width="1.5"/>
+  <line x1="488" y1="66" x2="700" y2="66" stroke="#4ade80" stroke-opacity="0.35" stroke-width="1.5"/>
+  <rect x="506" y="82" width="104" height="10" rx="5" fill="#f5f0e8" fill-opacity="0.3"/>
+  <rect x="506" y="102" width="158" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.16"/>
+  <rect x="506" y="118" width="128" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.16"/>
+  <circle cx="726" cy="92" r="15" fill="#4ade80" fill-opacity="0.18" stroke="#4ade80" stroke-width="1.8"/>
+  <path d="M719 92 L724 98 L734 86" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+
+  <!-- template 2: broken, empty field -->
+  <rect x="488" y="161" width="212" height="100" rx="10" fill="#f5f0e8" fill-opacity="0.045" stroke="#f87171" stroke-opacity="0.65" stroke-width="1.5"/>
+  <line x1="488" y1="185" x2="700" y2="185" stroke="#f87171" stroke-opacity="0.4" stroke-width="1.5"/>
+  <rect x="506" y="199" width="104" height="44" rx="6" fill="none" stroke="#f87171" stroke-opacity="0.7" stroke-width="1.4" stroke-dasharray="5 4"/>
+  <path d="M506 199 L610 243 M610 199 L506 243" stroke="#f87171" stroke-opacity="0.45" stroke-width="1.2"/>
+  <rect x="624" y="199" width="54" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.16"/>
+  <rect x="624" y="215" width="40" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.16"/>
+  <circle cx="726" cy="211" r="15" fill="#f87171" fill-opacity="0.18" stroke="#f87171" stroke-width="1.8"/>
+  <path d="M720 205 L732 217 M732 205 L720 217" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+
+  <!-- template 3: stale cache -->
+  <rect x="488" y="280" width="212" height="100" rx="10" fill="#f5f0e8" fill-opacity="0.045" stroke="#6366f1" stroke-opacity="0.6" stroke-width="1.5"/>
+  <line x1="488" y1="304" x2="700" y2="304" stroke="#6366f1" stroke-opacity="0.4" stroke-width="1.5"/>
+  <rect x="506" y="320" width="86" height="10" rx="5" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="506" y="340" width="150" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.1"/>
+  <rect x="506" y="356" width="112" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.1"/>
+  <circle cx="726" cy="330" r="15" fill="#6366f1" fill-opacity="0.18" stroke="#6366f1" stroke-width="1.8"/>
+  <path d="M726 322 L726 330 L732 334" fill="none" stroke="#6366f1" stroke-width="2.2" stroke-linecap="round"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI QA for headless CMS sites tests the rendered front end rather than the CMS, because most headless failures come from content that is valid in the CMS but breaks the component rendering it. A publish is effectively an untested deploy — it changes production without running CI — so content needs its own scheduled QA pass alongside the deploy-triggered one.</div>
+    <div class="prose"><p><strong>AI QA for headless CMS sites</strong> means testing the rendered front end — not the CMS admin — every time content or code changes, because most headless failures come from content that is perfectly valid in the CMS but breaks the component that renders it. An AI QA layer crawls the live or preview build, exercises every template against the content actually published to it, and flags empty fields, stale caches, overflowing text and unsupported embeds before an editor or client finds them. The rule worth remembering: your CMS validates fields, but only the front end can tell you whether the page still works.</p>
+
+<h2>Why do headless CMS sites break differently from monolithic sites?</h2>
+<p>On a traditional WordPress or Webflow build, content and presentation ship together. In a headless setup — Sanity, Contentful, Strapi, Payload or Storyblok behind a Next.js, Astro or Nuxt front end — three things change independently: the content model, the content itself, and the front-end code. Each has its own release process, and only one of them runs your tests.</p>
+<p>That is the structural problem. A deploy is not the only event that can break a page; a <em>publish</em> can too, and publishes do not go through CI. An editor adding a case study at 4pm on Friday is, functionally, an untested deploy to production. Headless failures cluster into three families:</p>
+<ul>
+<li><strong>Shape mismatches.</strong> A field is optional in the schema but required by the component. The query returns <code>null</code>, the component renders an empty box, a broken image, or the literal string "undefined".</li>
+<li><strong>Freshness failures.</strong> The content is correct in the CMS and wrong on the site, because a webhook, revalidation path or CDN layer did not do what you assumed.</li>
+<li><strong>Design-assumption failures.</strong> The content is valid and fresh, but longer, shorter or stranger than the design anticipated.</li>
+</ul>
+<p>None of these show up in the CMS preview pane, and none of them are caught by unit tests on your components, because the component passes with the fixture data you wrote for it. They only appear when real published content meets the real rendered page. That is the gap <a href="/blog/ai-qa-complete-guide">AI QA</a> is designed to close.</p>
+
+<h2>What should AI QA for headless CMS sites actually check?</h2>
+<p>The useful mental model is coverage across two axes: every template, and the edges of the content inside it. A short, concrete checklist that catches most real incidents:</p>
+<ol>
+<li><strong>Every template against real entries</strong> — not one representative entry, but the newest, the oldest, and the one an editor just touched.</li>
+<li><strong>Optional fields left empty.</strong> If <code>heroImage</code>, <code>author</code> or <code>excerpt</code> can be blank in the CMS, render a page where it is blank and look at the result.</li>
+<li><strong>Longest and shortest strings.</strong> The entry with a 90-character headline and the one with a three-word headline both need to look deliberate.</li>
+<li><strong>Deleted or moved assets.</strong> An image removed from the media library while still referenced produces a broken image that no CMS validation will warn you about.</li>
+<li><strong>Unpublished references.</strong> A published article pointing at an unpublished author or related entry is one of the most common sources of a null-link or hard 404.</li>
+<li><strong>Rich-text block types the renderer does not implement.</strong> Editors paste tables, iframes, callouts and embeds from Google Docs; if your serializer has no case for that block, it either disappears silently or overflows on mobile.</li>
+<li><strong>Pagination and listing boundaries.</strong> Listings break at counts the developer never tested — exactly one item, exactly a full page, one past a full page.</li>
+<li><strong>Locale fallbacks.</strong> Any partially translated entry should fall back visibly and consistently rather than rendering half a page.</li>
+<li><strong>Generated routes and sitemaps.</strong> If your sitemap, canonical tags or RSS feed are produced at build time, new entries are invisible to crawlers until the next rebuild.</li>
+</ol>
+<p>Each of these is cheap to assert and expensive to discover from a client email. For the front-end-specific half of this list, our guide to <a href="/blog/ai-qa-for-nextjs-apps">AI QA for Next.js apps</a> goes deeper on rendering modes and route-level checks.</p>
+
+<h2>How do you catch stale content and cache problems?</h2>
+<p>Freshness is the headless failure that costs the most trust, because the client is looking at the CMS and you are looking at the site, and you disagree about reality. The chain usually runs: publish event → CMS webhook → revalidation endpoint → framework cache → CDN cache → browser. A break anywhere in that chain looks identical from the outside.</p>
+<p>The practical test is a canary publish. Publish or update a known entry, then assert — from a clean, uncached request — that the change appears at the public URL within your expected window. Two details matter and are routinely missed:</p>
+<ul>
+<li><strong>Assert both pages, not one.</strong> Revalidating <code>/blog/my-post</code> while the listing at <code>/blog</code> stays cached is the single most common revalidation bug. The new entry exists but nobody can navigate to it.</li>
+<li><strong>Check the layer above your framework.</strong> On-demand revalidation can work perfectly while a CDN or proxy rule in front of it serves a cached copy for hours.</li>
+</ul>
+<p>Webhook secrets get rotated, revalidation routes get renamed during refactors, and a path that silently stops matching does not raise an error — it just quietly stops updating. A scheduled canary catches that within a day instead of at the next client review.</p>
+
+<h2>Why do editors break layouts that already passed QA?</h2>
+<p>Because the site was QA'd against the content that existed on launch day, and editors are not bound by it. Real published content routinely includes a headline twice the length of the mockup, a nav that grew to twelve items, an all-caps product name, an emoji in a title that changes line height, a portrait image where the design assumed landscape, and markup pasted out of a word processor carrying its own inline styles.</p>
+<p>This is where persona-based testing earns its place. <a href="/sims">Sims</a> can walk the site the way a real visitor does — landing on a deep content page from search, hitting a half-translated locale, reading on a phone — and report what looks wrong rather than only what throws. And because content editors and clients are the ones who notice these first, giving them <a href="/snap">Snap</a> turns a vague "the blog looks broken" message into a right-click report with the URL, viewport and console attached.</p>
+
+<h2>Where does preview differ from production?</h2>
+<p>Preview mode is a second rendering path with different auth, different fetch behaviour and usually no caching — which means it is a second place for bugs to hide, and it is the surface your client actually reviews. Two checks are non-negotiable: that draft content is <em>not</em> reachable without the preview cookie or token, and that leaving preview mode genuinely returns the visitor to cached production content. Approving a page in preview and shipping something different is a failure mode specific to headless, and it is worth one explicit assertion.</p>
+
+<h2>What breaks, and what catches it first?</h2>
+<table>
+<thead><tr><th>Failure</th><th>Triggered by</th><th>Who usually finds it first</th><th>What catches it early</th></tr></thead>
+<tbody>
+<tr><td>Empty optional field renders a broken block</td><td>A publish</td><td>The client</td><td>Template pass over real entries</td></tr>
+<tr><td>New entry not visible on listing page</td><td>Cache / revalidation</td><td>The client's editor</td><td>Scheduled canary publish</td></tr>
+<tr><td>Unsupported rich-text embed</td><td>A publish</td><td>A site visitor</td><td>Rich-text block coverage check</td></tr>
+<tr><td>Headline overflow on mobile</td><td>A publish</td><td>Nobody, for weeks</td><td>Persona pass at phone width</td></tr>
+<tr><td>Link to unpublished reference 404s</td><td>Unpublishing</td><td>Search crawler</td><td>Link crawl of published routes</td></tr>
+<tr><td>Template regression across all entries</td><td>A deploy</td><td>Everyone at once</td><td>E2E suite on each deploy</td></tr>
+</tbody>
+</table>
+<p>Read the right-hand column as a build order. The failures triggered by deploys are the ones a conventional test suite already covers; the ones triggered by publishes are the gap, and they are the majority.</p>
+
+<h2>How do you add this without a QA team?</h2>
+<p>Start with the two or three templates that carry the most traffic — usually the listing page, the detail page and the landing page — and cover them end to end rather than covering everything shallowly. <a href="/autosim">AutoSim</a> is built for exactly this shape of problem: headless front ends are refactored often, and self-healing tests survive the selector churn that makes hand-written suites rot after the second redesign.</p>
+<p>Then split the triggers. Run the E2E suite on every deploy, as usual. Separately, run a content pass on a schedule — daily, or on the CMS publish webhook — so a publish gets the same scrutiny a deploy does. That second schedule is the part most agencies skip, and it is where headless-specific bugs live. If you are moving an existing site onto a headless stack, our notes on <a href="/blog/ai-qa-for-website-migrations">AI QA for website migrations</a> cover the redirect and parity checks that belong in the same pass.</p>
+<h2>Try it on your next headless build</h2>
+<p>Point Klavity at a staging or production URL, let it walk your templates with the content that is actually published, and see what comes back before your client sends the screenshot. <a href="/onboarding"><strong>Scan your next client site free →</strong></a></p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Test the rendered front end, not the CMS admin</li><li>Treat every publish as an untested deploy</li><li>Canary-publish to verify caches actually revalidate</li><li>Render every template with empty optional fields</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is AI QA for headless CMS sites?</summary><p>It is automated QA that runs against the rendered front end instead of the CMS admin. It crawls the live or preview build, exercises each template with the content actually published to it, and flags empty optional fields, stale caches, overflowing text, broken assets and unsupported rich-text blocks — failures that are invisible inside the CMS because the content is schema-valid.</p></details><details><summary>Why isn't testing the CMS enough?</summary><p>The CMS validates field types and required fields, not whether the page still renders. A field that is optional in the schema but required by a component passes CMS validation and breaks the page. Only a check against the rendered output catches that.</p></details><details><summary>How do I test that published content actually goes live?</summary><p>Use a canary publish: update a known entry, then request the public URL without cache and assert the change appears within your expected window. Assert the listing page as well as the detail page — revalidating only the detail route while the listing stays cached is the most common revalidation bug.</p></details><details><summary>Which headless CMS failures should I cover first?</summary><p>Start with the templates carrying the most traffic — usually listing, detail and landing pages — and cover them end to end. Within each, test empty optional fields, the longest and shortest real strings, deleted assets, references to unpublished entries, and pagination boundaries.</p></details><details><summary>Do I need a QA team to do this?</summary><p>No. Run your E2E suite on each deploy and a separate content pass on a schedule or on the CMS publish webhook, and give editors and clients a one-click way to report broken rendering. Self-healing tests matter more than usual here because headless front ends are refactored often.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="A headless CMS feeding content through a cache layer into three rendered templates, one passing, one broken">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+
+  <!-- CMS source panel -->
+  <rect x="48" y="118" width="186" height="186" rx="14" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.55" stroke-width="1.5"/>
+  <rect x="48" y="118" width="4" height="186" rx="2" fill="#6366f1"/>
+  <rect x="70" y="140" width="84" height="9" rx="4.5" fill="#6366f1"/>
+  <rect x="70" y="172" width="142" height="12" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="70" y="200" width="112" height="12" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="70" y="228" width="132" height="12" rx="4" fill="#f5f0e8" fill-opacity="0.12"/>
+  <rect x="70" y="256" width="60" height="12" rx="4" fill="#f87171" fill-opacity="0.45"/>
+  <rect x="136" y="256" width="76" height="12" rx="4" fill="none" stroke="#f87171" stroke-opacity="0.5" stroke-width="1.2" stroke-dasharray="4 4"/>
+
+  <!-- flow into cache layer -->
+  <line x1="240" y1="211" x2="296" y2="211" stroke="#6366f1" stroke-width="2" stroke-opacity="0.8"/>
+  <path d="M296 205 L308 211 L296 217 Z" fill="#6366f1"/>
+  <rect x="314" y="171" width="78" height="80" rx="10" fill="#6366f1" fill-opacity="0.14" stroke="#6366f1" stroke-opacity="0.7" stroke-width="1.5"/>
+  <line x1="330" y1="195" x2="376" y2="195" stroke="#f5f0e8" stroke-opacity="0.35" stroke-width="2"/>
+  <line x1="330" y1="211" x2="376" y2="211" stroke="#f5f0e8" stroke-opacity="0.35" stroke-width="2"/>
+  <line x1="330" y1="227" x2="358" y2="227" stroke="#f5f0e8" stroke-opacity="0.35" stroke-width="2"/>
+
+  <!-- fan-out to three rendered templates -->
+  <path d="M392 211 C436 211 436 92 476 92" fill="none" stroke="#6366f1" stroke-width="2" stroke-opacity="0.65"/>
+  <path d="M392 211 L470 211" fill="none" stroke="#6366f1" stroke-width="2" stroke-opacity="0.65"/>
+  <path d="M392 211 C436 211 436 330 476 330" fill="none" stroke="#6366f1" stroke-width="2" stroke-opacity="0.65"/>
+
+  <!-- template 1: passing -->
+  <rect x="488" y="42" width="212" height="100" rx="10" fill="#f5f0e8" fill-opacity="0.045" stroke="#4ade80" stroke-opacity="0.6" stroke-width="1.5"/>
+  <line x1="488" y1="66" x2="700" y2="66" stroke="#4ade80" stroke-opacity="0.35" stroke-width="1.5"/>
+  <rect x="506" y="82" width="104" height="10" rx="5" fill="#f5f0e8" fill-opacity="0.3"/>
+  <rect x="506" y="102" width="158" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.16"/>
+  <rect x="506" y="118" width="128" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.16"/>
+  <circle cx="726" cy="92" r="15" fill="#4ade80" fill-opacity="0.18" stroke="#4ade80" stroke-width="1.8"/>
+  <path d="M719 92 L724 98 L734 86" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+
+  <!-- template 2: broken, empty field -->
+  <rect x="488" y="161" width="212" height="100" rx="10" fill="#f5f0e8" fill-opacity="0.045" stroke="#f87171" stroke-opacity="0.65" stroke-width="1.5"/>
+  <line x1="488" y1="185" x2="700" y2="185" stroke="#f87171" stroke-opacity="0.4" stroke-width="1.5"/>
+  <rect x="506" y="199" width="104" height="44" rx="6" fill="none" stroke="#f87171" stroke-opacity="0.7" stroke-width="1.4" stroke-dasharray="5 4"/>
+  <path d="M506 199 L610 243 M610 199 L506 243" stroke="#f87171" stroke-opacity="0.45" stroke-width="1.2"/>
+  <rect x="624" y="199" width="54" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.16"/>
+  <rect x="624" y="215" width="40" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.16"/>
+  <circle cx="726" cy="211" r="15" fill="#f87171" fill-opacity="0.18" stroke="#f87171" stroke-width="1.8"/>
+  <path d="M720 205 L732 217 M732 205 L720 217" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+
+  <!-- template 3: stale cache -->
+  <rect x="488" y="280" width="212" height="100" rx="10" fill="#f5f0e8" fill-opacity="0.045" stroke="#6366f1" stroke-opacity="0.6" stroke-width="1.5"/>
+  <line x1="488" y1="304" x2="700" y2="304" stroke="#6366f1" stroke-opacity="0.4" stroke-width="1.5"/>
+  <rect x="506" y="320" width="86" height="10" rx="5" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="506" y="340" width="150" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.1"/>
+  <rect x="506" y="356" width="112" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.1"/>
+  <circle cx="726" cy="330" r="15" fill="#6366f1" fill-opacity="0.18" stroke="#6366f1" stroke-width="1.8"/>
+  <path d="M726 322 L726 330 L732 334" fill="none" stroke="#6366f1" stroke-width="2.2" stroke-linecap="round"/>
+</svg>

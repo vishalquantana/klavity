@@ -1146,5 +1146,12 @@
     "excerpt": "Vibe coded app authentication bugs come from one gap: the AI built login but not authorization. Here's the two-account test that finds them.",
     "category": "Guides",
     "date": "2026-11-25"
+  },
+  {
+    "slug": "ai-qa-for-headless-cms-sites",
+    "title": "AI QA for Headless CMS Sites: What Actually Breaks",
+    "excerpt": "AI QA for headless CMS sites tests the rendered front end, not the CMS admin — catching empty fields, stale caches and broken embeds editors create.",
+    "category": "Guides",
+    "date": "2026-11-26"
   }
 ]

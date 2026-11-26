@@ -30,7 +30,8 @@
     "ai responsive design testing": "ai-responsive-design-testing",
     "ai qa for website migrations": "ai-qa-for-website-migrations",
     "ai localization testing": "ai-localization-testing",
-    "ai qa for landing pages": "ai-qa-for-landing-pages"
+    "ai qa for landing pages": "ai-qa-for-landing-pages",
+    "ai qa for headless cms sites": "ai-qa-for-headless-cms-sites"
   },
   "tier-b": {
     "how to qa a vibe-coded app": "how-to-qa-a-vibe-coded-app",
