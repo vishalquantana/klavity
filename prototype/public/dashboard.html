@@ -30984,12 +30984,17 @@
             if (!sel || !inp) return
             const me = (state && state.email) || ""
             sel.innerHTML = ""
+            // KD-3157: start on a "Select assignee" placeholder so the reporter picks someone on purpose. It used to
+            // preselect the current user, so tickets were silently assigned to whoever created them. Assignee stays
+            // required (submitNewTicket blocks an empty choice with "Assignee is required.").
+            const ph = document.createElement("option")
+            ph.value = ""; ph.textContent = "Select assignee"; ph.disabled = true; ph.selected = true
+            sel.appendChild(ph)
             newTktAssigneeEmails(members || (state && state.members), me).forEach(e => {
               const o = document.createElement("option"); o.value = e; o.textContent = e === String(me).trim().toLowerCase() ? e + " (you)" : e
               sel.appendChild(o)
             })
-            // default = the current user (one-click "assign to me"); the hidden input stays the single source of truth for submit
-            if (sel.options.length) sel.value = sel.options[0].value
+            sel.value = ""   // the placeholder; the hidden input stays the single source of truth for submit
             syncNewTktAssignee()
           }
           // Keep the hidden input (what submitNewTicket reads) in step with the dropdown.
@@ -30997,6 +31002,9 @@
             const sel = document.getElementById("newTktAssigneeSel"), inp = document.getElementById("newTktAssigneeInp")
             if (!sel || !inp) return
             inp.value = sel.value || ""
+            // KD-3157: picking someone clears an earlier "Assignee is required." message
+            const aerr = document.getElementById("newTktAssigneeErr")
+            if (aerr && inp.value) aerr.textContent = ""
           }
           // Project dropdown (mandatory, right under Title): every project the user can see, the active one preselected.
           // Changing it reloads the Assignee list from THAT project's members (GET /api/projects/:id/members).
@@ -31294,7 +31302,7 @@
             if (assignee) assignee.value = (state && state.email) || ""
             populateNewTktProjects()   // project dropdown, the selected project preselected
             setNewTktProjectOpen(false)
-            populateNewTktAssignees()   // KD-100: dropdown of all project users, current user selected
+            populateNewTktAssignees()   // KD-100: dropdown of all project users; KD-3157: starts on "Select assignee"
             const perr0 = document.getElementById("newTktProjectErr"); if (perr0) perr0.textContent = ""
             if (err) err.textContent = ""
             const aerr = document.getElementById("newTktAssigneeErr")
@@ -31335,7 +31343,9 @@
             const assigneeVal = assignee ? assignee.value.trim() : ""
             if (!assigneeVal) {
               if (aerr) aerr.textContent = "Assignee is required."
-              if (assignee) { try { assignee.focus() } catch (e) { } }
+              // KD-3157: focus the visible dropdown (the hidden input can't take focus)
+              const asel = document.getElementById("newTktAssigneeSel")
+              try { (asel || assignee).focus() } catch (e) { }
               return
             }
             if (aerr) aerr.textContent = ""
