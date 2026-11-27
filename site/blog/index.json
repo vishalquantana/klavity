@@ -1153,5 +1153,12 @@
     "excerpt": "AI QA for headless CMS sites tests the rendered front end, not the CMS admin — catching empty fields, stale caches and broken embeds editors create.",
     "category": "Guides",
     "date": "2026-11-26"
+  },
+  {
+    "slug": "bird-eats-bug-alternative",
+    "title": "Bird Eats Bug Alternative: What Changed After BrowserStack",
+    "excerpt": "Bird Eats Bug was acquired by BrowserStack in 2024 and rebranded Bug Capture. Here are the real alternatives for agencies and vibe coders.",
+    "category": "Compare",
+    "date": "2026-11-27"
   }
 ]
