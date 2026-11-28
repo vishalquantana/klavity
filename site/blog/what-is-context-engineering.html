@@ -1,0 +1,208 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Is Context Engineering? A Guide for Vibe Coders · Klavity</title>
+<meta name="description" content="Context engineering is deciding what an AI coding agent sees before it writes code: schemas, conventions, errors and test output, not just the prompt.">
+<link rel="canonical" href="https://klavity.in/blog/what-is-context-engineering">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="What Is Context Engineering? A Guide for Vibe Coders"><meta property="og:description" content="Context engineering is deciding what an AI coding agent sees before it writes code: schemas, conventions, errors and test output, not just the prompt.">
+<meta property="og:url" content="https://klavity.in/blog/what-is-context-engineering"><meta property="og:image" content="https://klavity.in/blog/what-is-context-engineering.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="What Is Context Engineering? A Guide for Vibe Coders"><meta name="twitter:description" content="Context engineering is deciding what an AI coding agent sees before it writes code: schemas, conventions, errors and test output, not just the prompt."><meta name="twitter:image" content="https://klavity.in/blog/what-is-context-engineering.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"What Is Context Engineering? A Guide for Vibe Coders","description":"Context engineering is deciding what an AI coding agent sees before it writes code: schemas, conventions, errors and test output, not just the prompt.","datePublished":"2026-11-28","dateModified":"2026-11-28","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/what-is-context-engineering.svg"}},"mainEntityOfPage":"https://klavity.in/blog/what-is-context-engineering","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is Context Engineering? A Guide for Vibe Coders","item":"https://klavity.in/blog/what-is-context-engineering"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-context-engineering"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is context engineering in simple terms?","acceptedAnswer":{"@type":"Answer","text":"It is choosing what information an AI coding agent can see before it generates code. That includes your rules file, type definitions and schema, the existing files the change touches, current library docs, and real error or test output. Anything missing from that context gets filled in by guesswork."}},{"@type":"Question","name":"Is context engineering the same as prompt engineering?","acceptedAnswer":{"@type":"Answer","text":"No. Prompt engineering changes the wording of the request and fixes output that is in the wrong shape. Context engineering changes what information surrounds the request and fixes code that is confidently wrong about your system. If rewording a prompt repeatedly has not helped, the gap is context, not phrasing."}},{"@type":"Question","name":"Why does context engineering reduce bugs in AI-generated code?","acceptedAnswer":{"@type":"Answer","text":"Because the common bug patterns each trace to a context gap: hallucinated function signatures when the real interface is absent, duplicate helpers when existing code is not visible, deprecated API calls when current docs are not pinned, and missing error handling when only the happy path was described."}},{"@type":"Question","name":"Should I just put my whole codebase in context?","acceptedAnswer":{"@type":"Answer","text":"No. Oversized context dilutes the constraints that matter, and material in the middle of a long context window is retrieved less reliably than material at the start or end. Aim for a small, high-signal set: the rules file, the relevant interfaces, the files being changed, and the actual error output."}},{"@type":"Question","name":"How does QA feed into context engineering?","acceptedAnswer":{"@type":"Answer","text":"QA produces the evidence half of context. A reproducible bug report with steps, console logs, network activity and environment details lets an agent fix a specified defect instead of guessing. Klavity Snap captures that bundle from a right-click so it can be pasted straight into your agent."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-11-28</div>
+    <h1>What Is Context Engineering? A Guide for Vibe Coders</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Context engineering: schema, rules and bug evidence curated into an AI agent's context window, producing verified code">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="712" cy="58" r="118" fill="#6366f1" opacity="0.07"/>
+
+  <rect x="48" y="70" width="150" height="62" rx="8" fill="#f5f0e8" opacity="0.06"/>
+  <rect x="48" y="70" width="4" height="62" rx="2" fill="#6366f1"/>
+  <rect x="66" y="90" width="104" height="7" rx="3.5" fill="#f5f0e8" opacity="0.5"/>
+  <rect x="66" y="106" width="72" height="7" rx="3.5" fill="#f5f0e8" opacity="0.25"/>
+
+  <rect x="48" y="160" width="150" height="62" rx="8" fill="#f5f0e8" opacity="0.06"/>
+  <rect x="48" y="160" width="4" height="62" rx="2" fill="#6366f1"/>
+  <rect x="66" y="180" width="88" height="7" rx="3.5" fill="#f5f0e8" opacity="0.5"/>
+  <rect x="66" y="196" width="112" height="7" rx="3.5" fill="#f5f0e8" opacity="0.25"/>
+
+  <rect x="48" y="250" width="150" height="62" rx="8" fill="#f5f0e8" opacity="0.06"/>
+  <rect x="48" y="250" width="4" height="62" rx="2" fill="#6366f1"/>
+  <rect x="66" y="270" width="96" height="7" rx="3.5" fill="#f5f0e8" opacity="0.5"/>
+
+  <path d="M206 101 C 250 101, 262 150, 298 160" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M206 191 C 250 191, 262 200, 298 205" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M206 281 C 250 281, 262 260, 298 250" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+
+  <rect x="300" y="84" width="192" height="252" rx="14" fill="#6366f1" opacity="0.12"/>
+  <rect x="300" y="84" width="192" height="252" rx="14" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <polyline points="330,112 318,112 318,308 330,308" fill="none" stroke="#f5f0e8" stroke-width="2" opacity="0.35" stroke-linecap="round"/>
+  <polyline points="462,112 474,112 474,308 462,308" fill="none" stroke="#f5f0e8" stroke-width="2" opacity="0.35" stroke-linecap="round"/>
+  <rect x="340" y="140" width="112" height="16" rx="5" fill="#6366f1"/>
+  <rect x="340" y="170" width="92" height="16" rx="5" fill="#6366f1" opacity="0.75"/>
+  <rect x="340" y="200" width="112" height="16" rx="5" fill="#4ade80" opacity="0.8"/>
+  <rect x="340" y="230" width="68" height="16" rx="5" fill="#f5f0e8" opacity="0.2"/>
+
+  <line x1="500" y1="210" x2="548" y2="210" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <polyline points="538,202 548,210 538,218" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="560" y="118" width="192" height="184" rx="12" fill="#f5f0e8" opacity="0.06"/>
+  <rect x="560" y="118" width="192" height="184" rx="12" fill="none" stroke="#4ade80" stroke-width="1.5" opacity="0.5"/>
+  <rect x="582" y="150" width="86" height="8" rx="4" fill="#f5f0e8" opacity="0.45"/>
+  <rect x="582" y="196" width="104" height="8" rx="4" fill="#f5f0e8" opacity="0.45"/>
+  <rect x="582" y="242" width="72" height="8" rx="4" fill="#f5f0e8" opacity="0.45"/>
+  <polyline points="700,154 707,161 720,146" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="700,200 707,207 720,192" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="700,246 707,253 720,238" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M396 372 L 396 348" fill="none" stroke="#f87171" stroke-width="2.5" stroke-dasharray="6 5" stroke-linecap="round"/>
+  <polyline points="388,356 396,346 404,356" fill="none" stroke="#f87171" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="396" cy="390" r="15" fill="#f87171" opacity="0.9"/>
+  <line x1="375" y1="382" x2="381" y2="386" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="417" y1="382" x2="411" y2="386" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Context engineering is the practice of controlling what an AI coding agent sees before it writes code - files, schemas, conventions, errors and test output. It has replaced prompt engineering as the main lever on code quality, because agents rarely fail from bad wording; they fail from missing interfaces and missing evidence. Every recurring class of AI-generated bug maps to a specific context gap.</div>
+    <div class="prose"><p><strong>Context engineering is the practice of deciding what an AI coding agent sees before it writes a line of code</strong> &mdash; which files, specs, type definitions, conventions, error messages and test results land in its working context. It has largely replaced prompt engineering as the main lever on output quality, because modern coding agents rarely fail from a badly worded instruction. They fail because they could not see the database schema, the helper function that already exists, or the console error your user actually hit. Good context engineering means the agent writes code against your real system. Bad context engineering means it writes plausible code against a system it imagined.</p>
+
+<h2>What is context engineering, exactly?</h2>
+<p>An AI coding agent has no memory of your project between runs. Its entire world is the context it is given at generation time: the system prompt or rules file, the files that are open or retrieved, documentation snippets, your conversation so far, and the output of any tools it ran. Everything it &ldquo;knows&rdquo; about your codebase arrives through that window, and anything missing from it gets filled in by statistical guesswork.</p>
+<p>Context engineering treats that window as a build input you control, rather than something that just happens. Instead of rewording your request until the output improves, you change what the model can see. The same one-line request produces very different code depending on whether the agent can read your schema or has to invent one.</p>
+<h3>The three things context has to carry</h3>
+<ul>
+<li><strong>Intent</strong> &mdash; what should happen, specific enough that someone could check it afterwards.</li>
+<li><strong>Interfaces</strong> &mdash; the real signatures, types, schema fields and route names the new code has to match.</li>
+<li><strong>Evidence</strong> &mdash; what actually happens today: the failing test, the stack trace, the reproduction steps.</li>
+</ul>
+<p>Most bad AI output traces back to one of those three being absent. Prompts usually carry intent. They almost never carry interfaces or evidence unless you deliberately put them there.</p>
+
+<h2>How is context engineering different from prompt engineering?</h2>
+<p>Prompt engineering optimises the instruction. Context engineering optimises the information surrounding it. They are complementary, but they fail in different ways and the fixes are not interchangeable.</p>
+<table>
+<tr><th>&nbsp;</th><th>Prompt engineering</th><th>Context engineering</th></tr>
+<tr><td><strong>What you change</strong></td><td>The wording of the request</td><td>Which files, schemas, docs and tool outputs are in scope</td></tr>
+<tr><td><strong>Typical fix</strong></td><td>Add role, format, constraints, examples</td><td>Attach the schema, the existing module, the error text</td></tr>
+<tr><td><strong>Failure it solves</strong></td><td>Output in the wrong shape or tone</td><td>Code that is confidently wrong about your system</td></tr>
+<tr><td><strong>Fails when</strong></td><td>The model lacks facts no rewording can supply</td><td>Context is so large the important constraint gets diluted</td></tr>
+<tr><td><strong>Who it matters to</strong></td><td>Anyone generating text</td><td>Anyone shipping generated code to real users</td></tr>
+</table>
+<p>If rewording a prompt three times has not helped, the problem is almost always missing context, not missing adjectives.</p>
+
+<h2>Why does context engineering decide how many bugs your AI writes?</h2>
+<p>There are a handful of recurring bug patterns in AI-generated code, and each one maps to a specific gap in context:</p>
+<ul>
+<li><strong>Hallucinated interfaces.</strong> When the real function signature or column name is not in context, the model supplies the most statistically likely one. The result looks correct and fails at runtime &mdash; the pattern behind most <a href="/blog/ai-generated-code-bugs">AI-generated code bugs</a>.</li>
+<li><strong>Duplicate implementations.</strong> An agent that cannot see your existing <code>formatDate</code> helper writes a second, slightly different one. Nothing breaks immediately; the two drift apart later.</li>
+<li><strong>Deprecated patterns.</strong> Model training data has a cutoff. Without current documentation pinned into context, agents reach for the library API they saw most during training, which may no longer be the recommended one.</li>
+<li><strong>Diluted constraints.</strong> Long, rambling context buries the one rule that mattered. Information at the very start and very end of a context window is retrieved more reliably than material in the middle, so a critical constraint parked mid-conversation is the easiest thing for an agent to lose.</li>
+<li><strong>Missing failure paths.</strong> A prompt that describes only the happy path yields code that only handles the happy path &mdash; no empty states, no timeouts, no error branches. That gap is why <a href="/blog/testing-ai-generated-code">testing AI-generated code</a> catches so much on first run.</li>
+</ul>
+
+<h2>What belongs in an AI coding agent's context?</h2>
+<table>
+<tr><th>Context source</th><th>What it prevents</th></tr>
+<tr><td>Rules file (<code>CLAUDE.md</code>, <code>AGENTS.md</code>, <code>.cursorrules</code>)</td><td>Convention drift, wrong stack choices, edits to files that should not be touched</td></tr>
+<tr><td>Type definitions and database schema</td><td>Invented fields, wrong nullability, mismatched enums</td></tr>
+<tr><td>The existing module the change touches</td><td>Duplicate logic and contradictory implementations</td></tr>
+<tr><td>Current library or API documentation</td><td>Deprecated calls from stale training data</td></tr>
+<tr><td>Failing test or type-check output, verbatim</td><td>Fixes that address a misremembered version of the error</td></tr>
+<tr><td>A reproducible bug report: steps, console, network, environment</td><td>&ldquo;Cannot reproduce&rdquo; loops and fixes to the wrong layer</td></tr>
+<tr><td>Acceptance criteria for the task</td><td>Scope creep and work nobody can verify</td></tr>
+</table>
+<p>Note what is <em>not</em> on that list: your entire repository. Dumping everything in is not context engineering, it is the diluted-constraint failure above. The goal is a small, high-signal set.</p>
+
+<h2>How do you do context engineering in Cursor, Claude Code, or Lovable?</h2>
+<ol>
+<li><strong>Write a short rules file.</strong> Stack, versions, directory conventions, the two or three things never to change. Keep it tight &mdash; a rules file long enough to compete with the task itself stops functioning as a rule.</li>
+<li><strong>Reference files explicitly.</strong> Name the files the change touches instead of trusting automatic retrieval to find them. In chat-only builders such as Lovable, Bolt or v0, paste the schema and the exact error text directly into the message.</li>
+<li><strong>Give the contract before the implementation.</strong> Supply the type, schema or API signature first, then ask for the code that satisfies it. This is the cheapest single intervention available, and it is most of what <a href="/blog/what-is-spec-driven-development">spec-driven development</a> formalises.</li>
+<li><strong>Keep one task per context.</strong> Start a fresh thread for unrelated work so abandoned decisions from the last task do not leak into the next one.</li>
+<li><strong>Close the loop with real tool output.</strong> Let the agent read the test run, the type-check or the console trace rather than describing it secondhand. A pasted stack trace beats a paraphrase every time.</li>
+</ol>
+
+<h2>Where does QA fit into context engineering?</h2>
+<p>QA produces the evidence half of context, and it is the half almost everyone skips. A failing assertion, a console error with a stack trace, a screenshot and the exact steps that caused it are the highest-value tokens you can hand an agent. Without them you are asking it to guess what went wrong; with them you are asking it to fix a specified defect. This is the same loop described in the <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+<p>That is the role Klavity plays in the workflow. <a href="/snap">Snap</a> turns a right-click into a bug report that already carries console logs, network activity, DOM state and environment details &mdash; paste-ready agent context instead of &ldquo;the signup page is broken.&rdquo; <a href="/sims">Sims</a> runs AI personas through your flows and surfaces the paths a founder testing their own app never clicks, which is exactly the evidence a happy-path prompt cannot contain. <a href="/autosim">AutoSim</a> keeps end-to-end tests passing as the UI shifts underneath them, so test output stays trustworthy context rather than noise your agent learns to ignore.</p>
+
+<h2>What does a context engineering checklist look like?</h2>
+<ul>
+<li>Is there a rules file, and is it short enough that an agent will actually respect it?</li>
+<li>Does the agent have the real schema and types, not a description of them?</li>
+<li>Did you name the existing files this change touches?</li>
+<li>Are version-sensitive library docs pinned, or is the model guessing from training data?</li>
+<li>Is the task scoped to one change in a clean context?</li>
+<li>Can the agent read test and console output itself?</li>
+<li>When a bug appears, does it get reproduction steps and logs &mdash; or a sentence of prose?</li>
+</ul>
+<p>Context engineering is not a prompt trick; it is supply-chain hygiene for the inputs your AI builds from. Pair it with a verification step and the two reinforce each other: better context produces fewer bugs, and the bugs you do catch become the context that prevents the next batch.</p>
+
+<p><a href="/onboarding">Try Klavity free</a> and turn your next bug into agent-ready context in one right-click &mdash; console, network and repro steps included.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Fix missing context before rewording prompts</li><li>Give the agent real schemas and types, not prose</li><li>Pin current library docs to avoid deprecated APIs</li><li>Feed verbatim error and test output, never paraphrases</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is context engineering in simple terms?</summary><p>It is choosing what information an AI coding agent can see before it generates code. That includes your rules file, type definitions and schema, the existing files the change touches, current library docs, and real error or test output. Anything missing from that context gets filled in by guesswork.</p></details><details><summary>Is context engineering the same as prompt engineering?</summary><p>No. Prompt engineering changes the wording of the request and fixes output that is in the wrong shape. Context engineering changes what information surrounds the request and fixes code that is confidently wrong about your system. If rewording a prompt repeatedly has not helped, the gap is context, not phrasing.</p></details><details><summary>Why does context engineering reduce bugs in AI-generated code?</summary><p>Because the common bug patterns each trace to a context gap: hallucinated function signatures when the real interface is absent, duplicate helpers when existing code is not visible, deprecated API calls when current docs are not pinned, and missing error handling when only the happy path was described.</p></details><details><summary>Should I just put my whole codebase in context?</summary><p>No. Oversized context dilutes the constraints that matter, and material in the middle of a long context window is retrieved less reliably than material at the start or end. Aim for a small, high-signal set: the rules file, the relevant interfaces, the files being changed, and the actual error output.</p></details><details><summary>How does QA feed into context engineering?</summary><p>QA produces the evidence half of context. A reproducible bug report with steps, console logs, network activity and environment details lets an agent fix a specified defect instead of guessing. Klavity Snap captures that bundle from a right-click so it can be pasted straight into your agent.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

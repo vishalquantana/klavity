@@ -1160,5 +1160,12 @@
     "excerpt": "Bird Eats Bug was acquired by BrowserStack in 2024 and rebranded Bug Capture. Here are the real alternatives for agencies and vibe coders.",
     "category": "Compare",
     "date": "2026-11-27"
+  },
+  {
+    "slug": "what-is-context-engineering",
+    "title": "What Is Context Engineering? A Guide for Vibe Coders",
+    "excerpt": "Context engineering is deciding what an AI coding agent sees before it writes code: schemas, conventions, errors and test output, not just the prompt.",
+    "category": "Learn",
+    "date": "2026-11-28"
   }
 ]
